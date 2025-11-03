@@ -3,6 +3,9 @@
 pub mod calculator;
 pub mod app_search;
 pub mod file_search;
+pub mod web_search;
+pub mod clipboard;
+pub mod unit_converter;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -34,6 +37,12 @@ impl PluginManager {
         
         // 注册插件
         manager.register(Box::new(calculator::CalculatorPlugin::new()));
+        manager.register(Box::new(web_search::WebSearchPlugin::new()));
+        manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
+        
+        let clipboard = clipboard::ClipboardPlugin::new();
+        clipboard.init().await;
+        manager.register(Box::new(clipboard));
         
         let app_search = app_search::AppSearchPlugin::new();
         app_search.init().await;
