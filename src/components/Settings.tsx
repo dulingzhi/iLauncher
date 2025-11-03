@@ -1,32 +1,87 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
-interface Settings {
-  hotkey: string;
-  theme: 'dark' | 'light';
-  searchDelay: number;
-  maxResults: number;
-  windowWidth: number;
-  windowHeight: number;
-  fontSize: number;
+interface AppConfig {
+  general: {
+    hotkey: string;
+    search_delay: number;
+    max_results: number;
+    language: string;
+  };
+  appearance: {
+    theme: string;
+    window_width: number;
+    window_height: number;
+    font_size: number;
+    transparency: number;
+  };
+  plugins: {
+    enabled_plugins: string[];
+    disabled_plugins: string[];
+  };
+  advanced: {
+    start_on_boot: boolean;
+    show_tray_icon: boolean;
+    enable_analytics: boolean;
+    cache_enabled: boolean;
+  };
 }
 
 export const Settings: React.FC = () => {
-  const [settings, setSettings] = useState<Settings>({
-    hotkey: 'Alt+Space',
-    theme: 'dark',
-    searchDelay: 100,
-    maxResults: 10,
-    windowWidth: 800,
-    windowHeight: 500,
-    fontSize: 14,
-  });
-
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'plugins' | 'advanced'>('general');
 
-  const handleSave = () => {
-    // TODO: 保存设置到后端
-    console.log('Saving settings:', settings);
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const loadConfig = async () => {
+    try {
+      const loadedConfig = await invoke<AppConfig>('load_config');
+      setConfig(loadedConfig);
+    } catch (error) {
+      console.error('Failed to load config:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSave = async () => {
+    if (!config) return;
+    
+    setSaving(true);
+    try {
+      await invoke('save_config', { config });
+      alert('Settings saved successfully!');
+    } catch (error) {
+      console.error('Failed to save config:', error);
+      alert('Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (confirm('Reset all settings to default?')) {
+      setLoading(true);
+      try {
+        // 重新加载会使用默认值
+        await loadConfig();
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  if (loading || !config) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900">
+        <div className="text-white text-xl">Loading settings...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -63,8 +118,11 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={settings.hotkey}
-                    onChange={(e) => setSettings({ ...settings, hotkey: e.target.value })}
+                    value={config.general.hotkey}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      general: { ...config.general, hotkey: e.target.value }
+                    })}
                     className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
                     placeholder="Alt+Space"
                   />
@@ -79,8 +137,11 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={settings.searchDelay}
-                    onChange={(e) => setSettings({ ...settings, searchDelay: parseInt(e.target.value) })}
+                    value={config.general.search_delay}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      general: { ...config.general, search_delay: parseInt(e.target.value) }
+                    })}
                     className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
                     min="0"
                     max="1000"
@@ -96,8 +157,11 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={settings.maxResults}
-                    onChange={(e) => setSettings({ ...settings, maxResults: parseInt(e.target.value) })}
+                    value={config.general.max_results}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      general: { ...config.general, max_results: parseInt(e.target.value) }
+                    })}
                     className="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
                     min="5"
                     max="50"
@@ -122,9 +186,12 @@ export const Settings: React.FC = () => {
                   <label className="block text-sm font-medium mb-2">Theme</label>
                   <div className="flex gap-4">
                     <button
-                      onClick={() => setSettings({ ...settings, theme: 'dark' })}
+                      onClick={() => setConfig({
+                        ...config,
+                        appearance: { ...config.appearance, theme: 'dark' }
+                      })}
                       className={`flex-1 py-3 rounded border-2 transition-colors ${
-                        settings.theme === 'dark'
+                        config.appearance.theme === 'dark'
                           ? 'border-blue-500 bg-gray-700'
                           : 'border-gray-600 bg-gray-800 hover:border-gray-500'
                       }`}
@@ -132,9 +199,12 @@ export const Settings: React.FC = () => {
                       🌙 Dark
                     </button>
                     <button
-                      onClick={() => setSettings({ ...settings, theme: 'light' })}
+                      onClick={() => setConfig({
+                        ...config,
+                        appearance: { ...config.appearance, theme: 'light' }
+                      })}
                       className={`flex-1 py-3 rounded border-2 transition-colors ${
-                        settings.theme === 'light'
+                        config.appearance.theme === 'light'
                           ? 'border-blue-500 bg-gray-700'
                           : 'border-gray-600 bg-gray-800 hover:border-gray-500'
                       }`}
@@ -150,14 +220,17 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="range"
-                    value={settings.windowWidth}
-                    onChange={(e) => setSettings({ ...settings, windowWidth: parseInt(e.target.value) })}
+                    value={config.appearance.window_width}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      appearance: { ...config.appearance, window_width: parseInt(e.target.value) }
+                    })}
                     className="w-full"
                     min="600"
                     max="1200"
                     step="50"
                   />
-                  <div className="text-sm text-gray-400 mt-1">{settings.windowWidth}px</div>
+                  <div className="text-sm text-gray-400 mt-1">{config.appearance.window_width}px</div>
                 </div>
 
                 <div>
@@ -166,14 +239,17 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="range"
-                    value={settings.windowHeight}
-                    onChange={(e) => setSettings({ ...settings, windowHeight: parseInt(e.target.value) })}
+                    value={config.appearance.window_height}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      appearance: { ...config.appearance, window_height: parseInt(e.target.value) }
+                    })}
                     className="w-full"
                     min="400"
                     max="800"
                     step="50"
                   />
-                  <div className="text-sm text-gray-400 mt-1">{settings.windowHeight}px</div>
+                  <div className="text-sm text-gray-400 mt-1">{config.appearance.window_height}px</div>
                 </div>
 
                 <div>
@@ -182,13 +258,16 @@ export const Settings: React.FC = () => {
                   </label>
                   <input
                     type="range"
-                    value={settings.fontSize}
-                    onChange={(e) => setSettings({ ...settings, fontSize: parseInt(e.target.value) })}
+                    value={config.appearance.font_size}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      appearance: { ...config.appearance, font_size: parseInt(e.target.value) }
+                    })}
                     className="w-full"
                     min="12"
                     max="20"
                   />
-                  <div className="text-sm text-gray-400 mt-1">{settings.fontSize}px</div>
+                  <div className="text-sm text-gray-400 mt-1">{config.appearance.font_size}px</div>
                 </div>
               </div>
             </div>
@@ -216,7 +295,15 @@ export const Settings: React.FC = () => {
                   <div className="text-sm text-gray-400">Launch iLauncher when Windows starts</div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" />
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer"
+                    checked={config.advanced.start_on_boot}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      advanced: { ...config.advanced, start_on_boot: e.target.checked }
+                    })}
+                  />
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
@@ -227,7 +314,15 @@ export const Settings: React.FC = () => {
                   <div className="text-sm text-gray-400">Display icon in system tray</div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" defaultChecked />
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer"
+                    checked={config.advanced.show_tray_icon}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      advanced: { ...config.advanced, show_tray_icon: e.target.checked }
+                    })}
+                  />
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
@@ -238,7 +333,15 @@ export const Settings: React.FC = () => {
                   <div className="text-sm text-gray-400">Help improve iLauncher by sharing usage data</div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" />
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer"
+                    checked={config.advanced.enable_analytics}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      advanced: { ...config.advanced, enable_analytics: e.target.checked }
+                    })}
+                  />
                   <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
@@ -248,14 +351,19 @@ export const Settings: React.FC = () => {
 
         {/* 保存按钮 */}
         <div className="mt-8 flex justify-end gap-4">
-          <button className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded font-medium transition-colors">
+          <button 
+            onClick={handleReset}
+            className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded font-medium transition-colors"
+            disabled={saving}
+          >
             Reset
           </button>
           <button
             onClick={handleSave}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors disabled:opacity-50"
+            disabled={saving}
           >
-            Save Settings
+            {saving ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
       </div>

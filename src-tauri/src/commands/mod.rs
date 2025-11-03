@@ -2,6 +2,7 @@
 
 use crate::core::types::*;
 use crate::plugin::PluginManager;
+use crate::storage::{AppConfig, StorageManager};
 use tauri::State;
 
 /// 查询命令
@@ -51,4 +52,40 @@ pub async fn toggle_app(window: tauri::Window) -> Result<(), String> {
         window.set_focus().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 加载配置
+#[tauri::command]
+pub async fn load_config(storage: State<'_, StorageManager>) -> Result<AppConfig, String> {
+    storage.load_config().await.map_err(|e| e.to_string())
+}
+
+/// 保存配置
+#[tauri::command]
+pub async fn save_config(
+    config: AppConfig,
+    storage: State<'_, StorageManager>,
+) -> Result<(), String> {
+    storage.save_config(&config).await.map_err(|e| e.to_string())
+}
+
+/// 清除缓存
+#[tauri::command]
+pub async fn clear_cache(storage: State<'_, StorageManager>) -> Result<(), String> {
+    storage.clear_cache().await.map_err(|e| e.to_string())
+}
+
+/// 获取存储路径
+#[tauri::command]
+pub async fn get_storage_paths(storage: State<'_, StorageManager>) -> Result<StoragePaths, String> {
+    Ok(StoragePaths {
+        data_dir: storage.get_data_dir().to_string_lossy().to_string(),
+        cache_dir: storage.get_cache_dir().to_string_lossy().to_string(),
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct StoragePaths {
+    pub data_dir: String,
+    pub cache_dir: String,
 }
