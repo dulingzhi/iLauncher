@@ -5,7 +5,7 @@
   "identifier": "com.tauri-app.ilauncher",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -15,9 +15,9 @@
         "title": "iLauncher",
         "label": "main",
         "width": 800,
-        "height": 80,
+        "height": 500,
         "minWidth": 600,
-        "minHeight": 60,
+        "minHeight": 80,
         "maxHeight": 600,
         "resizable": false,
         "fullscreen": false,
@@ -27,7 +27,8 @@
         "skipTaskbar": true,
         "center": true,
         "visible": false,
-        "focus": true
+        "focus": true,
+        "shadow": false
       }
     ],
     "security": {

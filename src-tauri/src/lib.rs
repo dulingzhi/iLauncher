@@ -2,7 +2,9 @@
 mod commands;
 mod core;
 mod hotkey;
+mod plugin;
 
+use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +31,12 @@ pub fn run() {
             commands::toggle_app,
         ])
         .setup(|app| {
+            // 初始化插件管理器（阻塞等待异步初始化）
+            let plugin_manager = tauri::async_runtime::block_on(async {
+                plugin::PluginManager::new().await
+            });
+            app.manage(plugin_manager);
+            
             // 初始化热键管理器
             let mut hotkey_manager = hotkey::HotkeyManager::new()
                 .expect("Failed to create hotkey manager");
@@ -36,6 +44,9 @@ pub fn run() {
             // 注册主热键
             hotkey_manager.register_main_hotkey()
                 .expect("Failed to register main hotkey");
+            
+            // 使用 Box::leak 让热键管理器永久存活，防止全局热键注册失效
+            Box::leak(Box::new(hotkey_manager));
             
             // 启动热键监听器
             let app_handle = app.handle().clone();

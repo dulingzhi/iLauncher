@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { cn } from '../utils/cn';
 
 export function SearchBox() {
+  const inputRef = useRef<HTMLInputElement>(null);
   const {
     query,
     selectedIndex,
@@ -26,6 +28,29 @@ export function SearchBox() {
   useEffect(() => {
     debouncedQuery(query);
   }, [query, debouncedQuery]);
+  
+  // 监听窗口显示事件，自动聚焦输入框
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    
+    const setupListener = async () => {
+      const unlisten = await appWindow.listen('focus-input', () => {
+        reset();
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+        }, 10);
+      });
+      return unlisten;
+    };
+    
+    const unlistenPromise = setupListener();
+    
+    return () => {
+      unlistenPromise.then(fn => fn());
+    };
+  }, [reset]);
   
   const handleKeyDown = async (e: React.KeyboardEvent) => {
     switch (e.key) {
@@ -81,6 +106,7 @@ export function SearchBox() {
       <div className="flex items-center gap-3 px-4 py-3 bg-white/95 backdrop-blur-sm border-b border-gray-200">
         <Search className="w-5 h-5 text-gray-400" />
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

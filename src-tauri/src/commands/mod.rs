@@ -1,24 +1,13 @@
 // Tauri Commands - 前端调用的 Rust 函数
 
 use crate::core::types::*;
+use crate::plugin::PluginManager;
 use tauri::State;
 
 /// 查询命令
 #[tauri::command]
-pub async fn query(input: String) -> Result<Vec<QueryResult>, String> {
-    // 暂时返回模拟数据
-    Ok(vec![
-        QueryResult::new(format!("Search for: {}", input))
-            .with_subtitle("Press Enter to search")
-            .with_icon(WoxImage::emoji("🔍"))
-            .with_score(100)
-            .with_action(Action::new("Search").default()),
-        QueryResult::new("Calculator")
-            .with_subtitle("Basic calculator")
-            .with_icon(WoxImage::emoji("🔢"))
-            .with_score(90)
-            .with_action(Action::new("Calculate").default()),
-    ])
+pub async fn query(input: String, manager: State<'_, PluginManager>) -> Result<Vec<QueryResult>, String> {
+    manager.query(&input).await.map_err(|e| e.to_string())
 }
 
 /// 执行操作
@@ -26,15 +15,15 @@ pub async fn query(input: String) -> Result<Vec<QueryResult>, String> {
 pub async fn execute_action(
     result_id: String,
     action_id: String,
+    manager: State<'_, PluginManager>,
 ) -> Result<(), String> {
-    tracing::info!("Executing action {} for result {}", action_id, result_id);
-    Ok(())
+    manager.execute(&result_id, &action_id).await.map_err(|e| e.to_string())
 }
 
 /// 获取插件列表
 #[tauri::command]
-pub async fn get_plugins() -> Result<Vec<PluginMetadata>, String> {
-    Ok(vec![])
+pub async fn get_plugins(manager: State<'_, PluginManager>) -> Result<Vec<PluginMetadata>, String> {
+    Ok(manager.get_plugins())
 }
 
 /// 显示应用
