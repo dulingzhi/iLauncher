@@ -27,8 +27,9 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
 
   // ESC 键监听
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
+    const handleEsc = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        await invoke('hide_app');
         onClose();
       }
     };
@@ -67,7 +68,10 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Plugin Manager</h1>
           <button
-            onClick={onClose}
+            onClick={async () => {
+              await invoke('hide_app');
+              onClose();
+            }}
             className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
           >
             Close (Esc)

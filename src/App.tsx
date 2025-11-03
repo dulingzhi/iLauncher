@@ -10,11 +10,20 @@ type View = 'search' | 'settings' | 'plugins';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('search');
+  
   useEffect(() => {
     const appWindow = getCurrentWindow();
     
+    // 监听窗口显示事件，重置为搜索视图
+    const setupShowListener = async () => {
+      const unlisten = await appWindow.listen('tauri://focus', () => {
+        setCurrentView('search');
+      });
+      return unlisten;
+    };
+    
     // 监听窗口失焦事件，自动隐藏
-    const setupListener = async () => {
+    const setupBlurListener = async () => {
       const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
         if (!focused) {
           setTimeout(() => {
@@ -25,10 +34,12 @@ function App() {
       return unlisten;
     };
     
-    const unlistenPromise = setupListener();
+    const showListenerPromise = setupShowListener();
+    const blurListenerPromise = setupBlurListener();
     
     return () => {
-      unlistenPromise.then(fn => fn());
+      showListenerPromise.then(fn => fn());
+      blurListenerPromise.then(fn => fn());
     };
   }, []);
 

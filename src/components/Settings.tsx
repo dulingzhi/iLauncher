@@ -46,8 +46,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
   // ESC 键监听
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
+    const handleEsc = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        await invoke('hide_app');
         onClose();
       }
     };
@@ -112,7 +113,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-bold">Settings</h1>
           <button
-            onClick={onClose}
+            onClick={async () => {
+              await invoke('hide_app');
+              onClose();
+            }}
             className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors"
           >
             Close (Esc)
