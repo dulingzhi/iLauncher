@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
@@ -6,8 +6,15 @@ import { useAppStore } from '../store/useAppStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { cn } from '../utils/cn';
 
-export function SearchBox() {
+interface SearchBoxProps {
+  onOpenSettings: () => void;
+  onOpenPlugins: () => void;
+}
+
+export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsContainerRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
   const {
     query,
     selectedIndex,
@@ -28,6 +35,16 @@ export function SearchBox() {
   useEffect(() => {
     debouncedQuery(query);
   }, [query, debouncedQuery]);
+  
+  // 自动滚动到选中项
+  useEffect(() => {
+    if (selectedItemRef.current && resultsContainerRef.current) {
+      selectedItemRef.current.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      });
+    }
+  }, [selectedIndex]);
   
   // 监听窗口显示事件，自动聚焦输入框
   useEffect(() => {
@@ -80,6 +97,18 @@ export function SearchBox() {
     if (results.length === 0) return;
     
     const result = results[selectedIndex];
+    
+    // 检查是否是 Settings 或 Plugin Manager
+    if (result.id === 'settings') {
+      onOpenSettings();
+      return;
+    }
+    
+    if (result.id === 'plugin_manager') {
+      onOpenPlugins();
+      return;
+    }
+    
     const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
     
     if (defaultAction) {
@@ -122,10 +151,14 @@ export function SearchBox() {
       
       {/* 结果列表 */}
       {results.length > 0 && (
-        <div className="bg-white/95 backdrop-blur-sm max-h-[500px] overflow-y-auto">
+        <div 
+          ref={resultsContainerRef}
+          className="bg-white/95 backdrop-blur-sm max-h-[500px] overflow-y-auto"
+        >
           {results.map((result, index) => (
             <ResultItem
               key={result.id}
+              ref={index === selectedIndex ? selectedItemRef : null}
               result={result}
               isSelected={index === selectedIndex}
               onClick={() => useAppStore.setState({ selectedIndex: index })}
@@ -143,34 +176,39 @@ interface ResultItemProps {
   onClick: () => void;
 }
 
-function ResultItem({ result, isSelected, onClick }: ResultItemProps) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors",
-        isSelected ? "bg-blue-50" : "hover:bg-gray-50"
-      )}
-      onClick={onClick}
-    >
-      {/* 图标 */}
-      <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-2xl">
-        {result.icon.type === 'emoji' ? result.icon.data : '📄'}
-      </div>
-      
-      {/* 文本 */}
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-900 truncate">
-          {result.title}
-        </div>
-        {result.subtitle && (
-          <div className="text-xs text-gray-500 truncate">
-            {result.subtitle}
-          </div>
+const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
+  ({ result, isSelected, onClick }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors",
+          isSelected ? "bg-blue-50" : "hover:bg-gray-50"
         )}
+        onClick={onClick}
+      >
+        {/* 图标 */}
+        <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-2xl">
+          {result.icon.type === 'emoji' ? result.icon.data : '📄'}
+        </div>
+        
+        {/* 文本 */}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-gray-900 truncate">
+            {result.title}
+          </div>
+          {result.subtitle && (
+            <div className="text-xs text-gray-500 truncate">
+              {result.subtitle}
+            </div>
+          )}
+        </div>
+        
+        {/* 分数（调试用） */}
+        {/* <div className="text-xs text-gray-400">{result.score}</div> */}
       </div>
-      
-      {/* 分数（调试用） */}
-      {/* <div className="text-xs text-gray-400">{result.score}</div> */}
-    </div>
-  );
-}
+    );
+  }
+);
+
+ResultItem.displayName = 'ResultItem';

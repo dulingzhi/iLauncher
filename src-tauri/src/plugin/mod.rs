@@ -6,6 +6,7 @@ pub mod file_search;
 pub mod web_search;
 pub mod clipboard;
 pub mod unit_converter;
+pub mod settings;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -39,6 +40,8 @@ impl PluginManager {
         manager.register(Box::new(calculator::CalculatorPlugin::new()));
         manager.register(Box::new(web_search::WebSearchPlugin::new()));
         manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
+        manager.register(Box::new(settings::SettingsPlugin::new()));
+        manager.register(Box::new(settings::PluginManagerPlugin::new()));
         
         let clipboard = clipboard::ClipboardPlugin::new();
         clipboard.init().await;
