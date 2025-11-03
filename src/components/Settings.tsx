@@ -183,34 +183,28 @@ export const Settings: React.FC = () => {
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Theme</label>
-                  <div className="flex gap-4">
-                    <button
-                      onClick={() => setConfig({
-                        ...config,
-                        appearance: { ...config.appearance, theme: 'dark' }
-                      })}
-                      className={`flex-1 py-3 rounded border-2 transition-colors ${
-                        config.appearance.theme === 'dark'
-                          ? 'border-blue-500 bg-gray-700'
-                          : 'border-gray-600 bg-gray-800 hover:border-gray-500'
-                      }`}
-                    >
-                      🌙 Dark
-                    </button>
-                    <button
-                      onClick={() => setConfig({
-                        ...config,
-                        appearance: { ...config.appearance, theme: 'light' }
-                      })}
-                      className={`flex-1 py-3 rounded border-2 transition-colors ${
-                        config.appearance.theme === 'light'
-                          ? 'border-blue-500 bg-gray-700'
-                          : 'border-gray-600 bg-gray-800 hover:border-gray-500'
-                      }`}
-                    >
-                      ☀️ Light
-                    </button>
+                  <label className="block text-sm font-medium mb-3">Theme</label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
+                      <button
+                        key={themeName}
+                        onClick={() => setConfig({
+                          ...config,
+                          appearance: { ...config.appearance, theme: themeName }
+                        })}
+                        className={`py-3 px-4 rounded-lg border-2 transition-colors capitalize ${
+                          config.appearance.theme === themeName
+                            ? 'border-blue-500 bg-gray-700'
+                            : 'border-gray-600 bg-gray-800 hover:border-gray-500'
+                        }`}
+                      >
+                        {themeName === 'dark' && '🌙 Dark'}
+                        {themeName === 'light' && '☀️ Light'}
+                        {themeName === 'blue' && '💙 Blue'}
+                        {themeName === 'purple' && '💜 Purple'}
+                        {themeName === 'green' && '💚 Green'}
+                      </button>
+                    ))}
                   </div>
                 </div>
 

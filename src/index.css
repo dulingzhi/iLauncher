@@ -3,6 +3,19 @@
 @tailwind utilities;
 
 :root {
+  /* 主题颜色变量 */
+  --color-primary: #3b82f6;
+  --color-secondary: #8b5cf6;
+  --color-background: #111827;
+  --color-surface: #1f2937;
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #d1d5db;
+  --color-text-muted: #9ca3af;
+  --color-border: #374151;
+  --color-hover: #374151;
+  --color-accent: #60a5fa;
+  
+  /* Shadcn 变量 */
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
   --primary: 222.2 47.4% 11.2%;
