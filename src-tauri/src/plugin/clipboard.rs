@@ -193,7 +193,7 @@ impl Plugin for ClipboardPlugin {
             };
             
             let preview = if item.content.len() > 100 {
-                Some(item.content.clone())
+                Some(Preview::Text(item.content.clone()))
             } else {
                 None
             };
