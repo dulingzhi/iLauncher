@@ -25,6 +25,18 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
     loadPlugins();
   }, []);
 
+  // ESC 键监听
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   const loadPlugins = async () => {
     try {
       const result = await invoke<PluginMetadata[]>('get_plugins');
