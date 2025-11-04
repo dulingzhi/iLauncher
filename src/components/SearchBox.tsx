@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
+import { ActionPanel } from './ActionPanel';
 import { cn } from '../utils/cn';
 
 interface SearchBoxProps {
@@ -15,6 +16,9 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
+  const [showActionPanel, setShowActionPanel] = useState(false);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  
   const {
     query,
     selectedIndex,
@@ -27,6 +31,9 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
   
   const { results, loading, debouncedQuery } = useQuery();
   const executeAction = useExecuteAction();
+  
+  // 获取当前选中结果的操作列表
+  const currentActions = results.length > 0 ? results[selectedIndex]?.actions || [] : [];
   
   useEffect(() => {
     setResults(results);
@@ -69,7 +76,42 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
     };
   }, [reset]);
   
+  // 当选中的结果改变时，重置 Action Panel 状态
+  useEffect(() => {
+    setShowActionPanel(false);
+    setSelectedActionIndex(0);
+  }, [selectedIndex]);
+  
   const handleKeyDown = async (e: React.KeyboardEvent) => {
+    // 如果 Action Panel 显示中，处理左右键选择操作
+    if (showActionPanel && currentActions.length > 0) {
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          setSelectedActionIndex(prev => 
+            prev > 0 ? prev - 1 : currentActions.length - 1
+          );
+          return;
+          
+        case 'ArrowRight':
+          e.preventDefault();
+          setSelectedActionIndex(prev => 
+            prev < currentActions.length - 1 ? prev + 1 : 0
+          );
+          return;
+          
+        case 'Enter':
+          e.preventDefault();
+          await handleExecuteAction(currentActions[selectedActionIndex].id);
+          return;
+          
+        case 'Escape':
+          e.preventDefault();
+          setShowActionPanel(false);
+          return;
+      }
+    }
+    
     switch (e.key) {
       case 'Enter':
         e.preventDefault();
@@ -84,6 +126,15 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
       case 'ArrowUp':
         e.preventDefault();
         selectPrev();
+        break;
+        
+      case 'Tab':
+        e.preventDefault();
+        // Tab 键切换显示 Action Panel
+        if (results.length > 0 && currentActions.length > 0) {
+          setShowActionPanel(!showActionPanel);
+          setSelectedActionIndex(0);
+        }
         break;
         
       case 'Escape':
@@ -112,11 +163,22 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
     const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
     
     if (defaultAction) {
-      await executeAction(result.id, defaultAction.id, result.plugin_id, result.title);
-      
-      if (!defaultAction.prevent_hide) {
-        await handleHide();
-      }
+      await handleExecuteAction(defaultAction.id);
+    }
+  };
+  
+  const handleExecuteAction = async (actionId: string) => {
+    if (results.length === 0) return;
+    
+    const result = results[selectedIndex];
+    const action = result.actions.find(a => a.id === actionId);
+    
+    if (!action) return;
+    
+    await executeAction(result.id, actionId, result.plugin_id, result.title);
+    
+    if (!action.prevent_hide) {
+      await handleHide();
     }
   };
   
@@ -151,20 +213,41 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
       
       {/* 结果列表 */}
       {results.length > 0 && (
-        <div 
-          ref={resultsContainerRef}
-          className="bg-white/95 backdrop-blur-sm max-h-[500px] overflow-y-auto"
-        >
-          {results.map((result, index) => (
-            <ResultItem
-              key={result.id}
-              ref={index === selectedIndex ? selectedItemRef : null}
-              result={result}
-              isSelected={index === selectedIndex}
-              onClick={() => useAppStore.setState({ selectedIndex: index })}
+        <>
+          <div 
+            ref={resultsContainerRef}
+            className="bg-white/95 backdrop-blur-sm max-h-[400px] overflow-y-auto"
+          >
+            {results.map((result, index) => (
+              <ResultItem
+                key={result.id}
+                ref={index === selectedIndex ? selectedItemRef : null}
+                result={result}
+                isSelected={index === selectedIndex}
+                onClick={() => useAppStore.setState({ selectedIndex: index })}
+              />
+            ))}
+          </div>
+          
+          {/* Action Panel */}
+          {showActionPanel && currentActions.length > 0 && (
+            <ActionPanel
+              actions={currentActions}
+              selectedActionIndex={selectedActionIndex}
+              onActionSelect={setSelectedActionIndex}
+              onExecuteAction={handleExecuteAction}
             />
-          ))}
-        </div>
+          )}
+          
+          {/* 提示信息 */}
+          {!showActionPanel && currentActions.length > 0 && (
+            <div className="px-4 py-2 bg-gray-50/95 backdrop-blur-sm border-t border-gray-200">
+              <div className="text-xs text-gray-500 text-center">
+                按 <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-700">Tab</kbd> 查看更多操作
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

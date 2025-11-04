@@ -381,6 +381,100 @@ impl FileSearchPlugin {
         
         Self::open_file(&folder).await
     }
+    
+    /// 复制到剪贴板
+    async fn copy_to_clipboard(text: &str) -> Result<()> {
+        let text = text.to_string();
+        
+        tokio::task::spawn_blocking(move || {
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, EmptyClipboard, SetClipboardData};
+                use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+                use windows::Win32::Foundation::HANDLE;
+                
+                unsafe {
+                    if OpenClipboard(None).is_ok() {
+                        EmptyClipboard().ok();
+                        
+                        // 转换为 UTF-16
+                        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+                        let len = wide.len() * 2;
+                        
+                        // 分配全局内存
+                        if let Ok(hglb) = GlobalAlloc(GMEM_MOVEABLE, len) {
+                            let lptstr = GlobalLock(hglb);
+                            std::ptr::copy_nonoverlapping(
+                                wide.as_ptr() as *const u8,
+                                lptstr as *mut u8,
+                                len,
+                            );
+                            GlobalUnlock(hglb).ok();
+                            
+                            SetClipboardData(13, HANDLE(hglb.0)).ok(); // CF_UNICODETEXT = 13
+                        }
+                        
+                        CloseClipboard().ok();
+                    }
+                }
+            }
+            
+            #[cfg(target_os = "macos")]
+            {
+                use std::process::Command;
+                use std::io::Write;
+                
+                let mut child = Command::new("pbcopy")
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()?;
+                
+                if let Some(mut stdin) = child.stdin.take() {
+                    stdin.write_all(text.as_bytes())?;
+                }
+                child.wait()?;
+            }
+            
+            #[cfg(target_os = "linux")]
+            {
+                use std::process::Command;
+                use std::io::Write;
+                
+                let mut child = Command::new("xclip")
+                    .args(["-selection", "clipboard"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()?;
+                
+                if let Some(mut stdin) = child.stdin.take() {
+                    stdin.write_all(text.as_bytes())?;
+                }
+                child.wait()?;
+            }
+            
+            tracing::info!("Copied to clipboard: {}", text);
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?
+    }
+    
+    /// 删除文件
+    async fn delete_file(path: &str) -> Result<()> {
+        let path = path.to_string();
+        
+        tokio::task::spawn_blocking(move || {
+            let path_buf = PathBuf::from(&path);
+            
+            if path_buf.is_dir() {
+                std::fs::remove_dir_all(&path_buf)?;
+                tracing::info!("Deleted directory: {}", path);
+            } else {
+                std::fs::remove_file(&path_buf)?;
+                tracing::info!("Deleted file: {}", path);
+            }
+            
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?
+    }
 }
 
 #[async_trait]
@@ -473,19 +567,43 @@ impl Plugin for FileSearchPlugin {
                             actions: vec![
                                 Action {
                                     id: "open".to_string(),
-                                    name: if file.is_dir { "Open Folder" } else { "Open File" }.to_string(),
-                                    icon: None,
+                                    name: if file.is_dir { "打开文件夹" } else { "打开文件" }.to_string(),
+                                    icon: Some(WoxImage::emoji("📂")),
                                     is_default: true,
                                     prevent_hide: false,
                                     hotkey: None,
                                 },
                                 Action {
                                     id: "open_folder".to_string(),
-                                    name: "Open Containing Folder".to_string(),
-                                    icon: None,
+                                    name: "打开所在位置".to_string(),
+                                    icon: Some(WoxImage::emoji("📁")),
                                     is_default: false,
                                     prevent_hide: false,
-                                    hotkey: Some("Ctrl+Enter".to_string()),
+                                    hotkey: Some("Ctrl+O".to_string()),
+                                },
+                                Action {
+                                    id: "copy_path".to_string(),
+                                    name: "复制路径".to_string(),
+                                    icon: Some(WoxImage::emoji("📋")),
+                                    is_default: false,
+                                    prevent_hide: true,
+                                    hotkey: Some("Ctrl+C".to_string()),
+                                },
+                                Action {
+                                    id: "copy_name".to_string(),
+                                    name: "复制文件名".to_string(),
+                                    icon: Some(WoxImage::emoji("📝")),
+                                    is_default: false,
+                                    prevent_hide: true,
+                                    hotkey: None,
+                                },
+                                Action {
+                                    id: "delete".to_string(),
+                                    name: "删除".to_string(),
+                                    icon: Some(WoxImage::emoji("🗑️")),
+                                    is_default: false,
+                                    prevent_hide: false,
+                                    hotkey: Some("Del".to_string()),
                                 },
                             ],
                         });
@@ -513,9 +631,22 @@ impl Plugin for FileSearchPlugin {
             "open_folder" => {
                 Self::open_containing_folder(result_id).await?;
             }
+            "copy_path" => {
+                Self::copy_to_clipboard(result_id).await?;
+            }
+            "copy_name" => {
+                let path_buf = PathBuf::from(result_id);
+                if let Some(file_name) = path_buf.file_name() {
+                    Self::copy_to_clipboard(&file_name.to_string_lossy()).await?;
+                }
+            }
+            "delete" => {
+                Self::delete_file(result_id).await?;
+            }
             _ => {}
         }
         
         Ok(())
     }
 }
+
