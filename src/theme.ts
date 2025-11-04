@@ -15,6 +15,7 @@ export interface Theme {
     border: string;
     hover: string;
     accent: string;
+    primaryAlpha: string; // 选中状态背景色
   };
 }
 
@@ -33,6 +34,7 @@ export const darkTheme: Theme = {
     border: '#334155',      // 可见的边框
     hover: '#2d3748',       // 悬停背景
     accent: '#60a5fa',
+    primaryAlpha: 'rgba(96, 165, 250, 0.25)', // 选中状态
   },
 };
 
@@ -51,6 +53,7 @@ export const lightTheme: Theme = {
     border: '#e2e8f0',
     hover: '#f1f5f9',
     accent: '#3b82f6',
+    primaryAlpha: 'rgba(37, 99, 235, 0.15)', // 选中状态
   },
 };
 
@@ -69,6 +72,7 @@ export const blueTheme: Theme = {
     border: '#075985',
     hover: '#164e63',
     accent: '#38bdf8',
+    primaryAlpha: 'rgba(56, 189, 248, 0.25)', // 选中状态
   },
 };
 
@@ -87,6 +91,7 @@ export const purpleTheme: Theme = {
     border: '#4c1d95',
     hover: '#5b21b6',
     accent: '#c084fc',
+    primaryAlpha: 'rgba(192, 132, 252, 0.25)', // 选中状态
   },
 };
 
@@ -105,6 +110,7 @@ export const greenTheme: Theme = {
     border: '#065f46',
     hover: '#047857',
     accent: '#34d399',
+    primaryAlpha: 'rgba(52, 211, 153, 0.25)', // 选中状态
   },
 };
 
@@ -133,4 +139,5 @@ export const applyTheme = (theme: Theme) => {
   root.style.setProperty('--color-border', theme.colors.border);
   root.style.setProperty('--color-hover', theme.colors.hover);
   root.style.setProperty('--color-accent', theme.colors.accent);
+  root.style.setProperty('--color-primary-alpha', theme.colors.primaryAlpha);
 };

@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { ContextMenu } from './ContextMenu';
-import { cn } from '../utils/cn';
 
 interface SearchBoxProps {
   onOpenSettings: () => void;
@@ -345,10 +344,22 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
     return (
       <div
         ref={ref}
-        className={cn(
-          "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors",
-          isSelected ? "bg-primary/10" : "hover:bg-hover"
-        )}
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
+        style={{
+          backgroundColor: isSelected 
+            ? 'var(--color-primary-alpha)' 
+            : 'transparent',
+        }}
+        onMouseEnter={(e) => {
+          if (!isSelected) {
+            e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isSelected) {
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }
+        }}
         onClick={onClick}
         onContextMenu={onContextMenu}
       >
