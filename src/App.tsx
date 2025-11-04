@@ -44,6 +44,21 @@ function App() {
     };
     loadPreviewSetting();
   }, []);
+
+  // 当从设置页面返回时重新加载预览设置
+  useEffect(() => {
+    if (currentView === 'search') {
+      const reloadPreviewSetting = async () => {
+        try {
+          const config = await invoke<any>('load_config');
+          setShowPreview(config.appearance.show_preview ?? true);
+        } catch (error) {
+          console.error('Failed to reload preview setting:', error);
+        }
+      };
+      reloadPreviewSetting();
+    }
+  }, [currentView]);
   
   useEffect(() => {
     const appWindow = getCurrentWindow();

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
-import { applyTheme } from '../theme';
+import { applyTheme, Theme, themes } from '../theme';
+import { ThemeEditor } from './ThemeEditor';
 
 interface AppConfig {
   general: {
@@ -43,6 +44,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'plugins' | 'advanced'>('general');
+  const [showThemeEditor, setShowThemeEditor] = useState(false);
+  const [editingTheme, setEditingTheme] = useState<Theme | null>(null);
   const { setTheme } = useThemeStore();
 
   useEffect(() => {
@@ -90,6 +93,22 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   };
 
+  const handleSaveTheme = (theme: Theme) => {
+    if (!config) return;
+    
+    // 应用主题
+    applyTheme(theme);
+    // 更新配置
+    setConfig({
+      ...config,
+      appearance: { ...config.appearance, theme: theme.name }
+    });
+    // 关闭编辑器
+    setShowThemeEditor(false);
+    setEditingTheme(null);
+    alert(`Theme "${theme.name}" created successfully!`);
+  };
+
   if (loading || !config) {
     return (
       <div className="flex items-center justify-center h-full bg-[#1e1e1e]">
@@ -99,9 +118,22 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   }
 
   return (
-    <div className="h-full bg-[#1e1e1e] text-gray-200 flex flex-col">
+    <>
+      {/* 主题编辑器 */}
+      {showThemeEditor && editingTheme && (
+        <ThemeEditor
+          initialTheme={editingTheme}
+          onSave={handleSaveTheme}
+          onClose={() => {
+            setShowThemeEditor(false);
+            setEditingTheme(null);
+          }}
+        />
+      )}
+
+      <div className="h-full bg-[#1e1e1e] text-gray-200 flex flex-col">
       {/* 顶部标题栏 - VS Code 风格 */}
-      <div className="flex items-center justify-between px-5 py-2.5 bg-[#2d2d30] border-b border-[#3e3e42]">
+      <div className="flex items-center justify-between px-6 py-2 bg-[#2d2d30] border-b border-[#3e3e42]">
         <h1 className="text-sm font-medium text-gray-100">Settings</h1>
         <button
           onClick={async () => {
@@ -117,8 +149,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       {/* 主体：侧边栏 + 内容区 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧导航 - VS Code 侧边栏风格 */}
-        <div className="w-52 bg-[#252526] border-r border-[#3e3e42] overflow-y-auto">
-          <nav className="py-2">
+        <div className="w-48 bg-[#252526] border-r border-[#3e3e42] overflow-y-auto flex-shrink-0">
+          <nav className="py-1">
             {[
               { key: 'general' as const, label: t('settings.general') || 'General' },
               { key: 'appearance' as const, label: t('settings.appearance') || 'Appearance' },
@@ -128,7 +160,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
-                className={`w-full px-5 py-2 text-left text-[13px] transition-colors ${
+                className={`w-full px-4 py-2 text-left text-sm transition-colors ${
                   activeTab === key
                     ? 'bg-[#37373d] text-white border-l-2 border-[#007acc]'
                     : 'text-gray-400 hover:bg-[#2a2d2e] hover:text-gray-200'
@@ -142,15 +174,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
         {/* 右侧内容区 */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-8 py-6">
-            <div className="max-w-2xl">
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="max-w-4xl">
               {/* General 设置 */}
               {activeTab === 'general' && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                   <div>
-                    <h2 className="text-lg font-semibold mb-4 text-gray-100">General Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">General Settings</h2>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
                           Global Hotkey
@@ -228,11 +260,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
               {/* Appearance 设置 */}
               {activeTab === 'appearance' && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                   <div>
-                    <h2 className="text-lg font-semibold mb-4 text-gray-100">Appearance Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">Appearance Settings</h2>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
                           {t('settings.theme') || 'Theme'}
@@ -305,10 +337,30 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                         <p className="mt-3 text-xs text-gray-500">Choose your preferred color theme for the search interface</p>
                       </div>
 
-                      {/* 主题预览 */}
+                      {/* 自定义主题编辑器 */}
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
-                          Theme Preview
+                          Custom Theme
+                        </label>
+                        <button
+                          onClick={() => {
+                            // 使用当前主题作为基础
+                            const currentThemeName = config.appearance.theme;
+                            const currentTheme = themes[currentThemeName];
+                            setEditingTheme(currentTheme || themes.dark);
+                            setShowThemeEditor(true);
+                          }}
+                          className="px-4 py-2 rounded border border-[#555] bg-[#3c3c3c] text-gray-200 text-sm hover:border-[#666] hover:text-white transition-colors"
+                        >
+                          🎨 Create Custom Theme
+                        </button>
+                        <p className="mt-2 text-xs text-gray-500">Create your own custom theme with a visual editor</p>
+                      </div>
+
+                      {/* 主题导入导出 */}
+                      <div>
+                        <label className="block text-sm font-medium mb-3 text-gray-300">
+                          Import/Export
                         </label>
                         <div 
                           className="p-4 rounded-lg border transition-all duration-300"
@@ -537,9 +589,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
               {/* Plugins 设置 */}
               {activeTab === 'plugins' && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                   <div>
-                    <h2 className="text-lg font-semibold mb-4 text-gray-100">Plugin Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">Plugin Settings</h2>
                     <div className="space-y-2">
                       {config.plugins.enabled_plugins.map((plugin) => (
                         <div
@@ -564,9 +616,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
               {/* Advanced 设置 */}
               {activeTab === 'advanced' && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                   <div>
-                    <h2 className="text-lg font-semibold mb-4 text-gray-100">Advanced Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">Advanced Settings</h2>
                     
                     <div className="space-y-3">
                       <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
@@ -626,6 +678,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
