@@ -3,7 +3,7 @@
     "placeholder": "输入以搜索...",
     "loading": "加载中...",
     "noResults": "无结果",
-    "showMoreActions": "查看更多操作"
+    "rightClickForActions": "右键单击查看更多操作"
   },
   "actions": {
     "open": "打开",
@@ -29,6 +29,8 @@
     "searchDelayDesc": "输入后延迟搜索的时间（毫秒）",
     "maxResults": "最大结果数",
     "maxResultsDesc": "搜索结果的最大显示数量",
+    "clearOnHide": "隐藏时清空搜索",
+    "clearOnHideDesc": "窗口隐藏时自动清空搜索输入",
     "theme": "主题",
     "themeDesc": "选择界面主题",
     "themes": {

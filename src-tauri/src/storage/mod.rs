@@ -19,17 +19,33 @@ pub struct GeneralConfig {
     pub hotkey: String,
     pub search_delay: u64,
     pub max_results: usize,
+    #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_true")]
+    pub clear_on_hide: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppearanceConfig {
     pub theme: String,
+    #[serde(default = "default_zh_language")]
     pub language: String,
     pub window_width: u32,
     pub window_height: u32,
     pub font_size: u32,
     pub transparency: u8,
+}
+
+fn default_language() -> String {
+    "en".to_string()
+}
+
+fn default_zh_language() -> String {
+    "zh-CN".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +70,7 @@ impl Default for AppConfig {
                 search_delay: 100,
                 max_results: 10,
                 language: "en".to_string(),
+                clear_on_hide: true,
             },
             appearance: AppearanceConfig {
                 theme: "dark".to_string(),

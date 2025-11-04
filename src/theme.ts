@@ -21,17 +21,17 @@ export interface Theme {
 export const darkTheme: Theme = {
   name: 'dark',
   colors: {
-    primary: '#3b82f6',
-    secondary: '#8b5cf6',
-    background: '#111827',
-    surface: '#1f2937',
+    primary: '#60a5fa',     // 更亮的蓝色
+    secondary: '#a78bfa',   // 更亮的紫色
+    background: '#0f172a',  // 深蓝灰
+    surface: '#1e293b',     // 较浅的表面
     text: {
-      primary: '#f9fafb',
-      secondary: '#d1d5db',
-      muted: '#9ca3af',
+      primary: '#f1f5f9',   // 非常亮的白色
+      secondary: '#cbd5e1', // 明亮的灰色
+      muted: '#94a3b8',     // 中等灰色
     },
-    border: '#374151',
-    hover: '#374151',
+    border: '#334155',      // 可见的边框
+    hover: '#2d3748',       // 悬停背景
     accent: '#60a5fa',
   },
 };
@@ -42,14 +42,14 @@ export const lightTheme: Theme = {
     primary: '#2563eb',
     secondary: '#7c3aed',
     background: '#ffffff',
-    surface: '#f3f4f6',
+    surface: '#f8fafc',     // 更浅的背景
     text: {
-      primary: '#111827',
-      secondary: '#4b5563',
-      muted: '#6b7280',
+      primary: '#0f172a',   // 深色文字
+      secondary: '#475569', // 中灰文字
+      muted: '#64748b',     // 浅灰文字
     },
-    border: '#e5e7eb',
-    hover: '#e5e7eb',
+    border: '#e2e8f0',
+    hover: '#f1f5f9',
     accent: '#3b82f6',
   },
 };
@@ -57,17 +57,17 @@ export const lightTheme: Theme = {
 export const blueTheme: Theme = {
   name: 'blue',
   colors: {
-    primary: '#0ea5e9',
-    secondary: '#06b6d4',
-    background: '#0c4a6e',
-    surface: '#075985',
+    primary: '#38bdf8',     // 亮青色
+    secondary: '#22d3ee',
+    background: '#082f49',  // 深蓝
+    surface: '#0c4a6e',     // 中蓝
     text: {
-      primary: '#f0f9ff',
-      secondary: '#bae6fd',
-      muted: '#7dd3fc',
+      primary: '#f0f9ff',   // 极亮白
+      secondary: '#bae6fd', // 亮青色
+      muted: '#7dd3fc',     // 中青色
     },
-    border: '#0369a1',
-    hover: '#0369a1',
+    border: '#075985',
+    hover: '#164e63',
     accent: '#38bdf8',
   },
 };
@@ -75,17 +75,17 @@ export const blueTheme: Theme = {
 export const purpleTheme: Theme = {
   name: 'purple',
   colors: {
-    primary: '#a855f7',
-    secondary: '#c084fc',
-    background: '#3b0764',
-    surface: '#581c87',
+    primary: '#c084fc',     // 亮紫色
+    secondary: '#e879f9',
+    background: '#1e1b4b',  // 深紫蓝
+    surface: '#312e81',     // 中紫
     text: {
-      primary: '#faf5ff',
-      secondary: '#e9d5ff',
-      muted: '#d8b4fe',
+      primary: '#faf5ff',   // 极亮白
+      secondary: '#e9d5ff', // 亮紫
+      muted: '#d8b4fe',     // 中紫
     },
-    border: '#6b21a8',
-    hover: '#6b21a8',
+    border: '#4c1d95',
+    hover: '#5b21b6',
     accent: '#c084fc',
   },
 };
@@ -93,16 +93,16 @@ export const purpleTheme: Theme = {
 export const greenTheme: Theme = {
   name: 'green',
   colors: {
-    primary: '#10b981',
-    secondary: '#34d399',
-    background: '#064e3b',
-    surface: '#065f46',
+    primary: '#34d399',     // 亮绿色
+    secondary: '#6ee7b7',
+    background: '#022c22',  // 深绿
+    surface: '#064e3b',     // 中绿
     text: {
-      primary: '#ecfdf5',
-      secondary: '#a7f3d0',
-      muted: '#6ee7b7',
+      primary: '#ecfdf5',   // 极亮白
+      secondary: '#a7f3d0', // 亮绿
+      muted: '#6ee7b7',     // 中绿
     },
-    border: '#047857',
+    border: '#065f46',
     hover: '#047857',
     accent: '#34d399',
   },

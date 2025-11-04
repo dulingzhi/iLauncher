@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-  /* 主题颜色变量 */
-  --color-primary: #3b82f6;
-  --color-secondary: #8b5cf6;
-  --color-background: #111827;
-  --color-surface: #1f2937;
-  --color-text-primary: #f9fafb;
-  --color-text-secondary: #d1d5db;
-  --color-text-muted: #9ca3af;
-  --color-border: #374151;
-  --color-hover: #374151;
+  /* 主题颜色变量 - 优化后的深色主题 */
+  --color-primary: #60a5fa;
+  --color-secondary: #a78bfa;
+  --color-background: #0f172a;
+  --color-surface: #1e293b;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-border: #334155;
+  --color-hover: #2d3748;
   --color-accent: #60a5fa;
   
   /* Shadcn 变量 */

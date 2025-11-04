@@ -624,26 +624,35 @@ impl Plugin for FileSearchPlugin {
     }
     
     async fn execute(&self, result_id: &str, action_id: &str) -> Result<()> {
+        tracing::info!("FileSearch::execute - result_id: {}, action_id: {}", result_id, action_id);
+        
         match action_id {
             "open" => {
+                tracing::info!("Executing 'open' action");
                 Self::open_file(result_id).await?;
             }
             "open_folder" => {
+                tracing::info!("Executing 'open_folder' action");
                 Self::open_containing_folder(result_id).await?;
             }
             "copy_path" => {
+                tracing::info!("Executing 'copy_path' action");
                 Self::copy_to_clipboard(result_id).await?;
             }
             "copy_name" => {
+                tracing::info!("Executing 'copy_name' action");
                 let path_buf = PathBuf::from(result_id);
                 if let Some(file_name) = path_buf.file_name() {
                     Self::copy_to_clipboard(&file_name.to_string_lossy()).await?;
                 }
             }
             "delete" => {
+                tracing::info!("Executing 'delete' action");
                 Self::delete_file(result_id).await?;
             }
-            _ => {}
+            _ => {
+                tracing::warn!("Unknown action_id: {}", action_id);
+            }
         }
         
         Ok(())

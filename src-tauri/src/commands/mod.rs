@@ -50,7 +50,7 @@ pub async fn execute_action(
     let _ = stats.record_plugin_usage(&plugin_id).await;
     
     // 执行操作
-    manager.execute(&result_id, &action_id).await.map_err(|e| e.to_string())
+    manager.execute(&result_id, &action_id, &plugin_id).await.map_err(|e| e.to_string())
 }
 
 /// 获取插件列表

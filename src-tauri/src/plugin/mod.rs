@@ -93,14 +93,18 @@ impl PluginManager {
     }
     
     /// 执行动作
-    pub async fn execute(&self, result_id: &str, action_id: &str) -> Result<()> {
+    pub async fn execute(&self, result_id: &str, action_id: &str, plugin_id: &str) -> Result<()> {
+        tracing::info!("PluginManager::execute - plugin_id: {}, action_id: {}, result_id: {}", plugin_id, action_id, result_id);
+        
+        // 根据 plugin_id 查找对应的插件
         for plugin in &self.plugins {
-            if let Ok(()) = plugin.execute(result_id, action_id).await {
-                return Ok(());
+            if plugin.metadata().id == plugin_id {
+                tracing::info!("Found matching plugin: {}", plugin.metadata().name);
+                return plugin.execute(result_id, action_id).await;
             }
         }
         
-        Err(anyhow::anyhow!("No plugin handled the action"))
+        Err(anyhow::anyhow!("Plugin '{}' not found", plugin_id))
     }
     
     /// 获取所有插件元数据

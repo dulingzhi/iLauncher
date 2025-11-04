@@ -3,7 +3,7 @@
     "placeholder": "Type to search...",
     "loading": "Loading...",
     "noResults": "No results",
-    "showMoreActions": "Press Tab for more actions"
+    "rightClickForActions": "Right-click for more actions"
   },
   "actions": {
     "open": "Open",
@@ -29,6 +29,8 @@
     "searchDelayDesc": "Delay before searching after typing (milliseconds)",
     "maxResults": "Max Results",
     "maxResultsDesc": "Maximum number of search results to display",
+    "clearOnHide": "Clear on Hide",
+    "clearOnHideDesc": "Automatically clear search input when window is hidden",
     "theme": "Theme",
     "themeDesc": "Choose interface theme",
     "themes": {

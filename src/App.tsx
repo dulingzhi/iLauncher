@@ -46,11 +46,11 @@ function App() {
   return (
     <div className="w-full h-screen flex items-start justify-center pt-4 px-4">
       {currentView === 'search' ? (
-        <div className="w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden bg-white/95 backdrop-blur-sm">
+        <div className="w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98 }}>
           <SearchBox onOpenSettings={() => setCurrentView('settings')} onOpenPlugins={() => setCurrentView('plugins')} />
         </div>
       ) : (
-        <div className="w-full h-full overflow-auto">
+        <div className="w-full h-full overflow-auto rounded-lg" style={{ backgroundColor: 'var(--color-background)', opacity: 0.98 }}>
           {currentView === 'settings' && <Settings onClose={() => setCurrentView('search')} />}
           {currentView === 'plugins' && <PluginManager onClose={() => setCurrentView('search')} />}
         </div>
