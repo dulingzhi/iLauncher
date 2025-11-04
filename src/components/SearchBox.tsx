@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { ContextMenu } from './ContextMenu';
+import { highlightMatch } from '../utils/pinyinSearch';
 
 interface SearchBoxProps {
   onOpenSettings: () => void;
@@ -295,6 +296,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
               ref={index === selectedIndex ? selectedItemRef : null}
               result={result}
               isSelected={index === selectedIndex}
+              query={query}
               onClick={() => {
                 useAppStore.setState({ selectedIndex: index });
                 // 延迟执行,确保选中状态已更新
@@ -346,10 +348,11 @@ interface ResultItemProps {
   isSelected: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  query: string;
 }
 
 const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
-  ({ result, isSelected, onClick, onContextMenu }, ref) => {
+  ({ result, isSelected, onClick, onContextMenu, query }, ref) => {
     return (
       <div
         ref={ref}
@@ -380,11 +383,11 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
         {/* 文本 */}
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
-            {result.title}
+            {highlightMatch(result.title, query)}
           </div>
           {result.subtitle && (
             <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
-              {result.subtitle}
+              {highlightMatch(result.subtitle, query)}
             </div>
           )}
         </div>
