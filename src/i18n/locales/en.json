@@ -1,0 +1,85 @@
+{
+  "search": {
+    "placeholder": "Type to search...",
+    "loading": "Loading...",
+    "noResults": "No results",
+    "showMoreActions": "Press Tab for more actions"
+  },
+  "actions": {
+    "open": "Open",
+    "openFolder": "Open Folder",
+    "openFile": "Open File",
+    "openLocation": "Open Containing Folder",
+    "copyPath": "Copy Path",
+    "copyName": "Copy File Name",
+    "delete": "Delete",
+    "runAsAdmin": "Run as Administrator",
+    "availableActions": "Available Actions",
+    "default": "Default"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "appearance": "Appearance",
+    "plugins": "Plugins",
+    "advanced": "Advanced",
+    "hotkey": "Global Hotkey",
+    "hotkeyDesc": "Press this key combination to show/hide the launcher",
+    "searchDelay": "Search Delay",
+    "searchDelayDesc": "Delay before searching after typing (milliseconds)",
+    "maxResults": "Max Results",
+    "maxResultsDesc": "Maximum number of search results to display",
+    "theme": "Theme",
+    "themeDesc": "Choose interface theme",
+    "themes": {
+      "dark": "Dark",
+      "light": "Light",
+      "blue": "Blue",
+      "purple": "Purple",
+      "green": "Green"
+    },
+    "windowWidth": "Window Width",
+    "windowHeight": "Window Height",
+    "fontSize": "Font Size",
+    "enabledPlugins": "Enabled Plugins",
+    "disabledPlugins": "Disabled Plugins",
+    "startWithSystem": "Start with System",
+    "showInTray": "Show in System Tray",
+    "enableAnalytics": "Enable Anonymous Analytics",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "language": "Language",
+    "languageDesc": "Select interface language"
+  },
+  "plugins": {
+    "title": "Plugin Manager",
+    "installed": "Installed",
+    "available": "Available",
+    "name": "Name",
+    "description": "Description",
+    "version": "Version",
+    "author": "Author",
+    "keywords": "Keywords"
+  },
+  "fileSearch": {
+    "indexing": "⚡ Indexing files...",
+    "scanInProgress": "Ultra-fast scan in progress"
+  },
+  "calculator": {
+    "result": "Result"
+  },
+  "webSearch": {
+    "searchWith": "Search with {{engine}}"
+  },
+  "clipboard": {
+    "history": "Clipboard History",
+    "empty": "Clipboard is empty"
+  },
+  "common": {
+    "yes": "Yes",
+    "no": "No",
+    "confirm": "Confirm",
+    "ok": "OK"
+  }
+}

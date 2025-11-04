@@ -1,0 +1,85 @@
+{
+  "search": {
+    "placeholder": "输入以搜索...",
+    "loading": "加载中...",
+    "noResults": "无结果",
+    "showMoreActions": "查看更多操作"
+  },
+  "actions": {
+    "open": "打开",
+    "openFolder": "打开文件夹",
+    "openFile": "打开文件",
+    "openLocation": "打开所在位置",
+    "copyPath": "复制路径",
+    "copyName": "复制文件名",
+    "delete": "删除",
+    "runAsAdmin": "以管理员身份运行",
+    "availableActions": "可用操作",
+    "default": "默认"
+  },
+  "settings": {
+    "title": "设置",
+    "general": "常规",
+    "appearance": "外观",
+    "plugins": "插件",
+    "advanced": "高级",
+    "hotkey": "全局快捷键",
+    "hotkeyDesc": "按下快捷键显示/隐藏启动器",
+    "searchDelay": "搜索延迟",
+    "searchDelayDesc": "输入后延迟搜索的时间（毫秒）",
+    "maxResults": "最大结果数",
+    "maxResultsDesc": "搜索结果的最大显示数量",
+    "theme": "主题",
+    "themeDesc": "选择界面主题",
+    "themes": {
+      "dark": "暗色",
+      "light": "亮色",
+      "blue": "蓝色",
+      "purple": "紫色",
+      "green": "绿色"
+    },
+    "windowWidth": "窗口宽度",
+    "windowHeight": "窗口高度",
+    "fontSize": "字体大小",
+    "enabledPlugins": "已启用的插件",
+    "disabledPlugins": "已禁用的插件",
+    "startWithSystem": "开机启动",
+    "showInTray": "显示在系统托盘",
+    "enableAnalytics": "启用匿名统计",
+    "save": "保存",
+    "cancel": "取消",
+    "close": "关闭",
+    "language": "语言",
+    "languageDesc": "选择界面语言"
+  },
+  "plugins": {
+    "title": "插件管理器",
+    "installed": "已安装",
+    "available": "可用",
+    "name": "名称",
+    "description": "描述",
+    "version": "版本",
+    "author": "作者",
+    "keywords": "关键词"
+  },
+  "fileSearch": {
+    "indexing": "⚡ 文件索引中...",
+    "scanInProgress": "超快扫描进行中"
+  },
+  "calculator": {
+    "result": "结果"
+  },
+  "webSearch": {
+    "searchWith": "使用 {{engine}} 搜索"
+  },
+  "clipboard": {
+    "history": "剪贴板历史",
+    "empty": "剪贴板为空"
+  },
+  "common": {
+    "yes": "是",
+    "no": "否",
+    "confirm": "确认",
+    "ok": "确定"
+  }
+}

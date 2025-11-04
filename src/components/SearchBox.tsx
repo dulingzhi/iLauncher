@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { ActionPanel } from './ActionPanel';
@@ -13,6 +14,7 @@ interface SearchBoxProps {
 }
 
 export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
@@ -202,7 +204,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type to search..."
+          placeholder={t('search.placeholder')}
           className="flex-1 text-lg bg-transparent outline-none"
           autoFocus
         />
@@ -243,7 +245,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
           {!showActionPanel && currentActions.length > 0 && (
             <div className="px-4 py-2 bg-gray-50/95 backdrop-blur-sm border-t border-gray-200">
               <div className="text-xs text-gray-500 text-center">
-                按 <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-700">Tab</kbd> 查看更多操作
+                {t('search.showMoreActions')}
               </div>
             </div>
           )}

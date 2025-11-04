@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
 import { applyTheme, getTheme } from '../theme';
 
@@ -12,6 +13,7 @@ interface AppConfig {
   };
   appearance: {
     theme: string;
+    language: string;
     window_width: number;
     window_height: number;
     font_size: number;
@@ -34,11 +36,12 @@ interface SettingsProps {
 }
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
+  const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'plugins' | 'advanced'>('general');
-  const { setTheme, currentTheme } = useThemeStore();
+  const { setTheme } = useThemeStore();
 
   useEffect(() => {
     loadConfig();
@@ -75,10 +78,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     try {
       await invoke('save_config', { config });
       
-      // 应用主题
+      // 应用主题和语言
       setTheme(config.appearance.theme);
+      i18n.changeLanguage(config.appearance.language);
       
-      alert('Settings saved successfully!');
+      alert(t('settings.save') + ' ' + t('common.ok'));
     } catch (error) {
       console.error('Failed to save config:', error);
       alert('Failed to save settings');
@@ -205,11 +209,27 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         {activeTab === 'appearance' && (
           <div className="space-y-3">
             <div className="bg-gray-800 rounded-lg p-3">
-              <h2 className="text-base font-semibold mb-2">Appearance</h2>
+              <h2 className="text-base font-semibold mb-2">{t('settings.appearance')}</h2>
               
               <div className="space-y-2">
+                {/* 语言选择 */}
                 <div>
-                  <label className="block text-xs font-medium mb-1">Theme</label>
+                  <label className="block text-xs font-medium mb-1">{t('settings.language')}</label>
+                  <select
+                    value={config.appearance.language}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      appearance: { ...config.appearance, language: e.target.value }
+                    })}
+                    className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-xs"
+                  >
+                    <option value="zh-CN">中文</option>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium mb-1">{t('settings.theme')}</label>
                   <div className="grid grid-cols-5 gap-1.5">
                     {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
                       <button

@@ -25,6 +25,7 @@ pub struct GeneralConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppearanceConfig {
     pub theme: String,
+    pub language: String,
     pub window_width: u32,
     pub window_height: u32,
     pub font_size: u32,
@@ -56,6 +57,7 @@ impl Default for AppConfig {
             },
             appearance: AppearanceConfig {
                 theme: "dark".to_string(),
+                language: "zh-CN".to_string(),
                 window_width: 800,
                 window_height: 500,
                 font_size: 14,

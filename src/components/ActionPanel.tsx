@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { cn } from '../utils/cn';
 import type { Action } from '../types';
 
@@ -14,12 +15,14 @@ export function ActionPanel({
   onActionSelect,
   onExecuteAction,
 }: ActionPanelProps) {
+  const { t } = useTranslation();
+  
   if (actions.length === 0) return null;
 
   return (
     <div className="border-t border-gray-200 bg-gray-50/95 backdrop-blur-sm">
       <div className="px-4 py-2">
-        <div className="text-xs font-medium text-gray-500 mb-2">可用操作</div>
+        <div className="text-xs font-medium text-gray-500 mb-2">{t('actions.availableActions')}</div>
         <div className="flex flex-wrap gap-2">
           {actions.map((action, index) => (
             <button
@@ -55,7 +58,7 @@ export function ActionPanel({
                     ? "bg-blue-600"
                     : "bg-blue-100 text-blue-700"
                 )}>
-                  默认
+                  {t('actions.default')}
                 </span>
               )}
             </button>
