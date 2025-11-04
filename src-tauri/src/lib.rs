@@ -7,6 +7,7 @@ mod preview;
 mod storage;
 mod statistics;
 
+use storage::StorageManager;
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -57,15 +58,25 @@ pub fn run() {
             });
             app.manage(plugin_manager);
             
+            // 加载配置
+            let config = tauri::async_runtime::block_on(async {
+                let storage = StorageManager::new().expect("Failed to create storage manager");
+                storage.load_config().await.unwrap_or_default()
+            });
+            
             // 初始化热键管理器
             let mut hotkey_manager = hotkey::HotkeyManager::new()
                 .expect("Failed to create hotkey manager");
             
-            // 注册主热键
-            hotkey_manager.register_main_hotkey()
-                .expect("Failed to register main hotkey");
+            // 从配置注册热键
+            let hotkey_str = &config.general.hotkey;
+            if let Err(e) = hotkey_manager.register_from_string(hotkey_str) {
+                tracing::warn!("Failed to register hotkey from config: {}, using default", e);
+                hotkey_manager.register_main_hotkey()
+                    .expect("Failed to register main hotkey");
+            }
             
-            // 使用 Box::leak 让热键管理器永久存活，防止全局热键注册失效
+            // 使用 Box::leak 让热键管理器永久存活
             Box::leak(Box::new(hotkey_manager));
             
             // 启动热键监听器

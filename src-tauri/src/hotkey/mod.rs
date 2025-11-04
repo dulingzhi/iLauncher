@@ -5,17 +5,14 @@ use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
 };
-use std::sync::Arc;
 use tauri::{AppHandle, Manager, Emitter};
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, BringWindowToTop, ShowWindow, SW_SHOW, GetForegroundWindow};
+use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, BringWindowToTop, ShowWindow, SW_SHOW};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_KEYUP, VK_MENU};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::GetCurrentThreadId;
 
 pub struct HotkeyManager {
     manager: GlobalHotKeyManager,
@@ -61,12 +58,139 @@ impl HotkeyManager {
         }
     }
 
+    /// 从字符串注册热键
+    pub fn register_from_string(&mut self, hotkey_str: &str) -> Result<HotKey> {
+        let hotkey = Self::parse_hotkey(hotkey_str)?;
+        
+        match self.manager.register(hotkey) {
+            Ok(_) => {
+                self.main_hotkey = Some(hotkey);
+                tracing::info!("Registered hotkey from string '{}': {:?}", hotkey_str, hotkey);
+                Ok(hotkey)
+            }
+            Err(e) => {
+                if e.to_string().contains("already registered") {
+                    tracing::warn!("Hotkey already registered: {:?}", hotkey);
+                    self.main_hotkey = Some(hotkey);
+                    Ok(hotkey)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
     /// 取消注册热键
     pub fn unregister(&mut self) -> Result<()> {
         if let Some(hotkey) = self.main_hotkey {
             self.manager.unregister(hotkey)?;
             self.main_hotkey = None;
         }
+        Ok(())
+    }
+
+    /// 解析热键字符串 (例如: "Alt+Space", "Ctrl+Shift+A")
+    pub fn parse_hotkey(hotkey_str: &str) -> Result<HotKey> {
+        let parts: Vec<&str> = hotkey_str.split('+').map(|s| s.trim()).collect();
+        
+        if parts.is_empty() {
+            anyhow::bail!("Empty hotkey string");
+        }
+        
+        let mut modifiers = Modifiers::empty();
+        let mut key_code: Option<Code> = None;
+        
+        for part in parts {
+            match part.to_lowercase().as_str() {
+                "ctrl" | "control" => modifiers |= Modifiers::CONTROL,
+                "alt" => modifiers |= Modifiers::ALT,
+                "shift" => modifiers |= Modifiers::SHIFT,
+                "super" | "win" | "cmd" | "command" => modifiers |= Modifiers::SUPER,
+                // 字母键
+                "a" => key_code = Some(Code::KeyA),
+                "b" => key_code = Some(Code::KeyB),
+                "c" => key_code = Some(Code::KeyC),
+                "d" => key_code = Some(Code::KeyD),
+                "e" => key_code = Some(Code::KeyE),
+                "f" => key_code = Some(Code::KeyF),
+                "g" => key_code = Some(Code::KeyG),
+                "h" => key_code = Some(Code::KeyH),
+                "i" => key_code = Some(Code::KeyI),
+                "j" => key_code = Some(Code::KeyJ),
+                "k" => key_code = Some(Code::KeyK),
+                "l" => key_code = Some(Code::KeyL),
+                "m" => key_code = Some(Code::KeyM),
+                "n" => key_code = Some(Code::KeyN),
+                "o" => key_code = Some(Code::KeyO),
+                "p" => key_code = Some(Code::KeyP),
+                "q" => key_code = Some(Code::KeyQ),
+                "r" => key_code = Some(Code::KeyR),
+                "s" => key_code = Some(Code::KeyS),
+                "t" => key_code = Some(Code::KeyT),
+                "u" => key_code = Some(Code::KeyU),
+                "v" => key_code = Some(Code::KeyV),
+                "w" => key_code = Some(Code::KeyW),
+                "x" => key_code = Some(Code::KeyX),
+                "y" => key_code = Some(Code::KeyY),
+                "z" => key_code = Some(Code::KeyZ),
+                // 特殊键
+                "space" => key_code = Some(Code::Space),
+                "enter" | "return" => key_code = Some(Code::Enter),
+                "tab" => key_code = Some(Code::Tab),
+                "escape" | "esc" => key_code = Some(Code::Escape),
+                "backspace" => key_code = Some(Code::Backspace),
+                // 数字键
+                "0" => key_code = Some(Code::Digit0),
+                "1" => key_code = Some(Code::Digit1),
+                "2" => key_code = Some(Code::Digit2),
+                "3" => key_code = Some(Code::Digit3),
+                "4" => key_code = Some(Code::Digit4),
+                "5" => key_code = Some(Code::Digit5),
+                "6" => key_code = Some(Code::Digit6),
+                "7" => key_code = Some(Code::Digit7),
+                "8" => key_code = Some(Code::Digit8),
+                "9" => key_code = Some(Code::Digit9),
+                // F键
+                "f1" => key_code = Some(Code::F1),
+                "f2" => key_code = Some(Code::F2),
+                "f3" => key_code = Some(Code::F3),
+                "f4" => key_code = Some(Code::F4),
+                "f5" => key_code = Some(Code::F5),
+                "f6" => key_code = Some(Code::F6),
+                "f7" => key_code = Some(Code::F7),
+                "f8" => key_code = Some(Code::F8),
+                "f9" => key_code = Some(Code::F9),
+                "f10" => key_code = Some(Code::F10),
+                "f11" => key_code = Some(Code::F11),
+                "f12" => key_code = Some(Code::F12),
+                _ => anyhow::bail!("Unknown key: {}", part),
+            }
+        }
+        
+        let code = key_code.ok_or_else(|| anyhow::anyhow!("No key code found in hotkey string"))?;
+        
+        let modifier_opt = if modifiers.is_empty() {
+            None
+        } else {
+            Some(modifiers)
+        };
+        
+        Ok(HotKey::new(modifier_opt, code))
+    }
+
+    /// 更新热键
+    pub fn update_hotkey(&mut self, hotkey_str: &str) -> Result<()> {
+        // 先取消注册旧热键
+        self.unregister()?;
+        
+        // 解析新热键
+        let hotkey = Self::parse_hotkey(hotkey_str)?;
+        
+        // 注册新热键
+        self.manager.register(hotkey)?;
+        self.main_hotkey = Some(hotkey);
+        
+        tracing::info!("Updated hotkey to: {:?}", hotkey);
         Ok(())
     }
 
