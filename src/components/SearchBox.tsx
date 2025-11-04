@@ -257,7 +257,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
     <div className="w-full">
       {/* 搜索输入框 */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border" style={{ backgroundColor: 'var(--color-surface)' }}>
-        <Search className="w-5 h-5 text-text-muted" />
+        <Search className="w-5 h-5" style={{ color: 'var(--color-text-muted)' }} />
         <input
           ref={inputRef}
           type="text"
@@ -265,11 +265,20 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('search.placeholder')}
-          className="flex-1 text-lg bg-transparent outline-none text-text-primary placeholder:text-text-muted"
+          className="flex-1 text-lg bg-transparent outline-none"
+          style={{ 
+            color: 'var(--color-text-primary)',
+          }}
           autoFocus
         />
         {loading && (
-          <div className="w-4 h-4 border-2 border-text-muted border-t-primary rounded-full animate-spin" />
+          <div 
+            className="w-4 h-4 border-2 rounded-full animate-spin" 
+            style={{ 
+              borderColor: 'var(--color-text-muted)',
+              borderTopColor: 'var(--color-primary)'
+            }}
+          />
         )}
       </div>
       
@@ -370,11 +379,11 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
         
         {/* 文本 */}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-text-primary truncate">
+          <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
             {result.title}
           </div>
           {result.subtitle && (
-            <div className="text-xs text-text-secondary truncate">
+            <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
               {result.subtitle}
             </div>
           )}
