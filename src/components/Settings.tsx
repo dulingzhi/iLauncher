@@ -233,35 +233,75 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-300">
+                        <label className="block text-sm font-medium mb-3 text-gray-300">
                           {t('settings.theme') || 'Theme'}
                         </label>
-                        <div className="flex gap-2">
-                          {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
-                            <button
-                              key={themeName}
-                              onClick={() => {
-                                setTheme(themeName);
-                                setConfig({
-                                  ...config,
-                                  appearance: { ...config.appearance, theme: themeName }
-                                });
-                              }}
-                              className={`px-4 py-2 rounded border text-sm transition-colors ${
-                                config.appearance.theme === themeName
-                                  ? 'border-[#007acc] bg-[#007acc]/20 text-white'
-                                  : 'border-[#555] bg-[#3c3c3c] text-gray-400 hover:border-[#666] hover:text-gray-200'
-                              }`}
-                            >
-                              {themeName === 'dark' && '🌙 Dark'}
-                              {themeName === 'light' && '☀️ Light'}
-                              {themeName === 'blue' && '💙 Blue'}
-                              {themeName === 'purple' && '💜 Purple'}
-                              {themeName === 'green' && '💚 Green'}
-                            </button>
-                          ))}
+                        
+                        {/* 基础主题 */}
+                        <div className="mb-3">
+                          <p className="text-xs text-gray-500 mb-2">Basic Themes</p>
+                          <div className="flex flex-wrap gap-2">
+                            {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
+                              <button
+                                key={themeName}
+                                onClick={() => {
+                                  setTheme(themeName);
+                                  setConfig({
+                                    ...config,
+                                    appearance: { ...config.appearance, theme: themeName }
+                                  });
+                                }}
+                                className={`px-4 py-2 rounded border text-sm transition-colors ${
+                                  config.appearance.theme === themeName
+                                    ? 'border-[#007acc] bg-[#007acc]/20 text-white'
+                                    : 'border-[#555] bg-[#3c3c3c] text-gray-400 hover:border-[#666] hover:text-gray-200'
+                                }`}
+                              >
+                                {themeName === 'dark' && '🌙 Dark'}
+                                {themeName === 'light' && '☀️ Light'}
+                                {themeName === 'blue' && '💙 Blue'}
+                                {themeName === 'purple' && '💜 Purple'}
+                                {themeName === 'green' && '💚 Green'}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <p className="mt-1 text-xs text-gray-500">Choose your preferred color theme for the search interface</p>
+
+                        {/* 流行主题 */}
+                        <div>
+                          <p className="text-xs text-gray-500 mb-2">Popular Themes</p>
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              { name: 'dracula', label: '🧛 Dracula' },
+                              { name: 'nord', label: '❄️ Nord' },
+                              { name: 'solarized-dark', label: '☀️ Solarized' },
+                              { name: 'monokai', label: '🎨 Monokai' },
+                              { name: 'one-dark', label: '⚫ One Dark' },
+                              { name: 'catppuccin', label: '🐱 Catppuccin' },
+                              { name: 'tokyo-night', label: '🌃 Tokyo Night' },
+                            ].map(({ name, label }) => (
+                              <button
+                                key={name}
+                                onClick={() => {
+                                  setTheme(name);
+                                  setConfig({
+                                    ...config,
+                                    appearance: { ...config.appearance, theme: name }
+                                  });
+                                }}
+                                className={`px-4 py-2 rounded border text-sm transition-colors ${
+                                  config.appearance.theme === name
+                                    ? 'border-[#007acc] bg-[#007acc]/20 text-white'
+                                    : 'border-[#555] bg-[#3c3c3c] text-gray-400 hover:border-[#666] hover:text-gray-200'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <p className="mt-3 text-xs text-gray-500">Choose your preferred color theme for the search interface</p>
                       </div>
 
                       <div>

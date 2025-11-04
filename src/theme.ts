@@ -114,12 +114,159 @@ export const greenTheme: Theme = {
   },
 };
 
+// Dracula Theme - 流行的吸血鬼配色
+export const draculaTheme: Theme = {
+  name: 'dracula',
+  colors: {
+    primary: '#ff79c6',     // 粉色
+    secondary: '#bd93f9',   // 紫色
+    background: '#282a36',  // 深灰蓝
+    surface: '#44475a',     // 中灰
+    text: {
+      primary: '#f8f8f2',   // 白色
+      secondary: '#f8f8f2', // 白色
+      muted: '#6272a4',     // 蓝灰
+    },
+    border: '#6272a4',
+    hover: '#44475a',
+    accent: '#ff79c6',
+    primaryAlpha: 'rgba(255, 121, 198, 0.25)',
+  },
+};
+
+// Nord Theme - 北欧风格配色
+export const nordTheme: Theme = {
+  name: 'nord',
+  colors: {
+    primary: '#88c0d0',     // 青色
+    secondary: '#81a1c1',   // 蓝色
+    background: '#2e3440',  // 深灰蓝
+    surface: '#3b4252',     // 中灰
+    text: {
+      primary: '#eceff4',   // 雪白
+      secondary: '#d8dee9', // 浅灰
+      muted: '#8fbcbb',     // 青灰
+    },
+    border: '#4c566a',
+    hover: '#434c5e',
+    accent: '#88c0d0',
+    primaryAlpha: 'rgba(136, 192, 208, 0.25)',
+  },
+};
+
+// Solarized Dark - 经典护眼配色
+export const solarizedDarkTheme: Theme = {
+  name: 'solarized-dark',
+  colors: {
+    primary: '#268bd2',     // 蓝色
+    secondary: '#2aa198',   // 青色
+    background: '#002b36',  // 深蓝灰
+    surface: '#073642',     // 中蓝灰
+    text: {
+      primary: '#fdf6e3',   // 米白
+      secondary: '#93a1a1', // 灰色
+      muted: '#657b83',     // 深灰
+    },
+    border: '#586e75',
+    hover: '#073642',
+    accent: '#268bd2',
+    primaryAlpha: 'rgba(38, 139, 210, 0.25)',
+  },
+};
+
+// Monokai Theme - Sublime Text 经典配色
+export const monokaiTheme: Theme = {
+  name: 'monokai',
+  colors: {
+    primary: '#66d9ef',     // 青色
+    secondary: '#a6e22e',   // 绿色
+    background: '#272822',  // 深灰绿
+    surface: '#3e3d32',     // 中灰
+    text: {
+      primary: '#f8f8f2',   // 白色
+      secondary: '#f8f8f2', // 白色
+      muted: '#75715e',     // 棕灰
+    },
+    border: '#75715e',
+    hover: '#3e3d32',
+    accent: '#66d9ef',
+    primaryAlpha: 'rgba(102, 217, 239, 0.25)',
+  },
+};
+
+// One Dark - VS Code 默认暗色主题
+export const oneDarkTheme: Theme = {
+  name: 'one-dark',
+  colors: {
+    primary: '#61afef',     // 蓝色
+    secondary: '#c678dd',   // 紫色
+    background: '#282c34',  // 深灰
+    surface: '#21252b',     // 更深灰
+    text: {
+      primary: '#abb2bf',   // 浅灰
+      secondary: '#abb2bf', // 浅灰
+      muted: '#5c6370',     // 中灰
+    },
+    border: '#3e4451',
+    hover: '#2c313c',
+    accent: '#61afef',
+    primaryAlpha: 'rgba(97, 175, 239, 0.25)',
+  },
+};
+
+// Catppuccin Mocha - 现代柔和配色
+export const catppuccinTheme: Theme = {
+  name: 'catppuccin',
+  colors: {
+    primary: '#89b4fa',     // 蓝色
+    secondary: '#cba6f7',   // 紫色
+    background: '#1e1e2e',  // 深灰
+    surface: '#313244',     // 中灰
+    text: {
+      primary: '#cdd6f4',   // 浅蓝白
+      secondary: '#bac2de', // 灰蓝
+      muted: '#7f849c',     // 中灰
+    },
+    border: '#45475a',
+    hover: '#313244',
+    accent: '#89b4fa',
+    primaryAlpha: 'rgba(137, 180, 250, 0.25)',
+  },
+};
+
+// Tokyo Night - 夜间东京风格
+export const tokyoNightTheme: Theme = {
+  name: 'tokyo-night',
+  colors: {
+    primary: '#7aa2f7',     // 蓝色
+    secondary: '#bb9af7',   // 紫色
+    background: '#1a1b26',  // 深蓝黑
+    surface: '#24283b',     // 深蓝灰
+    text: {
+      primary: '#c0caf5',   // 浅蓝白
+      secondary: '#a9b1d6', // 灰蓝
+      muted: '#565f89',     // 深蓝灰
+    },
+    border: '#414868',
+    hover: '#292e42',
+    accent: '#7aa2f7',
+    primaryAlpha: 'rgba(122, 162, 247, 0.25)',
+  },
+};
+
 export const themes: Record<string, Theme> = {
   dark: darkTheme,
   light: lightTheme,
   blue: blueTheme,
   purple: purpleTheme,
   green: greenTheme,
+  dracula: draculaTheme,
+  nord: nordTheme,
+  'solarized-dark': solarizedDarkTheme,
+  monokai: monokaiTheme,
+  'one-dark': oneDarkTheme,
+  catppuccin: catppuccinTheme,
+  'tokyo-night': tokyoNightTheme,
 };
 
 export const getTheme = (name: string): Theme => {
