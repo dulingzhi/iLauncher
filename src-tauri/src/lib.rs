@@ -1,4 +1,5 @@
 // iLauncher - 核心模块
+mod clipboard;
 mod commands;
 mod core;
 mod hotkey;
@@ -40,6 +41,12 @@ pub fn run() {
             commands::get_statistics,
             commands::clear_statistics,
             commands::read_file_preview,
+            commands::get_clipboard_history,
+            commands::copy_to_clipboard,
+            commands::update_clipboard_timestamp,
+            commands::delete_clipboard_item,
+            commands::toggle_clipboard_favorite,
+            commands::clear_clipboard_history,
         ])
         .setup(|app| {
             // 初始化存储管理器
@@ -51,6 +58,14 @@ pub fn run() {
             let statistics_manager = statistics::StatisticsManager::new()
                 .expect("Failed to create statistics manager");
             app.manage(statistics_manager);
+            
+            // 初始化剪贴板管理器
+            let clipboard_manager = clipboard::ClipboardManager::new();
+            app.manage(clipboard_manager);
+            
+            // 启动剪贴板监听
+            let app_handle = app.handle().clone();
+            clipboard::ClipboardManager::start_monitoring(app_handle);
             
             // 初始化插件管理器（阻塞等待异步初始化）
             let plugin_manager = tauri::async_runtime::block_on(async {

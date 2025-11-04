@@ -119,13 +119,31 @@
     "searchWith": "Search with {{engine}}"
   },
   "clipboard": {
-    "history": "Clipboard History",
-    "empty": "Clipboard is empty"
+    "title": "Clipboard History",
+    "search": "Search clipboard history...",
+    "clearAll": "Clear All",
+    "confirmClear": "Are you sure you want to clear all clipboard history?",
+    "empty": "No clipboard history yet",
+    "noResults": "No matching items found",
+    "copy": "Copy",
+    "favorite": "Favorite",
+    "total": "{{count}} items in total",
+    "image": "Image",
+    "justNow": "Just now",
+    "minutesAgo": "{{count}} minutes ago",
+    "minutesAgo_one": "{{count}} minute ago",
+    "hoursAgo": "{{count}} hours ago",
+    "hoursAgo_one": "{{count}} hour ago",
+    "daysAgo": "{{count}} days ago",
+    "daysAgo_one": "{{count}} day ago",
+    "history": "Clipboard History"
   },
   "common": {
     "yes": "Yes",
     "no": "No",
     "confirm": "Confirm",
-    "ok": "OK"
+    "ok": "OK",
+    "loading": "Loading...",
+    "delete": "Delete"
   }
 }

@@ -4,11 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
 import { PluginManager } from "./components/PluginManager";
+import ClipboardHistory from "./components/ClipboardHistory";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { useAppStore } from "./store/useAppStore";
 import "./index.css";
 
-type View = 'search' | 'settings' | 'plugins';
+type View = 'search' | 'settings' | 'plugins' | 'clipboard';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('search');
@@ -101,7 +102,11 @@ function App() {
             className={`rounded-lg shadow-2xl overflow-hidden ${showPreview && previewPath ? 'w-2/3' : 'w-full max-w-2xl'}`}
             style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98 }}
           >
-            <SearchBox onOpenSettings={() => setCurrentView('settings')} onOpenPlugins={() => setCurrentView('plugins')} />
+            <SearchBox 
+              onOpenSettings={() => setCurrentView('settings')} 
+              onOpenPlugins={() => setCurrentView('plugins')}
+              onOpenClipboard={() => setCurrentView('clipboard')}
+            />
           </div>
           
           {/* 预览面板区域 */}
@@ -118,6 +123,7 @@ function App() {
         <div className="w-full h-full overflow-auto rounded-lg" style={{ backgroundColor: 'var(--color-background)', opacity: 0.98 }}>
           {currentView === 'settings' && <Settings onClose={() => setCurrentView('search')} />}
           {currentView === 'plugins' && <PluginManager onClose={() => setCurrentView('search')} />}
+          {currentView === 'clipboard' && <ClipboardHistory />}
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 // Tauri Commands - 前端调用的 Rust 函数
 
+use crate::clipboard::ClipboardManager;
 use crate::core::types::*;
 use crate::plugin::PluginManager;
 use crate::preview;
@@ -175,5 +176,56 @@ pub async fn read_file_preview(path: String) -> Result<preview::FilePreview, Str
     preview::read_file_preview(&path).await.map_err(|e| e.to_string())
 }
 
+/// 获取剪贴板历史
+#[tauri::command]
+pub async fn get_clipboard_history(
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<Vec<crate::clipboard::ClipboardItem>, String> {
+    Ok(clipboard.get_history())
+}
 
+/// 复制到剪贴板
+#[tauri::command]
+pub async fn copy_to_clipboard(
+    content: String,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<(), String> {
+    clipboard.copy_to_clipboard(&content)
+}
+
+/// 更新剪贴板项时间戳
+#[tauri::command]
+pub async fn update_clipboard_timestamp(
+    id: String,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<bool, String> {
+    Ok(clipboard.update_timestamp(&id))
+}
+
+/// 删除剪贴板项
+#[tauri::command]
+pub async fn delete_clipboard_item(
+    id: String,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<bool, String> {
+    Ok(clipboard.delete_item(&id))
+}
+
+/// 切换收藏状态
+#[tauri::command]
+pub async fn toggle_clipboard_favorite(
+    id: String,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<bool, String> {
+    Ok(clipboard.toggle_favorite(&id))
+}
+
+/// 清空剪贴板历史
+#[tauri::command]
+pub async fn clear_clipboard_history(
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<(), String> {
+    clipboard.clear();
+    Ok(())
+}
 

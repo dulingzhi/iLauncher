@@ -119,13 +119,28 @@
     "searchWith": "使用 {{engine}} 搜索"
   },
   "clipboard": {
-    "history": "剪贴板历史",
-    "empty": "剪贴板为空"
+    "title": "剪贴板历史",
+    "search": "搜索剪贴板历史...",
+    "clearAll": "清空全部",
+    "confirmClear": "确定要清空所有剪贴板历史吗？",
+    "empty": "暂无剪贴板历史",
+    "noResults": "未找到匹配项",
+    "copy": "复制",
+    "favorite": "收藏",
+    "total": "共 {{count}} 项",
+    "image": "图片",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前",
+    "history": "剪贴板历史"
   },
   "common": {
     "yes": "是",
     "no": "否",
     "confirm": "确认",
-    "ok": "确定"
+    "ok": "确定",
+    "loading": "加载中...",
+    "delete": "删除"
   }
 }

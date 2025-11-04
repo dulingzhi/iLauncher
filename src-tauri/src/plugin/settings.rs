@@ -193,3 +193,96 @@ impl Plugin for PluginManagerPlugin {
         Ok(())
     }
 }
+
+/// Clipboard History 插件 - 快速打开剪贴板历史
+pub struct ClipboardHistoryPlugin {
+    metadata: PluginMetadata,
+}
+
+impl ClipboardHistoryPlugin {
+    pub fn new() -> Self {
+        Self {
+            metadata: PluginMetadata {
+                id: "ilauncher.plugin.clipboard_history".to_string(),
+                name: "Clipboard History".to_string(),
+                author: "iLauncher".to_string(),
+                version: "1.0.0".to_string(),
+                description: "View and manage clipboard history".to_string(),
+                icon: WoxImage::Emoji("📋".to_string()),
+                trigger_keywords: vec![
+                    "clipboard".to_string(),
+                    "clip".to_string(),
+                    "history".to_string(),
+                    "剪贴板".to_string(),
+                    "历史".to_string(),
+                ],
+                commands: vec![],
+                settings: vec![],
+                supported_os: vec!["Windows".to_string(), "macOS".to_string(), "Linux".to_string()],
+                plugin_type: PluginType::Native,
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl Plugin for ClipboardHistoryPlugin {
+    fn metadata(&self) -> &PluginMetadata {
+        &self.metadata
+    }
+
+    async fn query(&self, ctx: &QueryContext) -> Result<Vec<QueryResult>> {
+        let query = ctx.search.to_lowercase();
+        
+        // 匹配关键词
+        let keywords = ["clipboard", "clip", "history", "剪贴板", "历史"];
+        let matched = keywords.iter().any(|kw| kw.contains(&query) || query.contains(kw));
+        
+        if !matched && query.len() < 2 {
+            return Ok(vec![]);
+        }
+        
+        let score = if query.is_empty() {
+            0
+        } else if keywords.iter().any(|kw| kw.starts_with(&query)) {
+            100
+        } else if matched {
+            80
+        } else {
+            0
+        };
+        
+        if score == 0 {
+            return Ok(vec![]);
+        }
+        
+        Ok(vec![QueryResult {
+            id: "clipboard_history".to_string(),
+            title: "Clipboard History".to_string(),
+            subtitle: "View and manage clipboard history".to_string(),
+            icon: WoxImage::Emoji("📋".to_string()),
+            score,
+            plugin_id: self.metadata.id.clone(),
+            context_data: serde_json::Value::String("clipboard_history".to_string()),
+            actions: vec![Action {
+                id: "open".to_string(),
+                name: "Open Clipboard History".to_string(),
+                icon: None,
+                is_default: true,
+                hotkey: None,
+                prevent_hide: true,
+            }],
+            preview: None,
+            refreshable: false,
+            group: None,
+        }])
+    }
+
+    async fn execute(&self, result_id: &str, _action_id: &str) -> Result<()> {
+        if result_id != "clipboard_history" {
+            return Err(anyhow::anyhow!("Unknown result_id"));
+        }
+        
+        Ok(())
+    }
+}

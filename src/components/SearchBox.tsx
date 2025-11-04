@@ -11,9 +11,10 @@ import { highlightMatch } from '../utils/pinyinSearch';
 interface SearchBoxProps {
   onOpenSettings: () => void;
   onOpenPlugins: () => void;
+  onOpenClipboard: () => void;
 }
 
-export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
+export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: SearchBoxProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
@@ -167,7 +168,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
     
     const result = results[selectedIndex];
     
-    // 检查是否是 Settings 或 Plugin Manager
+    // 检查是否是 Settings 或 Plugin Manager 或 Clipboard
     if (result.id === 'settings') {
       onOpenSettings();
       return;
@@ -175,6 +176,11 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
     
     if (result.id === 'plugin_manager') {
       onOpenPlugins();
+      return;
+    }
+    
+    if (result.id === 'clipboard_history') {
+      onOpenClipboard();
       return;
     }
     
