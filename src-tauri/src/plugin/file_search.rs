@@ -10,12 +10,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use chrono::{DateTime, Utc};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct FileItem {
     path: String,
     name: String,
     is_dir: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FileCache {
+    version: u32,
+    created_at: DateTime<Utc>,
+    files: Vec<FileItem>,
+    name_index: HashMap<char, Vec<usize>>,
 }
 
 pub struct FileSearchPlugin {
@@ -83,46 +93,162 @@ impl FileSearchPlugin {
     
     /// 初始化并后台扫描文件
     pub async fn init(&self) {
-        tracing::info!("Starting ultra-fast file scan...");
+        tracing::info!("Starting file index initialization...");
         
-        // 立即返回，在后台扫描
         let files = self.files.clone();
         let name_index = self.name_index.clone();
         let paths = self.search_paths.clone();
         
         tokio::spawn(async move {
-            let start = std::time::Instant::now();
-            
-            if let Ok(scanned_files) = Self::scan_files(&paths).await {
-                let file_count = scanned_files.len();
-                
-                // 构建索引
-                let mut index: HashMap<char, Vec<usize>> = HashMap::new();
-                for (idx, file) in scanned_files.iter().enumerate() {
-                    if let Some(first_char) = file.name.chars().next() {
-                        let key = first_char.to_lowercase().next().unwrap_or(first_char);
-                        index.entry(key).or_insert_with(Vec::new).push(idx);
+            // 尝试加载缓存
+            if let Ok(cache_path) = Self::get_cache_path() {
+                if cache_path.exists() {
+                    tracing::info!("Loading file index from cache...");
+                    let start = std::time::Instant::now();
+                    
+                    match Self::load_cache(&cache_path).await {
+                        Ok(cache) => {
+                            let file_count = cache.files.len();
+                            
+                            // 加载缓存数据
+                            let mut files_guard = files.write().await;
+                            *files_guard = cache.files;
+                            
+                            let mut index_guard = name_index.write().await;
+                            *index_guard = cache.name_index;
+                            
+                            let elapsed = start.elapsed();
+                            let age = Utc::now() - cache.created_at;
+                            
+                            tracing::info!(
+                                "✓ Loaded {} files from cache in {:.3}s (cache age: {}h)",
+                                file_count,
+                                elapsed.as_secs_f32(),
+                                age.num_hours()
+                            );
+                            
+                            // 如果缓存超过24小时，后台重建索引
+                            if age.num_hours() > 24 {
+                                tracing::info!("Cache is old, rebuilding index in background...");
+                                let files_clone = files.clone();
+                                let name_index_clone = name_index.clone();
+                                let paths_clone = paths.clone();
+                                
+                                tokio::spawn(async move {
+                                    Self::rebuild_index(files_clone, name_index_clone, paths_clone).await;
+                                });
+                            }
+                            
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to load cache: {}, will rebuild", e);
+                        }
                     }
                 }
-                
-                // 保存数据
-                let mut files_guard = files.write().await;
-                *files_guard = scanned_files;
-                
-                let mut index_guard = name_index.write().await;
-                *index_guard = index;
-                
-                let elapsed = start.elapsed();
-                tracing::info!(
-                    "✓ Indexed {} files in {:.2}s ({:.0} files/sec)", 
-                    file_count,
-                    elapsed.as_secs_f32(),
-                    file_count as f32 / elapsed.as_secs_f32()
-                );
-            } else {
-                tracing::error!("File scan failed");
             }
+            
+            // 缓存不存在或加载失败，重建索引
+            Self::rebuild_index(files, name_index, paths).await;
         });
+    }
+    
+    /// 重建文件索引
+    async fn rebuild_index(
+        files: Arc<RwLock<Vec<FileItem>>>,
+        name_index: Arc<RwLock<HashMap<char, Vec<usize>>>>,
+        paths: Vec<PathBuf>,
+    ) {
+        let start = std::time::Instant::now();
+        
+        if let Ok(scanned_files) = Self::scan_files(&paths).await {
+            let file_count = scanned_files.len();
+            
+            // 构建索引
+            let mut index: HashMap<char, Vec<usize>> = HashMap::new();
+            for (idx, file) in scanned_files.iter().enumerate() {
+                if let Some(first_char) = file.name.chars().next() {
+                    let key = first_char.to_lowercase().next().unwrap_or(first_char);
+                    index.entry(key).or_insert_with(Vec::new).push(idx);
+                }
+            }
+            
+            // 保存到内存
+            let mut files_guard = files.write().await;
+            *files_guard = scanned_files.clone();
+            
+            let mut index_guard = name_index.write().await;
+            *index_guard = index.clone();
+            
+            let elapsed = start.elapsed();
+            tracing::info!(
+                "✓ Indexed {} files in {:.2}s ({:.0} files/sec)", 
+                file_count,
+                elapsed.as_secs_f32(),
+                file_count as f32 / elapsed.as_secs_f32()
+            );
+            
+            // 异步保存缓存
+            tokio::spawn(async move {
+                if let Ok(cache_path) = Self::get_cache_path() {
+                    let cache = FileCache {
+                        version: 1,
+                        created_at: Utc::now(),
+                        files: scanned_files,
+                        name_index: index,
+                    };
+                    
+                    if let Err(e) = Self::save_cache(&cache_path, &cache).await {
+                        tracing::error!("Failed to save cache: {}", e);
+                    } else {
+                        tracing::info!("✓ Cache saved to {:?}", cache_path);
+                    }
+                }
+            });
+        } else {
+            tracing::error!("File scan failed");
+        }
+    }
+    
+    /// 获取缓存文件路径
+    fn get_cache_path() -> Result<PathBuf> {
+        let app_data = directories::ProjectDirs::from("", "", "iLauncher")
+            .ok_or_else(|| anyhow::anyhow!("Failed to get app data directory"))?;
+        
+        let cache_dir = app_data.cache_dir();
+        std::fs::create_dir_all(cache_dir)?;
+        
+        Ok(cache_dir.join("file_index.bin"))
+    }
+    
+    /// 加载缓存
+    async fn load_cache(path: &PathBuf) -> Result<FileCache> {
+        let path = path.clone();
+        
+        tokio::task::spawn_blocking(move || {
+            let data = std::fs::read(path)?;
+            let cache: FileCache = bincode::deserialize(&data)?;
+            
+            // 验证版本
+            if cache.version != 1 {
+                anyhow::bail!("Unsupported cache version: {}", cache.version);
+            }
+            
+            Ok(cache)
+        })
+        .await?
+    }
+    
+    /// 保存缓存
+    async fn save_cache(path: &PathBuf, cache: &FileCache) -> Result<()> {
+        let path = path.clone();
+        let data = bincode::serialize(cache)?;
+        
+        tokio::task::spawn_blocking(move || {
+            std::fs::write(path, data)?;
+            Ok(())
+        })
+        .await?
     }
     
     /// 扫描文件（超快速）

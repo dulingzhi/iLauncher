@@ -3,12 +3,36 @@
 use crate::core::types::*;
 use crate::plugin::PluginManager;
 use crate::storage::{AppConfig, StorageManager};
+use crate::statistics::StatisticsManager;
 use tauri::State;
 
 /// 查询命令
 #[tauri::command]
-pub async fn query(input: String, manager: State<'_, PluginManager>) -> Result<Vec<QueryResult>, String> {
-    manager.query(&input).await.map_err(|e| e.to_string())
+pub async fn query(
+    input: String,
+    manager: State<'_, PluginManager>,
+    stats: State<'_, StatisticsManager>,
+) -> Result<Vec<QueryResult>, String> {
+    // 记录查询
+    if !input.is_empty() {
+        let _ = stats.record_query(&input).await;
+    }
+    
+    // 执行查询
+    let mut results = manager.query(&input).await.map_err(|e| e.to_string())?;
+    
+    // 根据历史使用情况调整分数
+    for result in &mut results {
+        if let Ok(usage_count) = stats.get_result_score(&result.id, &result.plugin_id).await {
+            // 给常用结果加分（每次使用加10分）
+            result.score += usage_count * 10;
+        }
+    }
+    
+    // 重新排序
+    results.sort_by(|a, b| b.score.cmp(&a.score));
+    
+    Ok(results)
 }
 
 /// 执行操作
@@ -16,8 +40,16 @@ pub async fn query(input: String, manager: State<'_, PluginManager>) -> Result<V
 pub async fn execute_action(
     result_id: String,
     action_id: String,
+    plugin_id: String,
+    title: String,
     manager: State<'_, PluginManager>,
+    stats: State<'_, StatisticsManager>,
 ) -> Result<(), String> {
+    // 记录统计
+    let _ = stats.record_result_click(&result_id, &plugin_id, &title).await;
+    let _ = stats.record_plugin_usage(&plugin_id).await;
+    
+    // 执行操作
     manager.execute(&result_id, &action_id).await.map_err(|e| e.to_string())
 }
 
@@ -82,6 +114,52 @@ pub async fn get_storage_paths(storage: State<'_, StorageManager>) -> Result<Sto
         data_dir: storage.get_data_dir().to_string_lossy().to_string(),
         cache_dir: storage.get_cache_dir().to_string_lossy().to_string(),
     })
+}
+
+/// 获取统计信息
+#[tauri::command]
+pub async fn get_statistics(stats: State<'_, StatisticsManager>) -> Result<Statistics, String> {
+    let top_queries = stats.get_top_queries(10).await.map_err(|e| e.to_string())?;
+    let top_results = stats.get_top_results(10).await.map_err(|e| e.to_string())?;
+    
+    Ok(Statistics {
+        top_queries: top_queries.into_iter().map(|q| QueryStatInfo {
+            query: q.query,
+            count: q.count,
+            last_used: q.last_used.to_rfc3339(),
+        }).collect(),
+        top_results: top_results.into_iter().map(|r| ResultStatInfo {
+            title: r.title,
+            count: r.count,
+            plugin_id: r.plugin_id,
+        }).collect(),
+    })
+}
+
+/// 清除统计数据
+#[tauri::command]
+pub async fn clear_statistics(stats: State<'_, StatisticsManager>) -> Result<(), String> {
+    stats.cleanup_old_data().await.map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct Statistics {
+    pub top_queries: Vec<QueryStatInfo>,
+    pub top_results: Vec<ResultStatInfo>,
+}
+
+#[derive(serde::Serialize)]
+pub struct QueryStatInfo {
+    pub query: String,
+    pub count: i32,
+    pub last_used: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ResultStatInfo {
+    pub title: String,
+    pub count: i32,
+    pub plugin_id: String,
 }
 
 #[derive(serde::Serialize)]

@@ -112,7 +112,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins }: SearchBoxProps) {
     const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
     
     if (defaultAction) {
-      await executeAction(result.id, defaultAction.id);
+      await executeAction(result.id, defaultAction.id, result.plugin_id, result.title);
       
       if (!defaultAction.prevent_hide) {
         await handleHide();

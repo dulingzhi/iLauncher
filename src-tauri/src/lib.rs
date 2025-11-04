@@ -4,6 +4,7 @@ mod core;
 mod hotkey;
 mod plugin;
 mod storage;
+mod statistics;
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -34,12 +35,19 @@ pub fn run() {
             commands::save_config,
             commands::clear_cache,
             commands::get_storage_paths,
+            commands::get_statistics,
+            commands::clear_statistics,
         ])
         .setup(|app| {
             // 初始化存储管理器
             let storage_manager = storage::StorageManager::new()
                 .expect("Failed to create storage manager");
             app.manage(storage_manager);
+            
+            // 初始化统计管理器
+            let statistics_manager = statistics::StatisticsManager::new()
+                .expect("Failed to create statistics manager");
+            app.manage(statistics_manager);
             
             // 初始化插件管理器（阻塞等待异步初始化）
             let plugin_manager = tauri::async_runtime::block_on(async {

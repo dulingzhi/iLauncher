@@ -37,9 +37,9 @@ export function useQuery() {
 }
 
 export function useExecuteAction() {
-  return useCallback(async (resultId: string, actionId: string) => {
+  return useCallback(async (resultId: string, actionId: string, pluginId: string, title: string) => {
     try {
-      await invoke('execute_action', { resultId, actionId });
+      await invoke('execute_action', { resultId, actionId, pluginId, title });
     } catch (error) {
       console.error('Execute action failed:', error);
     }
