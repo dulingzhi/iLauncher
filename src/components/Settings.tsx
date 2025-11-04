@@ -304,6 +304,89 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                         <p className="mt-3 text-xs text-gray-500">Choose your preferred color theme for the search interface</p>
                       </div>
 
+                      {/* 主题预览 */}
+                      <div>
+                        <label className="block text-sm font-medium mb-3 text-gray-300">
+                          Theme Preview
+                        </label>
+                        <div 
+                          className="p-4 rounded-lg border transition-all duration-300"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            borderColor: 'var(--color-border)'
+                          }}
+                        >
+                          {/* 搜索框预览 */}
+                          <div 
+                            className="flex items-center gap-3 px-4 py-3 rounded-lg mb-3"
+                            style={{ backgroundColor: 'var(--color-surface)' }}
+                          >
+                            <div className="w-5 h-5 rounded" style={{ backgroundColor: 'var(--color-primary)' }}></div>
+                            <div className="flex-1">
+                              <div className="h-2 rounded mb-2" style={{ backgroundColor: 'var(--color-text-primary)', width: '60%' }}></div>
+                              <div className="h-2 rounded" style={{ backgroundColor: 'var(--color-text-secondary)', width: '40%' }}></div>
+                            </div>
+                          </div>
+
+                          {/* 结果列表预览 */}
+                          <div className="space-y-2">
+                            <div 
+                              className="flex items-center gap-3 px-4 py-3 rounded-lg"
+                              style={{ backgroundColor: 'var(--color-primary-alpha)' }}
+                            >
+                              <div className="w-8 h-8 rounded" style={{ backgroundColor: 'var(--color-primary)' }}></div>
+                              <div className="flex-1">
+                                <div className="h-2 rounded mb-2" style={{ backgroundColor: 'var(--color-text-primary)', width: '50%' }}></div>
+                                <div className="h-1.5 rounded" style={{ backgroundColor: 'var(--color-text-muted)', width: '35%' }}></div>
+                              </div>
+                            </div>
+
+                            <div 
+                              className="flex items-center gap-3 px-4 py-3 rounded-lg"
+                              style={{ backgroundColor: 'var(--color-hover)' }}
+                            >
+                              <div className="w-8 h-8 rounded" style={{ backgroundColor: 'var(--color-secondary)' }}></div>
+                              <div className="flex-1">
+                                <div className="h-2 rounded mb-2" style={{ backgroundColor: 'var(--color-text-primary)', width: '45%' }}></div>
+                                <div className="h-1.5 rounded" style={{ backgroundColor: 'var(--color-text-muted)', width: '30%' }}></div>
+                              </div>
+                            </div>
+
+                            <div 
+                              className="flex items-center gap-3 px-4 py-3 rounded-lg"
+                              style={{ backgroundColor: 'transparent' }}
+                            >
+                              <div className="w-8 h-8 rounded" style={{ backgroundColor: 'var(--color-accent)' }}></div>
+                              <div className="flex-1">
+                                <div className="h-2 rounded mb-2" style={{ backgroundColor: 'var(--color-text-primary)', width: '55%' }}></div>
+                                <div className="h-1.5 rounded" style={{ backgroundColor: 'var(--color-text-muted)', width: '40%' }}></div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 颜色图例 */}
+                          <div className="mt-4 pt-4 grid grid-cols-4 gap-2 text-xs" style={{ borderTop: '1px solid var(--color-border)' }}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'var(--color-primary)' }}></div>
+                              <span style={{ color: 'var(--color-text-muted)' }}>Primary</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'var(--color-secondary)' }}></div>
+                              <span style={{ color: 'var(--color-text-muted)' }}>Secondary</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'var(--color-accent)' }}></div>
+                              <span style={{ color: 'var(--color-text-muted)' }}>Accent</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'var(--color-hover)' }}></div>
+                              <span style={{ color: 'var(--color-text-muted)' }}>Hover</span>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">Preview updates instantly when you select a theme</p>
+                      </div>
+
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
                           {t('settings.language') || 'Language'}
