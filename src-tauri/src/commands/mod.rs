@@ -174,3 +174,5 @@ pub struct StoragePaths {
 pub async fn read_file_preview(path: String) -> Result<preview::FilePreview, String> {
     preview::read_file_preview(&path).await.map_err(|e| e.to_string())
 }
+
+

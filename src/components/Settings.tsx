@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
+import { applyTheme } from '../theme';
 
 interface AppConfig {
   general: {
@@ -385,6 +386,75 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           </div>
                         </div>
                         <p className="mt-2 text-xs text-gray-500">Preview updates instantly when you select a theme</p>
+                      </div>
+
+                      {/* 主题导入/导出 */}
+                      <div>
+                        <label className="block text-sm font-medium mb-3 text-gray-300">
+                          Theme Import/Export
+                        </label>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => {
+                              // 导出当前主题
+                              const theme = useThemeStore.getState().theme;
+                              const themeJson = JSON.stringify(theme, null, 2);
+                              const blob = new Blob([themeJson], { type: 'application/json' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `${theme.name}-theme.json`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="px-4 py-2 rounded border border-[#555] bg-[#3c3c3c] text-gray-200 text-sm hover:border-[#666] hover:text-white transition-colors"
+                          >
+                            📤 Export Current Theme
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              // 创建文件输入元素
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = '.json';
+                              input.onchange = (e: any) => {
+                                const file = e.target?.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (event) => {
+                                    try {
+                                      const themeData = JSON.parse(event.target?.result as string);
+                                      // 验证主题格式
+                                      if (themeData.name && themeData.colors) {
+                                        // 应用导入的主题
+                                        applyTheme(themeData);
+                                        // 更新配置
+                                        setConfig({
+                                          ...config,
+                                          appearance: { ...config.appearance, theme: 'custom' }
+                                        });
+                                        alert(`Theme "${themeData.name}" imported successfully!`);
+                                      } else {
+                                        alert('Invalid theme file format');
+                                      }
+                                    } catch (error) {
+                                      alert('Failed to parse theme file: ' + error);
+                                    }
+                                  };
+                                  reader.readAsText(file);
+                                }
+                              };
+                              input.click();
+                            }}
+                            className="px-4 py-2 rounded border border-[#555] bg-[#3c3c3c] text-gray-200 text-sm hover:border-[#666] hover:text-white transition-colors"
+                          >
+                            📥 Import Theme
+                          </button>
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">Export themes to share or backup, import custom themes from JSON files</p>
                       </div>
 
                       <div>
