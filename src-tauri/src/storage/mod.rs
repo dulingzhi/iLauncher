@@ -38,6 +38,8 @@ pub struct AppearanceConfig {
     pub window_height: u32,
     pub font_size: u32,
     pub transparency: u8,
+    #[serde(default = "default_true")]
+    pub show_preview: bool,
 }
 
 fn default_language() -> String {
@@ -74,11 +76,12 @@ impl Default for AppConfig {
             },
             appearance: AppearanceConfig {
                 theme: "dark".to_string(),
-                language: "zh-CN".to_string(),
+                language: "zh".to_string(),
                 window_width: 800,
-                window_height: 500,
+                window_height: 600,
                 font_size: 14,
                 transparency: 95,
+                show_preview: true,
             },
             plugins: PluginsConfig {
                 enabled_plugins: vec![

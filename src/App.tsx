@@ -4,12 +4,46 @@ import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
 import { PluginManager } from "./components/PluginManager";
+import { PreviewPanel } from "./components/PreviewPanel";
+import { useAppStore } from "./store/useAppStore";
 import "./index.css";
 
 type View = 'search' | 'settings' | 'plugins';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('search');
+  const [showPreview, setShowPreview] = useState(true);
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const results = useAppStore((state) => state.results);
+  const selectedIndex = useAppStore((state) => state.selectedIndex);
+
+  // 当选中项变化时更新预览
+  useEffect(() => {
+    if (showPreview && results.length > 0 && selectedIndex >= 0 && selectedIndex < results.length) {
+      const result = results[selectedIndex];
+      // 只预览文件插件的结果
+      if (result.plugin_id === 'file_search') {
+        setPreviewPath(result.id);
+      } else {
+        setPreviewPath(null);
+      }
+    } else {
+      setPreviewPath(null);
+    }
+  }, [selectedIndex, results, showPreview]);
+
+  // 加载预览设置
+  useEffect(() => {
+    const loadPreviewSetting = async () => {
+      try {
+        const config = await invoke<any>('load_config');
+        setShowPreview(config.appearance.show_preview ?? true);
+      } catch (error) {
+        console.error('Failed to load preview setting:', error);
+      }
+    };
+    loadPreviewSetting();
+  }, []);
   
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -46,8 +80,24 @@ function App() {
   return (
     <div className="w-full h-screen flex items-start justify-center pt-4 px-4">
       {currentView === 'search' ? (
-        <div className="w-full max-w-2xl rounded-lg shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98 }}>
-          <SearchBox onOpenSettings={() => setCurrentView('settings')} onOpenPlugins={() => setCurrentView('plugins')} />
+        <div className="w-full max-w-5xl flex gap-4">
+          {/* 搜索框区域 */}
+          <div 
+            className={`rounded-lg shadow-2xl overflow-hidden ${showPreview && previewPath ? 'w-2/3' : 'w-full max-w-2xl'}`}
+            style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98 }}
+          >
+            <SearchBox onOpenSettings={() => setCurrentView('settings')} onOpenPlugins={() => setCurrentView('plugins')} />
+          </div>
+          
+          {/* 预览面板区域 */}
+          {showPreview && previewPath && (
+            <div 
+              className="w-1/3 rounded-lg shadow-2xl overflow-hidden"
+              style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98, maxHeight: '600px' }}
+            >
+              <PreviewPanel filePath={previewPath} />
+            </div>
+          )}
         </div>
       ) : (
         <div className="w-full h-full overflow-auto rounded-lg" style={{ backgroundColor: 'var(--color-background)', opacity: 0.98 }}>

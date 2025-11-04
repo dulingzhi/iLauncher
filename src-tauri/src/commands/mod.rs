@@ -2,6 +2,7 @@
 
 use crate::core::types::*;
 use crate::plugin::PluginManager;
+use crate::preview;
 use crate::storage::{AppConfig, StorageManager};
 use crate::statistics::StatisticsManager;
 use tauri::State;
@@ -166,4 +167,10 @@ pub struct ResultStatInfo {
 pub struct StoragePaths {
     pub data_dir: String,
     pub cache_dir: String,
+}
+
+/// 读取文件预览
+#[tauri::command]
+pub async fn read_file_preview(path: String) -> Result<preview::FilePreview, String> {
+    preview::read_file_preview(&path).await.map_err(|e| e.to_string())
 }

@@ -3,6 +3,7 @@ mod commands;
 mod core;
 mod hotkey;
 mod plugin;
+mod preview;
 mod storage;
 mod statistics;
 
@@ -37,6 +38,7 @@ pub fn run() {
             commands::get_storage_paths,
             commands::get_statistics,
             commands::clear_statistics,
+            commands::read_file_preview,
         ])
         .setup(|app| {
             // 初始化存储管理器

@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next';
 import { useEffect, useRef } from 'react';
 import { cn } from '../utils/cn';
 import type { Action } from '../types';
@@ -22,7 +21,6 @@ export function ContextMenu({
   onExecute,
   onClose,
 }: ContextMenuProps) {
-  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
 
   // 调整菜单位置防止超出屏幕

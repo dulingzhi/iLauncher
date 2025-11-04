@@ -18,6 +18,7 @@ interface AppConfig {
     window_height: number;
     font_size: number;
     transparency: number;
+    show_preview: boolean;
   };
   plugins: {
     enabled_plugins: string[];
@@ -312,6 +313,29 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           })}
                           className="w-full max-w-md accent-[#007acc]"
                         />
+                      </div>
+
+                      <div className="flex items-center justify-between py-2">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300">
+                            Enable File Preview
+                          </label>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Show file preview panel when selecting files in search results
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={config.appearance.show_preview}
+                            onChange={(e) => setConfig({
+                              ...config,
+                              appearance: { ...config.appearance, show_preview: e.target.checked }
+                            })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-[#3c3c3c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#007acc]"></div>
+                        </label>
                       </div>
                     </div>
                   </div>
