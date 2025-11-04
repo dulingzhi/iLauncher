@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
 import { applyTheme, Theme, themes } from '../theme';
 import { ThemeEditor } from './ThemeEditor';
+import { HotkeyRecorder } from './HotkeyRecorder';
 
 interface AppConfig {
   general: {
@@ -46,6 +47,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'plugins' | 'advanced'>('general');
   const [showThemeEditor, setShowThemeEditor] = useState(false);
   const [editingTheme, setEditingTheme] = useState<Theme | null>(null);
+  const [hotkeyError, setHotkeyError] = useState<string>('');
   const { setTheme } = useThemeStore();
 
   useEffect(() => {
@@ -187,17 +189,26 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                         <label className="block text-sm font-medium mb-2 text-gray-300">
                           Global Hotkey
                         </label>
-                        <input
-                          type="text"
+                        <HotkeyRecorder
                           value={config.general.hotkey}
-                          onChange={(e) => setConfig({
+                          onChange={(hotkey) => setConfig({
                             ...config,
-                            general: { ...config.general, hotkey: e.target.value }
+                            general: { ...config.general, hotkey }
                           })}
-                          className="w-full max-w-md px-3 py-2 text-sm bg-[#3c3c3c] text-gray-200 rounded border border-[#555] focus:border-[#007acc] focus:outline-none transition-colors"
-                          placeholder="Alt+Space"
+                          onValidation={(isValid, message) => {
+                            if (!isValid) {
+                              setHotkeyError(message || 'Invalid hotkey');
+                            } else {
+                              setHotkeyError('');
+                            }
+                          }}
                         />
-                        <p className="mt-1 text-xs text-gray-500">Press the key combination you want to use</p>
+                        {hotkeyError && (
+                          <p className="mt-1.5 text-xs text-red-400">{hotkeyError}</p>
+                        )}
+                        <p className="mt-1.5 text-xs text-gray-500">
+                          Click the input and press your desired key combination. Requires application restart to take effect.
+                        </p>
                       </div>
 
                       <div>
