@@ -39,6 +39,7 @@ interface ConfigState {
   config: AppConfig | null;
   loading: boolean;
   error: string | null;
+  _loadAttempted: boolean; // 跟踪是否已尝试加载
   loadConfig: () => Promise<void>;
   saveConfig: (config: AppConfig) => Promise<void>;
   updateConfig: (updates: Partial<AppConfig>) => void;
@@ -48,18 +49,24 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   config: null,
   loading: false,
   error: null,
+  _loadAttempted: false,
 
   loadConfig: async () => {
-    // 如果已经在加载或已加载，则跳过
+    // 如果已经在加载、已加载或已尝试加载，则跳过
     const state = get();
-    if (state.loading || state.config !== null) {
+    if (state.loading || state.config !== null || state._loadAttempted) {
+      console.log('Config load skipped:', { 
+        loading: state.loading, 
+        hasConfig: state.config !== null,
+        attempted: state._loadAttempted 
+      });
       return;
     }
 
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, _loadAttempted: true });
     try {
       const config = await invoke<AppConfig>('load_config');
-      console.log('Config loaded from backend');
+      console.log('✓ Config loaded from backend');
       set({ config, loading: false });
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -70,7 +77,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   saveConfig: async (config: AppConfig) => {
     try {
       await invoke('save_config', { config });
-      console.log('Config saved to backend');
+      console.log('✓ Config saved to backend');
       set({ config });
     } catch (error) {
       console.error('Failed to save config:', error);
