@@ -59,6 +59,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const config = await invoke<AppConfig>('load_config');
+      console.log('Config loaded from backend');
       set({ config, loading: false });
     } catch (error) {
       console.error('Failed to load config:', error);
@@ -69,6 +70,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   saveConfig: async (config: AppConfig) => {
     try {
       await invoke('save_config', { config });
+      console.log('Config saved to backend');
       set({ config });
     } catch (error) {
       console.error('Failed to save config:', error);

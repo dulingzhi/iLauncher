@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
+import { useConfigStore } from '../store/useConfigStore';
 import { applyTheme, Theme, themes } from '../theme';
 import { ThemeEditor } from './ThemeEditor';
 import { HotkeyRecorder } from './HotkeyRecorder';
@@ -41,6 +42,7 @@ interface SettingsProps {
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { t, i18n } = useTranslation();
+  const { config: globalConfig, saveConfig: saveGlobalConfig } = useConfigStore();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,9 +52,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [hotkeyError, setHotkeyError] = useState<string>('');
   const { setTheme } = useThemeStore();
 
+  // 从全局配置初始化本地编辑状态
   useEffect(() => {
-    loadConfig();
-  }, []);
+    if (globalConfig) {
+      setConfig(globalConfig as any);
+      setTheme(globalConfig.appearance.theme);
+      setLoading(false);
+    }
+  }, [globalConfig, setTheme]);
 
   useEffect(() => {
     const handleEsc = async (e: KeyboardEvent) => {
@@ -66,24 +73,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  const loadConfig = async () => {
-    try {
-      const loadedConfig = await invoke<AppConfig>('load_config');
-      setConfig(loadedConfig);
-      setTheme(loadedConfig.appearance.theme);
-    } catch (error) {
-      console.error('Failed to load config:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSave = async () => {
     if (!config) return;
     
     setSaving(true);
     try {
-      await invoke('save_config', { config });
+      // 保存到全局store（会同时调用后端保存）
+      await saveGlobalConfig(config as any);
       setTheme(config.appearance.theme);
       i18n.changeLanguage(config.appearance.language);
       alert(t('settings.saveSuccess') || 'Settings saved!');
