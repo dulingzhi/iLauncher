@@ -181,12 +181,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {activeTab === 'general' && (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">General Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.generalSettings')}</h2>
                     
                     <div className="space-y-3">
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
-                          Global Hotkey
+                          {t('settings.hotkey')}
                         </label>
                         <HotkeyRecorder
                           value={config.general.hotkey}
@@ -206,13 +206,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           <p className="mt-1.5 text-xs text-red-400">{hotkeyError}</p>
                         )}
                         <p className="mt-1.5 text-xs text-gray-500">
-                          Click the input and press your desired key combination. Requires application restart to take effect.
+                          {t('settings.hotkeyClickAndPress')}
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
-                          Search Delay (ms)
+                          {t('settings.searchDelayMs')}
                         </label>
                         <input
                           type="number"
@@ -225,12 +225,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           min="0"
                           max="1000"
                         />
-                        <p className="mt-1 text-xs text-gray-500">Debounce delay for search input</p>
+                        <p className="mt-1 text-xs text-gray-500">{t('settings.searchDebounceDelay')}</p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
-                          Max Results
+                          {t('settings.maxResults')}
                         </label>
                         <input
                           type="number"
@@ -243,7 +243,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           min="1"
                           max="50"
                         />
-                        <p className="mt-1 text-xs text-gray-500">Maximum number of results to display</p>
+                        <p className="mt-1 text-xs text-gray-500">{t('settings.maxResultsToDisplay')}</p>
                       </div>
 
                       <div>
@@ -267,8 +267,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       <div>
                         <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
                           <div>
-                            <span className="text-sm font-medium text-gray-300">Enable File Preview</span>
-                            <p className="text-xs text-gray-500 mt-0.5">Show file preview panel when selecting files in search results</p>
+                            <span className="text-sm font-medium text-gray-300">{t('settings.enableFilePreview')}</span>
+                            <p className="text-xs text-gray-500 mt-0.5">{t('settings.enableFilePreviewDesc')}</p>
                           </div>
                           <input
                             type="checkbox"
@@ -290,17 +290,17 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {activeTab === 'appearance' && (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">Appearance Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.appearanceSettings')}</h2>
                     
                     <div className="space-y-3">
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
-                          {t('settings.theme') || 'Theme'}
+                          {t('settings.theme')}
                         </label>
                         
                         {/* 基础主题 */}
                         <div className="mb-3">
-                          <p className="text-xs text-gray-500 mb-2">Basic Themes</p>
+                          <p className="text-xs text-gray-500 mb-2">{t('settings.basicThemes')}</p>
                           <div className="flex flex-wrap gap-2">
                             {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
                               <button
@@ -330,7 +330,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                         {/* 流行主题 */}
                         <div>
-                          <p className="text-xs text-gray-500 mb-2">Popular Themes</p>
+                          <p className="text-xs text-gray-500 mb-2">{t('settings.popularThemes')}</p>
                           <div className="flex flex-wrap gap-2">
                             {[
                               { name: 'dracula', label: '🧛 Dracula' },
@@ -362,13 +362,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           </div>
                         </div>
                         
-                        <p className="mt-3 text-xs text-gray-500">Choose your preferred color theme for the search interface</p>
+                        <p className="mt-3 text-xs text-gray-500">{t('settings.themePreferredDesc')}</p>
                       </div>
 
                       {/* 自定义主题编辑器 */}
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
-                          Custom Theme
+                          {t('settings.customTheme')}
                         </label>
                         <button
                           onClick={() => {
@@ -380,15 +380,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           }}
                           className="px-4 py-2 rounded border border-[#555] bg-[#3c3c3c] text-gray-200 text-sm hover:border-[#666] hover:text-white transition-colors"
                         >
-                          🎨 Create Custom Theme
+                          🎨 {t('settings.createCustomTheme')}
                         </button>
-                        <p className="mt-2 text-xs text-gray-500">Create your own custom theme with a visual editor</p>
+                        <p className="mt-2 text-xs text-gray-500">{t('settings.themeCustomDesc')}</p>
                       </div>
 
                       {/* 主题导入导出 */}
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
-                          Import/Export
+                          {t('settings.themeImportExport')}
                         </label>
                         <div 
                           className="p-4 rounded-lg border transition-all duration-300"
@@ -471,7 +471,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       {/* 主题导入/导出 */}
                       <div>
                         <label className="block text-sm font-medium mb-3 text-gray-300">
-                          Theme Import/Export
+                          {t('settings.themeImportExport')}
                         </label>
                         <div className="flex gap-3">
                           <button
@@ -491,7 +491,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             }}
                             className="px-4 py-2 rounded border border-[#555] bg-[#3c3c3c] text-gray-200 text-sm hover:border-[#666] hover:text-white transition-colors"
                           >
-                            📤 Export Current Theme
+                            📤 {t('settings.themeExportCurrent')}
                           </button>
                           
                           <button
@@ -531,15 +531,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             }}
                             className="px-4 py-2 rounded border border-[#555] bg-[#3c3c3c] text-gray-200 text-sm hover:border-[#666] hover:text-white transition-colors"
                           >
-                            📥 Import Theme
+                            📥 {t('settings.themeImportFile')}
                           </button>
                         </div>
-                        <p className="mt-2 text-xs text-gray-500">Export themes to share or backup, import custom themes from JSON files</p>
+                        <p className="mt-2 text-xs text-gray-500">{t('settings.themeImportExportDesc')}</p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
-                          {t('settings.language') || 'Language'}
+                          {t('settings.language')}
                         </label>
                         <select
                           value={config.appearance.language}
@@ -556,7 +556,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
-                          Window Width: {config.appearance.window_width}px
+                          {t('settings.windowWidth')}: {config.appearance.window_width}px
                         </label>
                         <input
                           type="range"
@@ -573,7 +573,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                       <div>
                         <label className="block text-sm font-medium mb-2 text-gray-300">
-                          Transparency: {config.appearance.transparency}%
+                          {t('settings.transparency')}: {config.appearance.transparency}%
                         </label>
                         <input
                           type="range"
@@ -596,7 +596,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {activeTab === 'plugins' && (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">Plugin Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.pluginSettings')}</h2>
                     <div className="space-y-2">
                       {config.plugins.enabled_plugins.map((plugin) => (
                         <div
@@ -624,11 +624,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {activeTab === 'advanced' && (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">Advanced Settings</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.advancedSettings')}</h2>
                     
                     <div className="space-y-3">
                       <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
-                        <span className="text-sm text-gray-300">Start on Boot</span>
+                        <div>
+                          <span className="text-sm font-medium text-gray-300">{t('settings.startOnBoot')}</span>
+                          <p className="text-xs text-gray-500 mt-0.5">{t('settings.startOnBootDesc')}</p>
+                        </div>
                         <input
                           type="checkbox"
                           checked={config.advanced.start_on_boot}
@@ -641,7 +644,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       </label>
 
                       <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
-                        <span className="text-sm text-gray-300">Show Tray Icon</span>
+                        <div>
+                          <span className="text-sm font-medium text-gray-300">{t('settings.showTrayIcon')}</span>
+                          <p className="text-xs text-gray-500 mt-0.5">{t('settings.showTrayIconDesc')}</p>
+                        </div>
                         <input
                           type="checkbox"
                           checked={config.advanced.show_tray_icon}
@@ -654,7 +660,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       </label>
 
                       <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
-                        <span className="text-sm text-gray-300">Cache Enabled</span>
+                        <div>
+                          <span className="text-sm font-medium text-gray-300">{t('settings.enableCache')}</span>
+                          <p className="text-xs text-gray-500 mt-0.5">{t('settings.enableCacheDesc')}</p>
+                        </div>
                         <input
                           type="checkbox"
                           checked={config.advanced.cache_enabled}
@@ -679,7 +688,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               disabled={saving}
               className="px-5 py-2 text-sm bg-[#0e639c] hover:bg-[#1177bb] text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? 'Saving...' : t('settings.save') || 'Save Settings'}
+              {saving ? t('settings.saving') : t('settings.save')}
             </button>
           </div>
         </div>
