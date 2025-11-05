@@ -68,52 +68,27 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
   useEffect(() => {
     const appWindow = getCurrentWindow();
     
-    const setupListener = async () => {
-      const unlisten = await appWindow.listen('focus-input', () => {
+    const setupListeners = async () => {
+      // 监听 focus-input 事件
+      const unlistenFocusInput = await appWindow.listen('focus-input', () => {
         reset();
-        // 增加延迟确保窗口完全显示后再聚焦
-        setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-            console.log('Input focused via focus-input event');
-          }
-        }, 100);
-      });
-      return unlisten;
-    };
-    
-    const unlistenPromise = setupListener();
-    
-    return () => {
-      unlistenPromise.then(fn => fn());
-    };
-  }, [reset]);
-  
-  // 额外的焦点保障：监听窗口获得焦点事件
-  useEffect(() => {
-    const appWindow = getCurrentWindow();
-    
-    const setupFocusListener = async () => {
-      const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
-        if (focused) {
-          // 当窗口获得焦点时，确保输入框也获得焦点
-          setTimeout(() => {
-            if (inputRef.current && document.activeElement !== inputRef.current) {
-              inputRef.current.focus();
-              console.log('Input focused via window focus event');
-            }
-          }, 50);
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
         }
       });
-      return unlisten;
+      
+      return () => {
+        unlistenFocusInput();
+      };
     };
     
-    const unlistenPromise = setupFocusListener();
+    const cleanup = setupListeners();
     
     return () => {
-      unlistenPromise.then(fn => fn());
+      cleanup.then(fn => fn());
     };
-  }, []);
+  }, [reset]);
   
   // 当选中的结果改变时，关闭右键菜单
   useEffect(() => {
@@ -290,11 +265,12 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('search.placeholder')}
+          autoFocus
           className="flex-1 text-lg bg-transparent outline-none"
           style={{ 
             color: 'var(--color-text-primary)',
           }}
-          autoFocus
+          tabIndex={0}
         />
         {loading && (
           <div 

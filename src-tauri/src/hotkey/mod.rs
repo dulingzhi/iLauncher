@@ -10,7 +10,10 @@ use tauri::{AppHandle, Manager, Emitter};
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, BringWindowToTop, ShowWindow, SW_SHOW};
+use windows::Win32::UI::WindowsAndMessaging::{
+    SetForegroundWindow, BringWindowToTop, ShowWindow, SW_SHOW, 
+    SendMessageW, WM_LBUTTONDOWN, WM_LBUTTONUP, FindWindowExW
+};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_KEYUP, VK_MENU};
 
@@ -217,54 +220,91 @@ impl HotkeyManager {
                                         // 在新线程中处理窗口显示，避免阻塞热键监听
                                         let window_clone = window.clone();
                                         std::thread::spawn(move || {
-                                            tracing::info!("Showing window - START");
+                                            // 设置置顶
+                                            let _ = window_clone.set_always_on_top(true);
                                             
-                                            // 1. 居中窗口
-                                            if let Err(e) = window_clone.center() {
-                                                tracing::warn!("Failed to center window: {}", e);
-                                            } else {
-                                                tracing::info!("window.center() called");
-                                            }
+                                            // 居中窗口
+                                            let _ = window_clone.center();
                                             
-                                            // 2. 请求用户注意（这会强制激活窗口）
+                                            // Windows: 请求用户注意（强制激活窗口）
                                             #[cfg(target_os = "windows")]
                                             {
                                                 use tauri::UserAttentionType;
                                                 let _ = window_clone.request_user_attention(Some(UserAttentionType::Informational));
                                             }
                                             
-                                            // 3. 显示窗口
-                                            window_clone.show().unwrap();
-                                            tracing::info!("window.show() called");
+                                            // 显示窗口
+                                            let _ = window_clone.show();
                                             
-                                            // 3. Windows API 激活
+                                            // Windows API 激活
                                             #[cfg(target_os = "windows")]
                                             {
                                                 if let Ok(hwnd) = window_clone.hwnd() {
                                                     unsafe {
                                                         let hwnd = HWND(hwnd.0 as _);
+                                                        
+                                                        // 释放 Alt 键
                                                         keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-                                                        let _ = ShowWindow(hwnd, SW_SHOW);
-                                                        let _ = BringWindowToTop(hwnd);
-                                                        let _ = SetForegroundWindow(hwnd);
+                                                        
+                                                        // 激活窗口
+                                                        ShowWindow(hwnd, SW_SHOW);
+                                                        BringWindowToTop(hwnd);
+                                                        SetForegroundWindow(hwnd);
+                                                        
+                                                        std::thread::sleep(std::time::Duration::from_millis(10));
                                                     }
                                                 }
                                             }
                                             
-                                            // 4. 设置焦点
+                                            // 设置焦点
                                             std::thread::sleep(std::time::Duration::from_millis(50));
-                                            window_clone.set_focus().unwrap();
-                                            tracing::info!("window.set_focus() called");
+                                            let _ = window_clone.set_focus();
                                             
-                                            // 5. 发送事件到前端
-                                            std::thread::sleep(std::time::Duration::from_millis(50));
-                                            if let Err(e) = window_clone.emit("focus-input", ()) {
-                                                tracing::error!("Failed to emit focus-input: {}", e);
-                                            } else {
-                                                tracing::info!("focus-input event emitted");
+                                            // 等待窗口完全激活
+                                            std::thread::sleep(std::time::Duration::from_millis(150));
+                                            
+                                            // Windows: 发送点击消息到 WebView 子窗口激活输入
+                                            #[cfg(target_os = "windows")]
+                                            {
+                                                if let Ok(hwnd) = window_clone.hwnd() {
+                                                    use windows::Win32::Foundation::{LPARAM, WPARAM};
+                                                    
+                                                    unsafe {
+                                                        let hwnd = HWND(hwnd.0 as _);
+                                                        
+                                                        // 查找 WebView 子窗口 (3层嵌套)
+                                                        let target_hwnd = match FindWindowExW(hwnd, None, None, None) {
+                                                            Ok(child1) if !child1.is_invalid() => {
+                                                                match FindWindowExW(child1, None, None, None) {
+                                                                    Ok(child2) if !child2.is_invalid() => {
+                                                                        match FindWindowExW(child2, None, None, None) {
+                                                                            Ok(child3) if !child3.is_invalid() => child3,
+                                                                            _ => child2
+                                                                        }
+                                                                    }
+                                                                    _ => child1
+                                                                }
+                                                            }
+                                                            _ => hwnd
+                                                        };
+                                                        
+                                                        // 输入框坐标
+                                                        let x = 350i32;
+                                                        let y = 50i32;
+                                                        let lparam = LPARAM(((y as u32) << 16 | (x as u32 & 0xFFFF)) as isize);
+                                                        let wparam = WPARAM(0);
+                                                        
+                                                        // 发送点击消息
+                                                        SendMessageW(target_hwnd, WM_LBUTTONDOWN, wparam, lparam);
+                                                        std::thread::sleep(std::time::Duration::from_millis(10));
+                                                        SendMessageW(target_hwnd, WM_LBUTTONUP, wparam, lparam);
+                                                    }
+                                                }
                                             }
                                             
-                                            tracing::info!("Showing window - COMPLETE");
+                                            // 发送事件到前端
+                                            std::thread::sleep(std::time::Duration::from_millis(50));
+                                            let _ = window_clone.emit("focus-input", ());
                                         });
                                     }
                                 }
