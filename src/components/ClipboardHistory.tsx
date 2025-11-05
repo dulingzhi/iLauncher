@@ -104,17 +104,30 @@ const ClipboardHistory: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--color-background)' }}>
       {/* 头部 */}
-      <div className="p-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-4" style={{ 
+        backgroundColor: 'var(--color-surface)', 
+        borderBottom: '1px solid var(--color-border)' 
+      }}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Clipboard className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-semibold">{t('clipboard.title')}</h2>
+            <Clipboard className="w-5 h-5" style={{ color: 'var(--color-accent)' }} />
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>{t('clipboard.title')}</h2>
           </div>
           <button
             onClick={clearHistory}
-            className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+            className="px-3 py-1.5 text-sm rounded-md transition-colors"
+            style={{ 
+              color: 'var(--color-danger, #e53e3e)',
+              backgroundColor: 'transparent'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
           >
             {t('clipboard.clearAll')}
           </button>
@@ -122,13 +135,23 @@ const ClipboardHistory: React.FC = () => {
 
         {/* 搜索框 */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-text-secondary)' }} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('clipboard.search')}
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 border-0 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full pl-10 pr-4 py-2 border-0 rounded-md outline-none clipboard-search-input"
+            style={{
+              backgroundColor: 'var(--color-input-background)',
+              color: 'var(--color-text)',
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.boxShadow = '0 0 0 2px var(--color-accent)';
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.boxShadow = 'none';
+            }}
           />
         </div>
       </div>
@@ -137,10 +160,10 @@ const ClipboardHistory: React.FC = () => {
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center h-32">
-            <div className="text-gray-500">{t('common.loading')}</div>
+            <div style={{ color: 'var(--color-text-secondary)' }}>{t('common.loading')}</div>
           </div>
         ) : filteredItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-500">
+          <div className="flex flex-col items-center justify-center h-32" style={{ color: 'var(--color-text-secondary)' }}>
             <Clipboard className="w-12 h-12 mb-2 opacity-50" />
             <p>{searchQuery ? t('clipboard.noResults') : t('clipboard.empty')}</p>
           </div>
@@ -149,20 +172,32 @@ const ClipboardHistory: React.FC = () => {
             {filteredItems.map(item => (
               <div
                 key={item.id}
-                className="group bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all cursor-pointer"
+                className="group rounded-lg transition-all cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--color-border)';
+                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                }}
                 onClick={() => copyToClipboard(item)}
               >
                 <div className="p-3">
                   <div className="flex items-start gap-3">
                     {/* 类型图标 */}
-                    <div className="flex-shrink-0 mt-1 text-gray-400">
+                    <div className="flex-shrink-0 mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                       {getTypeIcon(item.type)}
                     </div>
 
                     {/* 内容 */}
                     <div className="flex-1 min-w-0">
                       {item.type === 'text' ? (
-                        <p className="text-sm text-gray-900 dark:text-gray-100 line-clamp-2">
+                        <p className="text-sm line-clamp-2" style={{ color: 'var(--color-text)' }}>
                           {item.content}
                         </p>
                       ) : item.type === 'image' ? (
@@ -174,14 +209,14 @@ const ClipboardHistory: React.FC = () => {
                               className="w-16 h-16 object-cover rounded"
                             />
                           )}
-                          <span className="text-sm text-gray-500">{t('clipboard.image')}</span>
+                          <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{t('clipboard.image')}</span>
                         </div>
                       ) : (
-                        <div className="text-sm text-gray-900 dark:text-gray-100">
+                        <div className="text-sm" style={{ color: 'var(--color-text)' }}>
                           <span className="font-mono">{item.content}</span>
                         </div>
                       )}
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                         {formatTimestamp(item.timestamp)}
                       </p>
                     </div>
@@ -193,9 +228,17 @@ const ClipboardHistory: React.FC = () => {
                           e.stopPropagation();
                           toggleFavorite(item.id);
                         }}
-                        className={`p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                          item.favorite ? 'text-yellow-500' : 'text-gray-400'
-                        }`}
+                        className="p-1.5 rounded transition-colors"
+                        style={{ 
+                          color: item.favorite ? '#ecc94b' : 'var(--color-text-secondary)',
+                          backgroundColor: 'transparent'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
                         title={t('clipboard.favorite')}
                       >
                         <svg className="w-4 h-4" fill={item.favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
@@ -207,7 +250,17 @@ const ClipboardHistory: React.FC = () => {
                           e.stopPropagation();
                           copyToClipboard(item);
                         }}
-                        className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400"
+                        className="p-1.5 rounded transition-colors"
+                        style={{ 
+                          color: 'var(--color-text-secondary)',
+                          backgroundColor: 'transparent'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
                         title={t('clipboard.copy')}
                       >
                         <Copy className="w-4 h-4" />
@@ -217,7 +270,19 @@ const ClipboardHistory: React.FC = () => {
                           e.stopPropagation();
                           deleteItem(item.id);
                         }}
-                        className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-red-600"
+                        className="p-1.5 rounded transition-colors"
+                        style={{ 
+                          color: 'var(--color-text-secondary)',
+                          backgroundColor: 'transparent'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+                          e.currentTarget.style.color = 'var(--color-danger, #e53e3e)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.color = 'var(--color-text-secondary)';
+                        }}
                         title={t('common.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -232,8 +297,11 @@ const ClipboardHistory: React.FC = () => {
       </div>
 
       {/* 底部统计 */}
-      <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-        <p className="text-xs text-gray-500 text-center">
+      <div className="p-3" style={{ 
+        backgroundColor: 'var(--color-surface)', 
+        borderTop: '1px solid var(--color-border)' 
+      }}>
+        <p className="text-xs text-center" style={{ color: 'var(--color-text-secondary)' }}>
           {t('clipboard.total', { count: items.length })}
         </p>
       </div>

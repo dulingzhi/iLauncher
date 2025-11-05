@@ -84,22 +84,32 @@ textarea:focus {
 }
 
 /* Placeholder 颜色跟随主题 */
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: var(--color-text-muted);
   opacity: 1;
 }
 
-input::-webkit-input-placeholder {
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
   color: var(--color-text-muted);
   opacity: 1;
 }
 
-input::-moz-placeholder {
+input::-moz-placeholder,
+textarea::-moz-placeholder {
   color: var(--color-text-muted);
   opacity: 1;
 }
 
-input:-ms-input-placeholder {
+input:-ms-input-placeholder,
+textarea:-ms-input-placeholder {
   color: var(--color-text-muted);
   opacity: 1;
+}
+
+/* 剪贴板搜索框样式 */
+.clipboard-search-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.7;
 }

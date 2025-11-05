@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
+import { useConfigStore } from '../store/useConfigStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { ContextMenu } from './ContextMenu';
 import { highlightMatch } from '../utils/pinyinSearch';
@@ -19,7 +20,6 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
-  const [clearOnHide, setClearOnHide] = useState(true);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -40,21 +40,11 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
     reset,
   } = useAppStore();
   
+  const { config } = useConfigStore();
+  const clearOnHide = config?.general.clear_on_hide ?? true;
+  
   const { results, loading, debouncedQuery } = useQuery();
   const executeAction = useExecuteAction();
-  
-  // 加载配置
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const config = await invoke<any>('load_config');
-        setClearOnHide(config.general.clear_on_hide);
-      } catch (error) {
-        console.error('Failed to load config:', error);
-      }
-    };
-    loadConfig();
-  }, []);
   
   useEffect(() => {
     setResults(results);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Settings, Power, PowerOff, RefreshCw, Download } from 'lucide-react';
+import { useConfigStore } from '../store/useConfigStore';
 
 interface PluginMetadata {
   id: string;
@@ -24,6 +25,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [configPlugin, setConfigPlugin] = useState<string | null>(null);
+  const { config, saveConfig } = useConfigStore();
 
   useEffect(() => {
     loadPlugins();
@@ -47,16 +49,17 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       const result = await invoke<PluginMetadata[]>('get_plugins');
       setPlugins(result);
       
-      // 加载配置获取启用状态
-      const config = await invoke<any>('load_config');
-      const statusMap = new Map<string, boolean>();
-      
-      result.forEach(plugin => {
-        const isDisabled = config.plugins.disabled_plugins.includes(plugin.id);
-        statusMap.set(plugin.id, !isDisabled);
-      });
-      
-      setPluginStatuses(statusMap);
+      // 使用全局配置获取启用状态
+      if (config) {
+        const statusMap = new Map<string, boolean>();
+        
+        result.forEach(plugin => {
+          const isDisabled = config.plugins.disabled_plugins.includes(plugin.id);
+          statusMap.set(plugin.id, !isDisabled);
+        });
+        
+        setPluginStatuses(statusMap);
+      }
     } catch (error) {
       console.error('Failed to load plugins:', error);
     } finally {
@@ -65,21 +68,23 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
   };
 
   const togglePlugin = async (pluginId: string) => {
+    if (!config) return;
+    
     try {
-      const config = await invoke<any>('load_config');
       const isCurrentlyDisabled = config.plugins.disabled_plugins.includes(pluginId);
       
+      const updatedConfig = { ...config };
       if (isCurrentlyDisabled) {
         // 启用插件：从禁用列表移除
-        config.plugins.disabled_plugins = config.plugins.disabled_plugins.filter(
+        updatedConfig.plugins.disabled_plugins = config.plugins.disabled_plugins.filter(
           (id: string) => id !== pluginId
         );
       } else {
         // 禁用插件：添加到禁用列表
-        config.plugins.disabled_plugins.push(pluginId);
+        updatedConfig.plugins.disabled_plugins = [...config.plugins.disabled_plugins, pluginId];
       }
       
-      await invoke('save_config', { config });
+      await saveConfig(updatedConfig);
       
       // 更新本地状态
       const newStatuses = new Map(pluginStatuses);

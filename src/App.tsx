@@ -7,16 +7,18 @@ import { PluginManager } from "./components/PluginManager";
 import ClipboardHistory from "./components/ClipboardHistory";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { useAppStore } from "./store/useAppStore";
+import { useConfigStore } from "./store/useConfigStore";
 import "./index.css";
 
 type View = 'search' | 'settings' | 'plugins' | 'clipboard';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('search');
-  const [showPreview, setShowPreview] = useState(true);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const results = useAppStore((state) => state.results);
   const selectedIndex = useAppStore((state) => state.selectedIndex);
+  const { config, loadConfig } = useConfigStore();
+  const showPreview = config?.appearance.show_preview ?? true;
 
   // 当选中项变化时更新预览
   useEffect(() => {
@@ -33,33 +35,10 @@ function App() {
     }
   }, [selectedIndex, results, showPreview]);
 
-  // 加载预览设置
+  // 加载配置（仅在应用启动时加载一次）
   useEffect(() => {
-    const loadPreviewSetting = async () => {
-      try {
-        const config = await invoke<any>('load_config');
-        setShowPreview(config.appearance.show_preview ?? true);
-      } catch (error) {
-        console.error('Failed to load preview setting:', error);
-      }
-    };
-    loadPreviewSetting();
+    loadConfig();
   }, []);
-
-  // 当从设置页面返回时重新加载预览设置
-  useEffect(() => {
-    if (currentView === 'search') {
-      const reloadPreviewSetting = async () => {
-        try {
-          const config = await invoke<any>('load_config');
-          setShowPreview(config.appearance.show_preview ?? true);
-        } catch (error) {
-          console.error('Failed to reload preview setting:', error);
-        }
-      };
-      reloadPreviewSetting();
-    }
-  }, [currentView]);
   
   useEffect(() => {
     const appWindow = getCurrentWindow();
