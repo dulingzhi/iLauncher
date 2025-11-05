@@ -99,6 +99,24 @@ pub fn run() {
             let app_handle = app.handle().clone();
             hotkey::HotkeyManager::start_listener(app_handle);
             
+            // 预渲染窗口：显示窗口让 React 完成初始化，然后立即隐藏
+            // 这样首次按热键时，UI 已经准备好了
+            let window = app.get_webview_window("main").unwrap();
+            let window_clone = window.clone();
+            std::thread::spawn(move || {
+                // 等待前端加载完成
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                
+                // 显示窗口触发 React 渲染
+                let _ = window_clone.show();
+                
+                // 立即隐藏
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let _ = window_clone.hide();
+                
+                tracing::info!("Window pre-rendered and hidden");
+            });
+            
             tracing::info!("iLauncher setup completed");
             Ok(())
         })

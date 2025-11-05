@@ -48,20 +48,20 @@ function App() {
 
   // 加载配置（仅在应用启动时加载一次）
   useEffect(() => {
-    loadConfig();
-    
-    // 初始化时确保窗口居中
-    const initializeWindow = async () => {
+    const initialize = async () => {
+      await loadConfig();
+      
+      // 初始化时确保窗口居中
       const appWindow = getCurrentWindow();
       try {
         await appWindow.center();
-        console.log('Window centered on initialization');
+        console.log('App initialized and ready');
       } catch (error) {
         console.error('Failed to center window:', error);
       }
     };
     
-    initializeWindow();
+    initialize();
   }, []);
 
   // 当视图切换时，调整窗口尺寸并居中
