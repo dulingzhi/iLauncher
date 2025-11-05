@@ -52,6 +52,13 @@ pub fn run() {
             // 初始化存储管理器
             let storage_manager = storage::StorageManager::new()
                 .expect("Failed to create storage manager");
+            
+            // 加载配置（用于初始化热键）
+            let config = tauri::async_runtime::block_on(async {
+                storage_manager.load_config().await.unwrap_or_default()
+            });
+            
+            // 将存储管理器添加到应用状态
             app.manage(storage_manager);
             
             // 初始化统计管理器
@@ -72,12 +79,6 @@ pub fn run() {
                 plugin::PluginManager::new().await
             });
             app.manage(plugin_manager);
-            
-            // 加载配置
-            let config = tauri::async_runtime::block_on(async {
-                let storage = StorageManager::new().expect("Failed to create storage manager");
-                storage.load_config().await.unwrap_or_default()
-            });
             
             // 初始化热键管理器
             let mut hotkey_manager = hotkey::HotkeyManager::new()
