@@ -46,6 +46,19 @@ function App() {
   // 加载配置（仅在应用启动时加载一次）
   useEffect(() => {
     loadConfig();
+    
+    // 初始化时确保窗口居中
+    const initializeWindow = async () => {
+      const appWindow = getCurrentWindow();
+      try {
+        await appWindow.center();
+        console.log('Window centered on initialization');
+      } catch (error) {
+        console.error('Failed to center window:', error);
+      }
+    };
+    
+    initializeWindow();
   }, []);
 
   // 当视图切换时，调整窗口尺寸并保持中心位置
@@ -85,10 +98,18 @@ function App() {
   useEffect(() => {
     const appWindow = getCurrentWindow();
     
-    // 监听窗口显示事件，重置为搜索视图
+    // 监听窗口显示事件，重置为搜索视图并居中
     const setupShowListener = async () => {
-      const unlisten = await appWindow.listen('tauri://focus', () => {
+      const unlisten = await appWindow.listen('tauri://focus', async () => {
         setCurrentView('search');
+        
+        // 每次显示时重新居中窗口
+        try {
+          await appWindow.center();
+          console.log('Window centered on show');
+        } catch (error) {
+          console.error('Failed to center window on show:', error);
+        }
       });
       return unlisten;
     };
