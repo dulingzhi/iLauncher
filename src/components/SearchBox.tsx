@@ -71,11 +71,13 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
     const setupListener = async () => {
       const unlisten = await appWindow.listen('focus-input', () => {
         reset();
+        // 增加延迟确保窗口完全显示后再聚焦
         setTimeout(() => {
           if (inputRef.current) {
             inputRef.current.focus();
+            console.log('Input focused via focus-input event');
           }
-        }, 10);
+        }, 100);
       });
       return unlisten;
     };
@@ -86,6 +88,32 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
       unlistenPromise.then(fn => fn());
     };
   }, [reset]);
+  
+  // 额外的焦点保障：监听窗口获得焦点事件
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    
+    const setupFocusListener = async () => {
+      const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+        if (focused) {
+          // 当窗口获得焦点时，确保输入框也获得焦点
+          setTimeout(() => {
+            if (inputRef.current && document.activeElement !== inputRef.current) {
+              inputRef.current.focus();
+              console.log('Input focused via window focus event');
+            }
+          }, 50);
+        }
+      });
+      return unlisten;
+    };
+    
+    const unlistenPromise = setupFocusListener();
+    
+    return () => {
+      unlistenPromise.then(fn => fn());
+    };
+  }, []);
   
   // 当选中的结果改变时，关闭右键菜单
   useEffect(() => {
