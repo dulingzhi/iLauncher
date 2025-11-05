@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
@@ -48,22 +48,34 @@ function App() {
     loadConfig();
   }, []);
 
-  // 当视图切换时，调整窗口尺寸和位置
+  // 当视图切换时，调整窗口尺寸并保持中心位置
   useEffect(() => {
     const adjustWindowSize = async () => {
       const appWindow = getCurrentWindow();
       const config = VIEW_CONFIGS[currentView];
       
       try {
-        // 设置新尺寸
+        // 获取当前窗口位置和尺寸
+        const currentPosition = await appWindow.outerPosition();
+        const currentSize = await appWindow.outerSize();
+        
+        // 计算当前窗口中心点
+        const centerX = currentPosition.x + currentSize.width / 2;
+        const centerY = currentPosition.y + currentSize.height / 2;
+        
+        // 计算新窗口的左上角位置，保持中心点不变
+        const newX = Math.round(centerX - config.width / 2);
+        const newY = Math.round(centerY - config.height / 2);
+        
+        // 先调整尺寸
         await appWindow.setSize(new LogicalSize(config.width, config.height));
         
-        // 居中窗口
-        await appWindow.center();
+        // 再调整位置，保持中心点
+        await appWindow.setPosition(new PhysicalPosition(newX, newY));
         
-        console.log(`Window resized for ${currentView} view: ${config.width}x${config.height}`);
+        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height}, center: (${centerX}, ${centerY})`);
       } catch (error) {
-        console.error('Failed to adjust window size:', error);
+        console.error('Failed to adjust window:', error);
       }
     };
 
