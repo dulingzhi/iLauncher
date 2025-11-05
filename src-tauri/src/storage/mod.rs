@@ -3,7 +3,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::fs;
+use tokio::sync::RwLock;
 
 /// 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +111,8 @@ pub struct StorageManager {
     config_path: PathBuf,
     cache_dir: PathBuf,
     data_dir: PathBuf,
+    // 配置缓存，避免重复读取文件
+    config_cache: Arc<RwLock<Option<AppConfig>>>,
 }
 
 impl StorageManager {
@@ -129,24 +133,44 @@ impl StorageManager {
         std::fs::create_dir_all(&cache_dir)?;
         std::fs::create_dir_all(&data_dir)?;
 
+        let config_path = config_dir.join("config.json");
+
         Ok(Self {
-            config_path: config_dir.join("config.json"),
+            config_path,
             cache_dir,
             data_dir,
+            config_cache: Arc::new(RwLock::new(None)),
         })
     }
 
     /// 加载配置
     pub async fn load_config(&self) -> Result<AppConfig> {
-        if self.config_path.exists() {
+        // 先检查缓存
+        {
+            let cache = self.config_cache.read().await;
+            if let Some(config) = cache.as_ref() {
+                return Ok(config.clone());
+            }
+        }
+        
+        // 从文件加载
+        let config = if self.config_path.exists() {
             let content = fs::read_to_string(&self.config_path).await?;
             let config: AppConfig = serde_json::from_str(&content)?;
             tracing::info!("Loaded config from {:?}", self.config_path);
-            Ok(config)
+            config
         } else {
             tracing::info!("No config file found, using defaults");
-            Ok(AppConfig::default())
+            AppConfig::default()
+        };
+        
+        // 更新缓存
+        {
+            let mut cache = self.config_cache.write().await;
+            *cache = Some(config.clone());
         }
+        
+        Ok(config)
     }
 
     /// 保存配置
@@ -154,6 +178,13 @@ impl StorageManager {
         let content = serde_json::to_string_pretty(config)?;
         fs::write(&self.config_path, content).await?;
         tracing::info!("Saved config to {:?}", self.config_path);
+        
+        // 更新缓存
+        {
+            let mut cache = self.config_cache.write().await;
+            *cache = Some(config.clone());
+        }
+        
         Ok(())
     }
 
