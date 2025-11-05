@@ -1,23 +1,25 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
 import { PluginManager } from "./components/PluginManager";
 import ClipboardHistory from "./components/ClipboardHistory";
 import { PreviewPanel } from "./components/PreviewPanel";
+import { Toast } from "./components/Toast";
 import { useAppStore } from "./store/useAppStore";
 import { useConfigStore } from "./store/useConfigStore";
+import { useToast } from "./hooks/useToast";
 import "./index.css";
 
 type View = 'search' | 'settings' | 'plugins' | 'clipboard';
 
 // 不同视图的窗口配置
 const VIEW_CONFIGS = {
-  search: { width: 1000, height: 650 },
-  settings: { width: 1000, height: 700 },
-  plugins: { width: 1000, height: 700 },
-  clipboard: { width: 800, height: 600 },
+  search: { width: 700, height: 500 },      // 搜索框使用较窄的窗口
+  settings: { width: 1000, height: 700 },   // 设置页面使用宽窗口
+  plugins: { width: 1000, height: 700 },    // 插件管理使用宽窗口
+  clipboard: { width: 900, height: 650 },   // 剪贴板历史使用中等宽度
 };
 
 function App() {
@@ -26,6 +28,7 @@ function App() {
   const results = useAppStore((state) => state.results);
   const selectedIndex = useAppStore((state) => state.selectedIndex);
   const { config, loadConfig } = useConfigStore();
+  const { message, type, visible, hideToast } = useToast();
   const showPreview = config?.appearance.show_preview ?? true;
 
   // 当选中项变化时更新预览
@@ -61,32 +64,26 @@ function App() {
     initializeWindow();
   }, []);
 
-  // 当视图切换时，调整窗口尺寸并保持中心位置
+  // 当视图切换时，调整窗口尺寸并居中
   useEffect(() => {
     const adjustWindowSize = async () => {
       const appWindow = getCurrentWindow();
       const config = VIEW_CONFIGS[currentView];
       
       try {
-        // 获取当前窗口位置和尺寸
-        const currentPosition = await appWindow.outerPosition();
-        const currentSize = await appWindow.outerSize();
+        // 临时允许调整大小
+        await appWindow.setResizable(true);
         
-        // 计算当前窗口中心点
-        const centerX = currentPosition.x + currentSize.width / 2;
-        const centerY = currentPosition.y + currentSize.height / 2;
-        
-        // 计算新窗口的左上角位置，保持中心点不变
-        const newX = Math.round(centerX - config.width / 2);
-        const newY = Math.round(centerY - config.height / 2);
-        
-        // 先调整尺寸
+        // 调整尺寸
         await appWindow.setSize(new LogicalSize(config.width, config.height));
         
-        // 再调整位置，保持中心点
-        await appWindow.setPosition(new PhysicalPosition(newX, newY));
+        // 居中窗口
+        await appWindow.center();
         
-        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height}, center: (${centerX}, ${centerY})`);
+        // 禁止用户手动调整大小
+        await appWindow.setResizable(false);
+        
+        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height} (centered)`);
       } catch (error) {
         console.error('Failed to adjust window:', error);
       }
@@ -114,13 +111,16 @@ function App() {
       return unlisten;
     };
     
-    // 监听窗口失焦事件，自动隐藏
+    // 监听窗口失焦事件，自动隐藏并切换回搜索视图
     const setupBlurListener = async () => {
       const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
         if (!focused) {
+          // 立即切换回搜索视图（同步操作）
+          setCurrentView('search');
+          // 稍微延迟隐藏窗口，确保视图已切换
           setTimeout(() => {
             invoke("hide_app");
-          }, 150);
+          }, 100);
         }
       });
       return unlisten;
@@ -136,12 +136,21 @@ function App() {
   }, []);
 
   return (
-    <div className="w-full h-screen flex items-start justify-center pt-4 px-4">
+    <div className="w-full h-screen flex items-start justify-center">
+      {/* Toast 通知 */}
+      {visible && (
+        <Toast
+          message={message}
+          type={type}
+          onClose={hideToast}
+        />
+      )}
+      
       {currentView === 'search' ? (
-        <div className="w-full max-w-5xl flex gap-4">
+        <div className="w-full flex gap-4 p-4">
           {/* 搜索框区域 */}
           <div 
-            className={`rounded-lg shadow-2xl overflow-hidden ${showPreview && previewPath ? 'w-2/3' : 'w-full max-w-2xl'}`}
+            className={`rounded-lg shadow-2xl overflow-hidden ${showPreview && previewPath ? 'flex-1' : 'w-full'}`}
             style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98 }}
           >
             <SearchBox 
@@ -165,7 +174,7 @@ function App() {
         <div className="w-full h-full overflow-auto rounded-lg" style={{ backgroundColor: 'var(--color-background)', opacity: 0.98 }}>
           {currentView === 'settings' && <Settings onClose={() => setCurrentView('search')} />}
           {currentView === 'plugins' && <PluginManager onClose={() => setCurrentView('search')} />}
-          {currentView === 'clipboard' && <ClipboardHistory />}
+          {currentView === 'clipboard' && <ClipboardHistory onClose={() => setCurrentView('search')} />}
         </div>
       )}
     </div>

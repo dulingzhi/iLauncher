@@ -12,7 +12,11 @@ interface ClipboardItem {
   favorite?: boolean;
 }
 
-const ClipboardHistory: React.FC = () => {
+interface ClipboardHistoryProps {
+  onClose?: () => void;
+}
+
+const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
   const { t } = useTranslation();
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -21,6 +25,18 @@ const ClipboardHistory: React.FC = () => {
   useEffect(() => {
     loadHistory();
   }, []);
+
+  // 监听 ESC 键关闭
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose();
+      }
+    };
+    
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
 
   const loadHistory = async () => {
     try {

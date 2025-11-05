@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
 import { useConfigStore } from '../store/useConfigStore';
+import { useToast } from '../hooks/useToast';
 import { applyTheme, Theme, themes } from '../theme';
 import { ThemeEditor } from './ThemeEditor';
 import { HotkeyRecorder } from './HotkeyRecorder';
@@ -43,6 +44,7 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { t, i18n } = useTranslation();
   const { config: globalConfig, saveConfig: saveGlobalConfig } = useConfigStore();
+  const { showToast } = useToast();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,9 +64,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   }, [globalConfig, setTheme]);
 
   useEffect(() => {
-    const handleEsc = async (e: KeyboardEvent) => {
+    const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        await invoke('hide_app');
+        // 只需要切换回搜索视图，不需要隐藏窗口
+        // 窗口会在失焦时自动隐藏
         onClose();
       }
     };
@@ -82,10 +85,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       await saveGlobalConfig(config as any);
       setTheme(config.appearance.theme);
       i18n.changeLanguage(config.appearance.language);
-      alert(t('settings.saveSuccess') || 'Settings saved!');
+      showToast(t('settings.saveSuccess') || 'Settings saved successfully!', 'success');
     } catch (error) {
       console.error('Failed to save config:', error);
-      alert('Failed to save settings');
+      showToast('Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }
@@ -104,7 +107,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     // 关闭编辑器
     setShowThemeEditor(false);
     setEditingTheme(null);
-    alert(`Theme "${theme.name}" created successfully!`);
+    showToast(`Theme "${theme.name}" created successfully!`, 'success');
   };
 
   if (loading || !config) {
@@ -255,6 +258,24 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             onChange={(e) => setConfig({
                               ...config,
                               general: { ...config.general, clear_on_hide: e.target.checked }
+                            })}
+                            className="w-4 h-4 accent-[#007acc]"
+                          />
+                        </label>
+                      </div>
+
+                      <div>
+                        <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
+                          <div>
+                            <span className="text-sm font-medium text-gray-300">Enable File Preview</span>
+                            <p className="text-xs text-gray-500 mt-0.5">Show file preview panel when selecting files in search results</p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={config.appearance.show_preview}
+                            onChange={(e) => setConfig({
+                              ...config,
+                              appearance: { ...config.appearance, show_preview: e.target.checked }
                             })}
                             className="w-4 h-4 accent-[#007acc]"
                           />
@@ -495,12 +516,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                           ...config,
                                           appearance: { ...config.appearance, theme: 'custom' }
                                         });
-                                        alert(`Theme "${themeData.name}" imported successfully!`);
+                                        showToast(`Theme "${themeData.name}" imported successfully!`, 'success');
                                       } else {
-                                        alert('Invalid theme file format');
+                                        showToast('Invalid theme file format', 'error');
                                       }
                                     } catch (error) {
-                                      alert('Failed to parse theme file: ' + error);
+                                      showToast('Failed to parse theme file: ' + error, 'error');
                                     }
                                   };
                                   reader.readAsText(file);
@@ -566,29 +587,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           className="w-full max-w-md accent-[#007acc]"
                         />
                       </div>
-
-                      <div className="flex items-center justify-between py-2">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300">
-                            Enable File Preview
-                          </label>
-                          <p className="mt-1 text-xs text-gray-500">
-                            Show file preview panel when selecting files in search results
-                          </p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={config.appearance.show_preview}
-                            onChange={(e) => setConfig({
-                              ...config,
-                              appearance: { ...config.appearance, show_preview: e.target.checked }
-                            })}
-                            className="sr-only peer"
-                          />
-                          <div className="w-9 h-5 bg-[#3c3c3c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#007acc]"></div>
-                        </label>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -610,6 +608,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             <input
                               type="checkbox"
                               checked={true}
+                              readOnly
                               className="sr-only peer"
                             />
                             <div className="w-9 h-5 bg-[#3c3c3c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#007acc]"></div>

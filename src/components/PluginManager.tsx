@@ -33,9 +33,10 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
 
   // ESC 键监听
   useEffect(() => {
-    const handleEsc = async (e: KeyboardEvent) => {
+    const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        await invoke('hide_app');
+        // 只需要切换回搜索视图，不需要隐藏窗口
+        // 窗口会在失焦时自动隐藏
         onClose();
       }
     };

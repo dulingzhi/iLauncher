@@ -219,14 +219,21 @@ impl HotkeyManager {
                                         std::thread::spawn(move || {
                                             tracing::info!("Showing window - START");
                                             
-                                            // 1. 请求用户注意（这会强制激活窗口）
+                                            // 1. 居中窗口
+                                            if let Err(e) = window_clone.center() {
+                                                tracing::warn!("Failed to center window: {}", e);
+                                            } else {
+                                                tracing::info!("window.center() called");
+                                            }
+                                            
+                                            // 2. 请求用户注意（这会强制激活窗口）
                                             #[cfg(target_os = "windows")]
                                             {
                                                 use tauri::UserAttentionType;
                                                 let _ = window_clone.request_user_attention(Some(UserAttentionType::Informational));
                                             }
                                             
-                                            // 2. 显示窗口
+                                            // 3. 显示窗口
                                             window_clone.show().unwrap();
                                             tracing::info!("window.show() called");
                                             
