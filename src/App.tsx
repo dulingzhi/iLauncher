@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
@@ -11,6 +11,14 @@ import { useConfigStore } from "./store/useConfigStore";
 import "./index.css";
 
 type View = 'search' | 'settings' | 'plugins' | 'clipboard';
+
+// 不同视图的窗口配置
+const VIEW_CONFIGS = {
+  search: { width: 1000, height: 650 },
+  settings: { width: 1000, height: 700 },
+  plugins: { width: 1000, height: 700 },
+  clipboard: { width: 800, height: 600 },
+};
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('search');
@@ -39,6 +47,28 @@ function App() {
   useEffect(() => {
     loadConfig();
   }, []);
+
+  // 当视图切换时，调整窗口尺寸和位置
+  useEffect(() => {
+    const adjustWindowSize = async () => {
+      const appWindow = getCurrentWindow();
+      const config = VIEW_CONFIGS[currentView];
+      
+      try {
+        // 设置新尺寸
+        await appWindow.setSize(new LogicalSize(config.width, config.height));
+        
+        // 居中窗口
+        await appWindow.center();
+        
+        console.log(`Window resized for ${currentView} view: ${config.width}x${config.height}`);
+      } catch (error) {
+        console.error('Failed to adjust window size:', error);
+      }
+    };
+
+    adjustWindowSize();
+  }, [currentView]);
   
   useEffect(() => {
     const appWindow = getCurrentWindow();
