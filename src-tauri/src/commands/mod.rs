@@ -61,6 +61,25 @@ pub async fn get_plugins(manager: State<'_, PluginManager>) -> Result<Vec<Plugin
     Ok(manager.get_plugins())
 }
 
+/// 获取插件配置
+#[tauri::command]
+pub async fn get_plugin_config(
+    plugin_id: String,
+    storage: State<'_, StorageManager>,
+) -> Result<serde_json::Value, String> {
+    storage.get_plugin_config(&plugin_id).await.map_err(|e| e.to_string())
+}
+
+/// 保存插件配置
+#[tauri::command]
+pub async fn save_plugin_config(
+    plugin_id: String,
+    config: serde_json::Value,
+    storage: State<'_, StorageManager>,
+) -> Result<(), String> {
+    storage.save_plugin_config(&plugin_id, config).await.map_err(|e| e.to_string())
+}
+
 /// 显示应用
 #[tauri::command]
 pub async fn show_app(window: tauri::Window) -> Result<(), String> {
@@ -227,5 +246,24 @@ pub async fn clear_clipboard_history(
 ) -> Result<(), String> {
     clipboard.clear();
     Ok(())
+}
+
+/// 调试：检查文件索引状态
+#[tauri::command]
+pub async fn debug_file_index(
+    search_path: Option<String>,
+) -> Result<DebugIndexInfo, String> {
+    // 这是一个临时调试命令
+    // 由于 PluginManager 不暴露内部状态，这里只能提供基本信息
+    Ok(DebugIndexInfo {
+        message: format!("File search plugin internal state not accessible. Search for: {:?}", search_path),
+        suggestion: "Check console logs for detailed index information".to_string(),
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct DebugIndexInfo {
+    pub message: String,
+    pub suggestion: String,
 }
 

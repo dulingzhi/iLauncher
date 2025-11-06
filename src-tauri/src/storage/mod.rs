@@ -241,4 +241,37 @@ impl StorageManager {
     pub fn get_cache_dir(&self) -> &PathBuf {
         &self.cache_dir
     }
+
+    /// 获取插件配置目录
+    fn get_plugin_config_dir(&self) -> PathBuf {
+        self.data_dir.join("plugins_config")
+    }
+
+    /// 获取插件配置
+    pub async fn get_plugin_config(&self, plugin_id: &str) -> Result<serde_json::Value> {
+        let config_dir = self.get_plugin_config_dir();
+        let config_file = config_dir.join(format!("{}.json", plugin_id));
+        
+        if config_file.exists() {
+            let content = fs::read_to_string(&config_file).await?;
+            let config: serde_json::Value = serde_json::from_str(&content)?;
+            Ok(config)
+        } else {
+            // 返回空对象
+            Ok(serde_json::json!({}))
+        }
+    }
+
+    /// 保存插件配置
+    pub async fn save_plugin_config(&self, plugin_id: &str, config: serde_json::Value) -> Result<()> {
+        let config_dir = self.get_plugin_config_dir();
+        std::fs::create_dir_all(&config_dir)?;
+        
+        let config_file = config_dir.join(format!("{}.json", plugin_id));
+        let content = serde_json::to_string_pretty(&config)?;
+        fs::write(&config_file, content).await?;
+        
+        tracing::info!("Saved config for plugin: {}", plugin_id);
+        Ok(())
+    }
 }

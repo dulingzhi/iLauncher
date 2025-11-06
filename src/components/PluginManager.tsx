@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Settings, Power, PowerOff, RefreshCw, Download } from 'lucide-react';
+import { Settings, Power, PowerOff, RefreshCw, Download, X, Save, AlertCircle } from 'lucide-react';
 import { useConfigStore } from '../store/useConfigStore';
 
 interface PluginMetadata {
@@ -13,10 +13,20 @@ interface PluginMetadata {
   trigger_keywords: string[];
   supported_os: string[];
   plugin_type: string;
+  settings: Array<{
+    type: string;
+    key?: string;
+    label?: string;
+    value?: any;
+  }>;
 }
 
 interface PluginManagerProps {
   onClose: () => void;
+}
+
+interface PluginConfig {
+  [key: string]: any;
 }
 
 export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
@@ -24,7 +34,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
   const [pluginStatuses, setPluginStatuses] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [configPlugin, setConfigPlugin] = useState<string | null>(null);
+  const [configPlugin, setConfigPlugin] = useState<PluginMetadata | null>(null);
   const { config, saveConfig } = useConfigStore();
 
   useEffect(() => {
@@ -250,7 +260,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
                       </button>
                       
                       <button
-                        onClick={() => setConfigPlugin(plugin.id)}
+                        onClick={() => setConfigPlugin(plugin)}
                         className="px-3 py-1.5 bg-[#3e3e42] hover:bg-[#555] text-gray-300 rounded text-xs font-medium transition-colors flex items-center gap-1.5"
                         title="Configure plugin"
                       >
@@ -275,32 +285,230 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
         </div>
       </div>
 
-      {/* 配置面板（占位） */}
+      {/* 配置面板 */}
       {configPlugin && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-[#2d2d30] rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 bg-[#1e1e1e] border-b border-[#3e3e42]">
-              <h2 className="text-lg font-semibold text-gray-100">
-                Plugin Configuration
-              </h2>
-              <button
-                onClick={() => setConfigPlugin(null)}
-                className="text-gray-400 hover:text-gray-100 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              <p className="text-gray-400 text-center py-8">
-                Configuration for plugin: <span className="text-white font-mono">{configPlugin}</span>
-              </p>
-              <p className="text-gray-500 text-sm text-center">
-                Plugin-specific settings will be available here
-              </p>
+        <PluginConfigPanel
+          plugin={configPlugin}
+          onClose={() => setConfigPlugin(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+// 插件配置面板组件
+interface PluginConfigPanelProps {
+  plugin: PluginMetadata;
+  onClose: () => void;
+}
+
+const PluginConfigPanel: React.FC<PluginConfigPanelProps> = ({ plugin, onClose }) => {
+  const [config, setConfig] = useState<PluginConfig>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 加载插件配置
+  useEffect(() => {
+    const loadPluginConfig = async () => {
+      try {
+        const pluginConfig = await invoke<PluginConfig>('get_plugin_config', {
+          pluginId: plugin.id,
+        });
+        setConfig(pluginConfig);
+      } catch (err) {
+        console.error('Failed to load plugin config:', err);
+        setError('Failed to load configuration');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPluginConfig();
+  }, [plugin.id]);
+
+  // 保存插件配置
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+
+    try {
+      await invoke('save_plugin_config', {
+        pluginId: plugin.id,
+        config,
+      });
+      onClose();
+    } catch (err) {
+      console.error('Failed to save plugin config:', err);
+      setError('Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getIconEmoji = (icon: PluginMetadata['icon']): string => {
+    if ('Emoji' in icon) return icon.Emoji;
+    return '🔌';
+  };
+
+  // 渲染设置项
+  const renderSettingField = (setting: PluginMetadata['settings'][0], index: number) => {
+    const key = setting.key || `setting_${index}`;
+    const value = config[key] || setting.value || '';
+
+    const updateValue = (newValue: any) => {
+      setConfig({ ...config, [key]: newValue });
+    };
+
+    switch (setting.type) {
+      case 'head':
+        return (
+          <div key={index} className="pt-4 pb-2">
+            <h3 className="text-base font-semibold text-gray-100">{setting.label}</h3>
+          </div>
+        );
+
+      case 'newline':
+        return <div key={index} className="h-3" />;
+
+      case 'textbox':
+        return (
+          <div key={index} className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300">
+              {setting.label}
+            </label>
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => updateValue(e.target.value)}
+              className="w-full px-3 py-2 bg-[#3c3c3c] border border-[#555] rounded text-gray-200 text-sm focus:border-[#007acc] focus:outline-none transition-colors"
+              placeholder={setting.label}
+            />
+          </div>
+        );
+
+      case 'checkbox':
+        return (
+          <div key={index} className="flex items-center justify-between py-2">
+            <label className="text-sm font-medium text-gray-300">
+              {setting.label}
+            </label>
+            <input
+              type="checkbox"
+              checked={Boolean(value)}
+              onChange={(e) => updateValue(e.target.checked)}
+              className="w-4 h-4 accent-[#007acc]"
+            />
+          </div>
+        );
+
+      case 'select':
+        const options = setting.value?.options || [];
+        return (
+          <div key={index} className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300">
+              {setting.label}
+            </label>
+            <select
+              value={value}
+              onChange={(e) => updateValue(e.target.value)}
+              className="w-full px-3 py-2 bg-[#3c3c3c] border border-[#555] rounded text-gray-200 text-sm focus:border-[#007acc] focus:outline-none transition-colors"
+            >
+              {options.map((option: any, i: number) => (
+                <option key={i} value={option.value || option}>
+                  {option.label || option}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+
+      case 'number':
+        return (
+          <div key={index} className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300">
+              {setting.label}
+            </label>
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => updateValue(parseFloat(e.target.value) || 0)}
+              className="w-full px-3 py-2 bg-[#3c3c3c] border border-[#555] rounded text-gray-200 text-sm focus:border-[#007acc] focus:outline-none transition-colors"
+            />
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-[#1e1e1e] rounded-lg shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        {/* 头部 */}
+        <div className="flex items-center justify-between px-6 py-4 bg-[#2d2d30] border-b border-[#3e3e42]">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{getIconEmoji(plugin.icon)}</span>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-100">{plugin.name} Settings</h2>
+              <p className="text-xs text-gray-500">Configure plugin preferences</p>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[#3e3e42] rounded transition-colors"
+            title="Close"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
-      )}
+
+        {/* 内容 */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-gray-400">Loading configuration...</div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-red-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>{error}</span>
+            </div>
+          ) : plugin.settings && plugin.settings.length > 0 ? (
+            <div className="space-y-4 max-w-2xl">
+              {plugin.settings.map((setting, index) => renderSettingField(setting, index))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <AlertCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                <p className="text-gray-400 mb-1">No settings available</p>
+                <p className="text-gray-600 text-sm">This plugin doesn't have any configurable options</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 底部操作栏 */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-[#2d2d30] border-t border-[#3e3e42]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-300 hover:bg-[#3e3e42] rounded transition-colors"
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !plugin.settings || plugin.settings.length === 0}
+            className="px-4 py-2 text-sm bg-[#007acc] text-white rounded hover:bg-[#005a9e] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

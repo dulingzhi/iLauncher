@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { HexColorPicker } from 'react-colorful';
-import { Theme } from '../theme';
-import { X, Eye, Save, Palette } from 'lucide-react';
+import { Theme, themes, getTheme } from '../theme';
+import { X, Eye, Save, Palette, Copy, Wand2, RefreshCw } from 'lucide-react';
 
 interface ThemeEditorProps {
   initialTheme?: Theme;
@@ -9,24 +9,20 @@ interface ThemeEditorProps {
   onClose: () => void;
 }
 
+// 预设调色板
+const COLOR_PRESETS = {
+  blues: ['#1e3a8a', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe'],
+  purples: ['#581c87', '#a855f7', '#c084fc', '#e9d5ff', '#f3e8ff'],
+  greens: ['#14532d', '#22c55e', '#4ade80', '#86efac', '#dcfce7'],
+  reds: ['#7f1d1d', '#ef4444', '#f87171', '#fca5a5', '#fee2e2'],
+  grays: ['#0f172a', '#1e293b', '#475569', '#94a3b8', '#e2e8f0'],
+  warm: ['#7c2d12', '#ea580c', '#fb923c', '#fdba74', '#fed7aa'],
+  cool: ['#164e63', '#0891b2', '#06b6d4', '#67e8f9', '#cffafe'],
+};
+
 export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, onClose }) => {
   const [themeName, setThemeName] = useState(initialTheme?.name || 'Custom Theme');
-  const [colors, setColors] = useState(initialTheme?.colors || {
-    primary: '#60a5fa',
-    secondary: '#a78bfa',
-    background: '#0f172a',
-    surface: '#1e293b',
-    text: {
-      primary: '#f1f5f9',
-      secondary: '#cbd5e1',
-      muted: '#94a3b8',
-    },
-    border: '#334155',
-    hover: '#2d3748',
-    accent: '#60a5fa',
-    primaryAlpha: 'rgba(96, 165, 250, 0.25)',
-  });
-
+  const [colors, setColors] = useState(initialTheme?.colors || getTheme('dark').colors);
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -91,7 +87,6 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
   };
 
   const applyPreview = () => {
-    // 应用预览到 CSS 变量
     document.documentElement.style.setProperty('--color-primary', colors.primary);
     document.documentElement.style.setProperty('--color-secondary', colors.secondary);
     document.documentElement.style.setProperty('--color-background', colors.background);
@@ -103,6 +98,55 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
     document.documentElement.style.setProperty('--color-hover', colors.hover);
     document.documentElement.style.setProperty('--color-accent', colors.accent);
     document.documentElement.style.setProperty('--color-primary-alpha', colors.primaryAlpha);
+  };
+  
+  // 生成随机主题
+  const generateRandomTheme = () => {
+    const randomColor = () => {
+      const hue = Math.floor(Math.random() * 360);
+      const sat = 60 + Math.floor(Math.random() * 30);
+      const light = 50 + Math.floor(Math.random() * 20);
+      return `hsl(${hue}, ${sat}%, ${light}%)`;
+    };
+    
+    const primary = randomColor();
+    const secondary = randomColor();
+    
+    setColors({
+      primary,
+      secondary,
+      background: '#0f172a',
+      surface: '#1e293b',
+      text: {
+        primary: '#f1f5f9',
+        secondary: '#cbd5e1',
+        muted: '#94a3b8',
+      },
+      border: '#334155',
+      hover: '#2d3748',
+      accent: primary,
+      primaryAlpha: `${primary.replace(')', ', 0.25)')}`,
+    });
+    
+    setThemeName('Random ' + Math.random().toString(36).substring(7));
+  };
+  
+  // 重置为默认
+  const resetToDefault = () => {
+    setColors(getTheme('dark').colors);
+    setThemeName('Custom Theme');
+  };
+  
+  // 复制主题JSON
+  const copyThemeJson = () => {
+    const theme: Theme = {
+      name: themeName.toLowerCase().replace(/\s+/g, '_'),
+      colors,
+    };
+    
+    const json = JSON.stringify(theme, null, 2);
+    navigator.clipboard.writeText(json);
+    alert('Theme JSON copied to clipboard!');
   };
 
   return (
@@ -123,17 +167,98 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
         </div>
 
         {/* 主题名称 */}
-        <div className="px-6 py-4 border-b border-[#3e3e42]">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Theme Name
-          </label>
-          <input
-            type="text"
-            value={themeName}
-            onChange={(e) => setThemeName(e.target.value)}
-            className="w-full px-3 py-2 bg-[#2d2d30] border border-[#3e3e42] rounded text-gray-100 focus:outline-none focus:border-[#007acc]"
-            placeholder="Enter theme name"
-          />
+        <div className="px-6 py-4 border-b border-[#3e3e42] space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Theme Name
+            </label>
+            <input
+              type="text"
+              value={themeName}
+              onChange={(e) => setThemeName(e.target.value)}
+              className="w-full px-3 py-2 bg-[#2d2d30] border border-[#3e3e42] rounded text-gray-100 focus:outline-none focus:border-[#007acc]"
+              placeholder="Enter theme name"
+            />
+          </div>
+          
+          {/* 主题预设选择器 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Load from Preset
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {Object.keys(themes).slice(0, 8).map((presetName) => {
+                const preset = themes[presetName];
+                return (
+                  <button
+                    key={presetName}
+                    onClick={() => {
+                      setColors(preset.colors);
+                      setThemeName(`${preset.name} Custom`);
+                    }}
+                    className="px-3 py-1.5 text-xs rounded border border-[#3e3e42] hover:border-[#007acc] transition-colors flex items-center gap-2"
+                    style={{
+                      background: `linear-gradient(135deg, ${preset.colors.primary}, ${preset.colors.secondary})`,
+                      color: '#fff',
+                    }}
+                  >
+                    {preset.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* 快速调色板 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+              <Palette className="w-4 h-4" />
+              Quick Color Palette
+            </label>
+            <div className="grid grid-cols-7 gap-2">
+              {Object.entries(COLOR_PRESETS).map(([name, palette]) => (
+                <div key={name} className="flex flex-col items-center gap-1">
+                  <div className="flex gap-0.5">
+                    {palette.slice(0, 3).map((color, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setColorValue(['primary'], color)}
+                        className="w-5 h-5 rounded border border-gray-600 hover:scale-110 transition-transform"
+                        style={{ backgroundColor: color }}
+                        title={`Apply ${name} - ${color}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-500 capitalize">{name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* 随机生成 */}
+          <div className="flex gap-2">
+            <button
+              onClick={generateRandomTheme}
+              className="flex-1 px-3 py-2 bg-[#2d2d30] border border-[#3e3e42] rounded text-sm text-gray-300 hover:bg-[#3e3e42] transition-colors flex items-center justify-center gap-2"
+            >
+              <Wand2 className="w-4 h-4" />
+              Generate Random
+            </button>
+            <button
+              onClick={resetToDefault}
+              className="flex-1 px-3 py-2 bg-[#2d2d30] border border-[#3e3e42] rounded text-sm text-gray-300 hover:bg-[#3e3e42] transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Reset
+            </button>
+            <button
+              onClick={copyThemeJson}
+              className="flex-1 px-3 py-2 bg-[#2d2d30] border border-[#3e3e42] rounded text-sm text-gray-300 hover:bg-[#3e3e42] transition-colors flex items-center justify-center gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              Copy JSON
+            </button>
+          </div>
         </div>
 
         {/* 内容区域 */}

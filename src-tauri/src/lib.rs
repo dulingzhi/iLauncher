@@ -31,6 +31,8 @@ pub fn run() {
             commands::query,
             commands::execute_action,
             commands::get_plugins,
+            commands::get_plugin_config,
+            commands::save_plugin_config,
             commands::show_app,
             commands::hide_app,
             commands::toggle_app,
