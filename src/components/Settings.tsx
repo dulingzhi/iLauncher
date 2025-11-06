@@ -37,6 +37,26 @@ interface AppConfig {
   };
 }
 
+interface PluginMetadata {
+  id: string;
+  name: string;
+  version: string;
+  settings: SettingDefinition[];
+  [key: string]: any;
+}
+
+interface SettingDefinition {
+  type: string;
+  key?: string;
+  label?: string;
+  value?: any;
+  options?: any;
+}
+
+interface PluginConfig {
+  [key: string]: any;
+}
+
 interface SettingsProps {
   onClose: () => void;
 }
@@ -53,6 +73,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [editingTheme, setEditingTheme] = useState<Theme | null>(null);
   const [hotkeyError, setHotkeyError] = useState<string>('');
   const { setTheme } = useThemeStore();
+  const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
+  const [pluginConfigs, setPluginConfigs] = useState<Record<string, PluginConfig>>({});
 
   // 从全局配置初始化本地编辑状态
   useEffect(() => {
@@ -62,6 +84,33 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setLoading(false);
     }
   }, [globalConfig, setTheme]);
+
+  // 加载插件列表和配置
+  useEffect(() => {
+    const loadPlugins = async () => {
+      try {
+        const pluginList = await invoke<PluginMetadata[]>('get_plugins');
+        setPlugins(pluginList);
+        
+        // 加载每个插件的配置
+        const configs: Record<string, PluginConfig> = {};
+        for (const plugin of pluginList) {
+          try {
+            const pluginConfig = await invoke<PluginConfig>('get_plugin_config', { pluginId: plugin.id });
+            configs[plugin.id] = pluginConfig;
+          } catch (e) {
+            console.warn(`Failed to load config for plugin ${plugin.id}:`, e);
+            configs[plugin.id] = {};
+          }
+        }
+        setPluginConfigs(configs);
+      } catch (error) {
+        console.error('Failed to load plugins:', error);
+      }
+    };
+    
+    loadPlugins();
+  }, []);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -597,25 +646,144 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <div className="space-y-5">
                   <div>
                     <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.pluginSettings')}</h2>
-                    <div className="space-y-2">
-                      {config.plugins.enabled_plugins.map((plugin) => (
-                        <div
-                          key={plugin}
-                          className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42]"
-                        >
-                          <span className="text-sm text-gray-300 capitalize">{plugin.replace('_', ' ')}</span>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={true}
-                              readOnly
-                              className="sr-only peer"
-                            />
-                            <div className="w-9 h-5 bg-[#3c3c3c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#007acc]"></div>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
+                    
+                    {plugins.length === 0 ? (
+                      <div className="text-sm text-gray-500">Loading plugins...</div>
+                    ) : (
+                      <div className="space-y-6">
+                        {plugins.map((plugin) => (
+                          <div key={plugin.id} className="bg-[#2d2d30] rounded-lg border border-[#3e3e42] overflow-hidden">
+                            {/* 插件头部 */}
+                            <div className="px-4 py-3 border-b border-[#3e3e42]">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h3 className="text-sm font-medium text-gray-200">{plugin.name}</h3>
+                                  <p className="text-xs text-gray-500 mt-0.5">{plugin.id} v{plugin.version}</p>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* 插件设置 */}
+                            {plugin.settings && plugin.settings.length > 0 ? (
+                              <div className="p-4 space-y-3">
+                                {plugin.settings.map((setting, idx) => {
+                                  const currentValue = pluginConfigs[plugin.id]?.[setting.key || ''] ?? setting.value;
+                                  
+                                  return (
+                                    <div key={idx}>
+                                      {setting.type === 'checkbox' && (
+                                        <label className="flex items-center justify-between px-4 py-3 bg-[#252526] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#2a2d2e] transition-colors">
+                                          <div>
+                                            <span className="text-sm font-medium text-gray-300">{setting.label || setting.key}</span>
+                                          </div>
+                                          <input
+                                            type="checkbox"
+                                            checked={currentValue || false}
+                                            onChange={async (e) => {
+                                              const newValue = e.target.checked;
+                                              const newConfig = {
+                                                ...pluginConfigs[plugin.id],
+                                                [setting.key || '']: newValue
+                                              };
+                                              setPluginConfigs({
+                                                ...pluginConfigs,
+                                                [plugin.id]: newConfig
+                                              });
+                                              
+                                              // 立即保存到后端
+                                              try {
+                                                await invoke('save_plugin_config', {
+                                                  pluginId: plugin.id,
+                                                  config: newConfig
+                                                });
+                                                showToast(`${plugin.name} settings saved`, 'success');
+                                              } catch (error) {
+                                                console.error('Failed to save plugin config:', error);
+                                                showToast('Failed to save settings', 'error');
+                                              }
+                                            }}
+                                            className="w-4 h-4 accent-[#007acc]"
+                                          />
+                                        </label>
+                                      )}
+                                      
+                                      {setting.type === 'text' && (
+                                        <div>
+                                          <label className="block text-sm font-medium mb-2 text-gray-300">
+                                            {setting.label || setting.key}
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={currentValue || ''}
+                                            onChange={(e) => {
+                                              const newValue = e.target.value;
+                                              setPluginConfigs({
+                                                ...pluginConfigs,
+                                                [plugin.id]: {
+                                                  ...pluginConfigs[plugin.id],
+                                                  [setting.key || '']: newValue
+                                                }
+                                              });
+                                            }}
+                                            onBlur={async () => {
+                                              // 失焦时保存
+                                              try {
+                                                await invoke('save_plugin_config', {
+                                                  pluginId: plugin.id,
+                                                  config: pluginConfigs[plugin.id]
+                                                });
+                                              } catch (error) {
+                                                console.error('Failed to save plugin config:', error);
+                                              }
+                                            }}
+                                            className="w-full px-3 py-2 text-sm bg-[#3c3c3c] text-gray-200 rounded border border-[#555] focus:border-[#007acc] focus:outline-none transition-colors"
+                                          />
+                                        </div>
+                                      )}
+                                      
+                                      {setting.type === 'number' && (
+                                        <div>
+                                          <label className="block text-sm font-medium mb-2 text-gray-300">
+                                            {setting.label || setting.key}
+                                          </label>
+                                          <input
+                                            type="number"
+                                            value={currentValue || 0}
+                                            onChange={(e) => {
+                                              const newValue = parseInt(e.target.value) || 0;
+                                              setPluginConfigs({
+                                                ...pluginConfigs,
+                                                [plugin.id]: {
+                                                  ...pluginConfigs[plugin.id],
+                                                  [setting.key || '']: newValue
+                                                }
+                                              });
+                                            }}
+                                            onBlur={async () => {
+                                              try {
+                                                await invoke('save_plugin_config', {
+                                                  pluginId: plugin.id,
+                                                  config: pluginConfigs[plugin.id]
+                                                });
+                                              } catch (error) {
+                                                console.error('Failed to save plugin config:', error);
+                                              }
+                                            }}
+                                            className="w-full px-3 py-2 text-sm bg-[#3c3c3c] text-gray-200 rounded border border-[#555] focus:border-[#007acc] focus:outline-none transition-colors"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="px-4 py-3 text-xs text-gray-500">No settings available</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
