@@ -8,6 +8,10 @@ mod preview;
 mod storage;
 mod statistics;
 
+// MFT 扫描器模块
+#[cfg(target_os = "windows")]
+mod mft_scanner;
+
 use storage::StorageManager;
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -115,4 +119,48 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// MFT 扫描器模式入口（管理员权限）
+#[cfg(target_os = "windows")]
+pub fn run_mft_scanner() {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt};
+    use tracing_appender::rolling;
+    use std::env;
+    
+    // 创建文件appender（每天滚动）
+    let log_dir = env::temp_dir();
+    let file_appender = rolling::never(&log_dir, "ilauncher_mft_scanner.log");
+    
+    // 初始化日志（写入文件）
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "ilauncher=debug".into()),
+        )
+        .with(fmt::layer().with_writer(file_appender).with_ansi(false))
+        .init();
+    
+    tracing::info!("========== MFT Scanner Started at {} ==========", 
+                   chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    tracing::info!("🚀 Starting MFT Scanner in privileged mode...");
+    tracing::info!("📝 Log file: {:?}", log_dir.join("ilauncher_mft_scanner.log"));
+    
+    // 检查管理员权限
+    if !mft_scanner::MftScanner::check_admin_rights() {
+        tracing::error!("❌ Error: MFT Scanner requires administrator rights");
+        std::process::exit(1);
+    }
+    
+    // 启动 IPC 服务器
+    if let Err(e) = mft_scanner::ScannerServer::run() {
+        tracing::error!("❌ Scanner server error: {:#}", e);
+        std::process::exit(1);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn run_mft_scanner() {
+    eprintln!("MFT Scanner is only available on Windows");
+    std::process::exit(1);
 }

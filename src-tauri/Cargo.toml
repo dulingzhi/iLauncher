@@ -39,6 +39,7 @@ arboard = "3"
 # 日志
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 
 # 全局热键
 global-hotkey = "0.6"
@@ -55,20 +56,20 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 walkdir = "2"
 
 [target.'cfg(windows)'.dependencies]
-ntfs = "0.4"
-winapi = { version = "0.3", features = ["fileapi", "winbase", "handleapi", "ioapiset"] }
 windows = { version = "0.58", features = [
     "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_System_Threading",
-    "Win32_System_Console",
     "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_System_Threading",
     "Win32_System_Ioctl",
-    "Win32_System_DataExchange",
     "Win32_System_Memory",
-    "Win32_Graphics_Gdi",
+    "Win32_System_DataExchange",
+    "Win32_UI_Shell",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
 ] }
+interprocess = { version = "2.2.1", features = ["tokio"] }
 
 # 系统信息
 directories = "5"

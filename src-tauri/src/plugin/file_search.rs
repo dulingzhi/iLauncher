@@ -13,11 +13,41 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 
+#[cfg(target_os = "windows")]
+use crate::mft_scanner::{MftFileEntry, ScannerLauncher, ScannerClient};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileSearchConfig {
+    #[serde(default = "default_use_mft")]
+    pub use_mft: bool,
+}
+
+fn default_use_mft() -> bool {
+    true  // 默认启用 MFT
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FileItem {
     path: String,
     name: String,
     is_dir: bool,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    modified: i64,
+}
+
+#[cfg(target_os = "windows")]
+impl From<MftFileEntry> for FileItem {
+    fn from(mft: MftFileEntry) -> Self {
+        Self {
+            path: mft.path,
+            name: mft.name,
+            is_dir: mft.is_dir,
+            size: mft.size,
+            modified: mft.modified,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +65,7 @@ pub struct FileSearchPlugin {
     name_index: Arc<RwLock<HashMap<char, Vec<usize>>>>,
     matcher: SkimMatcherV2,
     search_paths: Vec<PathBuf>,
+    config: Arc<RwLock<FileSearchConfig>>,
 }
 
 impl FileSearchPlugin {
@@ -80,7 +111,14 @@ impl FileSearchPlugin {
                 icon: WoxImage::emoji("📁"),
                 trigger_keywords: vec![],
                 commands: vec![],
-                settings: vec![],
+                settings: vec![
+                    SettingDefinition {
+                        r#type: "checkbox".to_string(),
+                        key: Some("use_mft".to_string()),
+                        label: Some("启用 MFT 快速扫描 (需要管理员权限)".to_string()),
+                        value: Some(serde_json::json!(true)),
+                    },
+                ],
                 supported_os: vec!["windows".to_string(), "macos".to_string(), "linux".to_string()],
                 plugin_type: PluginType::Native,
             },
@@ -88,6 +126,9 @@ impl FileSearchPlugin {
             name_index: Arc::new(RwLock::new(HashMap::new())),
             matcher: SkimMatcherV2::default(),
             search_paths,
+            config: Arc::new(RwLock::new(FileSearchConfig {
+                use_mft: true,
+            })),
         }
     }
     
@@ -98,8 +139,22 @@ impl FileSearchPlugin {
         let files = self.files.clone();
         let name_index = self.name_index.clone();
         let paths = self.search_paths.clone();
+        let config = self.config.clone();
         
         tokio::spawn(async move {
+            let use_mft = config.read().await.use_mft;
+            
+            // MFT模式：每次都重建索引（速度极快，9秒扫描450万文件）
+            #[cfg(target_os = "windows")]
+            if use_mft {
+                tracing::info!("🚀 MFT mode enabled - rebuilding index from MFT (no cache)");
+                Self::rebuild_index(files, name_index, paths, config).await;
+                return;
+            }
+            
+            // 标准BFS模式：使用缓存机制（扫描很慢，需要缓存）
+            tracing::info!("📁 Standard mode - attempting to load from cache");
+            
             // 尝试加载缓存
             if let Ok(cache_path) = Self::get_cache_path() {
                 if cache_path.exists() {
@@ -133,9 +188,10 @@ impl FileSearchPlugin {
                                 let files_clone = files.clone();
                                 let name_index_clone = name_index.clone();
                                 let paths_clone = paths.clone();
+                                let config_clone = config.clone();
                                 
                                 tokio::spawn(async move {
-                                    Self::rebuild_index(files_clone, name_index_clone, paths_clone).await;
+                                    Self::rebuild_index(files_clone, name_index_clone, paths_clone, config_clone).await;
                                 });
                             }
                             
@@ -149,7 +205,7 @@ impl FileSearchPlugin {
             }
             
             // 缓存不存在或加载失败，重建索引
-            Self::rebuild_index(files, name_index, paths).await;
+            Self::rebuild_index(files, name_index, paths, config).await;
         });
     }
     
@@ -158,10 +214,13 @@ impl FileSearchPlugin {
         files: Arc<RwLock<Vec<FileItem>>>,
         name_index: Arc<RwLock<HashMap<char, Vec<usize>>>>,
         paths: Vec<PathBuf>,
+        config: Arc<RwLock<FileSearchConfig>>,
     ) {
         let start = std::time::Instant::now();
         
-        if let Ok(scanned_files) = Self::scan_files(&paths).await {
+        let use_mft = config.read().await.use_mft;
+        
+        if let Ok(scanned_files) = Self::scan_files(&paths, use_mft).await {
             let file_count = scanned_files.len();
             
             // 构建索引
@@ -188,7 +247,16 @@ impl FileSearchPlugin {
                 file_count as f32 / elapsed.as_secs_f32()
             );
             
-            // 异步保存缓存
+            // 保存缓存策略：
+            // - MFT模式：不保存缓存（每次重建很快，没必要缓存）
+            // - BFS模式：保存缓存（扫描很慢，需要缓存）
+            #[cfg(target_os = "windows")]
+            if use_mft {
+                tracing::info!("🚀 MFT mode - skipping cache save (will rebuild on next startup)");
+                return;
+            }
+            
+            // 异步保存缓存（仅BFS模式）
             tokio::spawn(async move {
                 if let Ok(cache_path) = Self::get_cache_path() {
                     let cache = FileCache {
@@ -252,7 +320,106 @@ impl FileSearchPlugin {
     }
     
     /// 扫描文件（超快速）
-    async fn scan_files(paths: &[PathBuf]) -> Result<Vec<FileItem>> {
+    async fn scan_files(paths: &[PathBuf], use_mft: bool) -> Result<Vec<FileItem>> {
+        // Windows: 如果启用 MFT，尝试使用提权进程扫描
+        #[cfg(target_os = "windows")]
+        {
+            if use_mft {
+                tracing::info!("🚀 MFT mode enabled, checking scanner process...");
+                
+                // 检查扫描器进程是否已运行
+                if !ScannerLauncher::is_running() {
+                    tracing::info!("Scanner process not running, launching with elevated privileges...");
+                    
+                    // 启动管理员权限的扫描器进程
+                    if let Err(e) = ScannerLauncher::launch() {
+                        tracing::warn!("Failed to launch scanner process: {}, falling back to standard scan", e);
+                        return Self::scan_with_bfs(paths).await;
+                    }
+                    
+                    // 等待扫描器启动
+                    tracing::info!("Waiting for scanner process to start...");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+                }
+                
+                // 尝试通过 IPC 获取扫描结果
+                match Self::scan_with_mft_ipc(paths).await {
+                    Ok(files) => {
+                        tracing::info!("✓ MFT scan via IPC completed successfully");
+                        return Ok(files);
+                    }
+                    Err(e) => {
+                        tracing::warn!("MFT IPC scan failed: {}, falling back to standard scan", e);
+                    }
+                }
+            } else {
+                tracing::info!("⚡ MFT disabled in settings, using standard scan mode");
+            }
+        }
+        
+        // 降级到标准 BFS 扫描
+        Self::scan_with_bfs(paths).await
+    }
+    
+    /// 通过 IPC 与扫描器进程通信，获取 MFT 扫描结果
+    #[cfg(target_os = "windows")]
+    async fn scan_with_mft_ipc(paths: &[PathBuf]) -> Result<Vec<FileItem>> {
+        tracing::info!("Connecting to MFT scanner process via IPC...");
+        
+        // 连接到扫描器
+        let mut client = ScannerClient::connect()?;
+        
+        // 测试连接
+        client.ping()?;
+        tracing::info!("✓ Connected to scanner process");
+        
+        let mut all_files = Vec::new();
+        let start = std::time::Instant::now();
+        
+        // 对每个驱动器发起扫描请求
+        for base_path in paths {
+            if !base_path.exists() {
+                continue;
+            }
+            
+            // 获取驱动器字母
+            let drive_letter = base_path
+                .to_string_lossy()
+                .chars()
+                .next()
+                .unwrap_or('C');
+            
+            tracing::info!("⚡ Requesting MFT scan for {}:\\ ...", drive_letter);
+            
+            // 通过 IPC 请求扫描
+            match client.scan_drive(drive_letter) {
+                Ok(mft_entries) => {
+                    let count = mft_entries.len();
+                    tracing::info!("  ✓ {}:\\ → {} files", drive_letter, count);
+                    
+                    // 转换为 FileItem
+                    all_files.extend(mft_entries.into_iter().map(FileItem::from));
+                }
+                Err(e) => {
+                    tracing::error!("  ✗ Failed to scan {}:\\: {:#}", drive_letter, e);
+                    return Err(e);
+                }
+            }
+        }
+        
+        let total_elapsed = start.elapsed().as_secs_f32();
+        tracing::info!(
+            "✓ MFT IPC scan complete: {} files in {:.2}s ({:.0} files/s)",
+            all_files.len(),
+            total_elapsed,
+            all_files.len() as f32 / total_elapsed
+        );
+        
+        Ok(all_files)
+    }
+    
+    /// BFS 扫描方式（所有平台）
+    async fn scan_with_bfs(paths: &[PathBuf]) -> Result<Vec<FileItem>> {
         let paths = paths.to_vec();
         
         tokio::task::spawn_blocking(move || {
@@ -265,7 +432,7 @@ impl FileSearchPlugin {
                 }
                 
                 let drive_letter = base_path.to_string_lossy().chars().next().unwrap_or('C');
-                tracing::info!("⚡ Scanning {}:\\ ...", drive_letter);
+                tracing::info!("⚡ BFS scanning {}:\\ ...", drive_letter);
                 
                 let count_before = files.len();
                 Self::ultra_fast_walk(base_path, &mut files);
@@ -330,6 +497,8 @@ impl FileSearchPlugin {
                         path: path_str,
                         name: file_name,
                         is_dir,
+                        size: 0,  // BFS 模式不获取大小（性能优化）
+                        modified: 0,
                     });
                     
                     // 如果是目录，加入队列
