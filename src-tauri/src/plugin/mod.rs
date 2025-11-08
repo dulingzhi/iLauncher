@@ -32,6 +32,24 @@ pub struct PluginManager {
 
 impl PluginManager {
     pub async fn new() -> Self {
+        // 加载插件配置（从存储管理器）
+        let storage = match crate::storage::StorageManager::new() {
+            Ok(s) => s,
+            Err(_) => {
+                tracing::warn!("Failed to create storage manager for plugin config");
+                let mut manager = Self { plugins: Vec::new() };
+                Self::register_default_plugins(&mut manager).await;
+                return manager;
+            }
+        };
+        
+        let file_search_config = storage.get_plugin_config("file_search").await.ok();
+        let use_mft = file_search_config
+            .as_ref()
+            .and_then(|cfg| cfg.get("use_mft"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true); // 默认启用
+        
         let mut manager = Self {
             plugins: Vec::new(),
         };
@@ -52,11 +70,33 @@ impl PluginManager {
         app_search.init().await;
         manager.register(Box::new(app_search));
         
-        let file_search = file_search::FileSearchPlugin::new();
+        // 使用插件配置初始化文件搜索插件
+        let file_search = file_search::FileSearchPlugin::new_with_config(use_mft);
         file_search.init().await;
         manager.register(Box::new(file_search));
         
         manager
+    }
+    
+    async fn register_default_plugins(manager: &mut Self) {
+        manager.register(Box::new(calculator::CalculatorPlugin::new()));
+        manager.register(Box::new(web_search::WebSearchPlugin::new()));
+        manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
+        manager.register(Box::new(settings::SettingsPlugin::new()));
+        manager.register(Box::new(settings::PluginManagerPlugin::new()));
+        manager.register(Box::new(settings::ClipboardHistoryPlugin::new()));
+        
+        let clipboard = clipboard::ClipboardPlugin::new();
+        clipboard.init().await;
+        manager.register(Box::new(clipboard));
+        
+        let app_search = app_search::AppSearchPlugin::new();
+        app_search.init().await;
+        manager.register(Box::new(app_search));
+        
+        let file_search = file_search::FileSearchPlugin::new();
+        file_search.init().await;
+        manager.register(Box::new(file_search));
     }
     
     /// 注册插件
@@ -79,6 +119,13 @@ impl PluginManager {
         for plugin in &self.plugins {
             match plugin.query(&ctx).await {
                 Ok(mut results) => {
+                    // 🔹 给文件搜索插件的结果加分，提高优先级
+                    if plugin.metadata().id == "file_search" {
+                        for result in &mut results {
+                            // 给文件搜索结果加 20 分
+                            result.score += 20;
+                        }
+                    }
                     all_results.append(&mut results);
                 }
                 Err(e) => {

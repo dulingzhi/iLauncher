@@ -14,7 +14,9 @@ use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 
 #[cfg(target_os = "windows")]
-use crate::mft_scanner::{MftFileEntry, ScannerLauncher, ScannerClient};
+use crate::mft_scanner::MftFileEntry;
+// TODO: 重新实现 Scanner 集成
+// use crate::mft_scanner::{ScannerLauncher, ScannerClient};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSearchConfig {
@@ -70,6 +72,10 @@ pub struct FileSearchPlugin {
 
 impl FileSearchPlugin {
     pub fn new() -> Self {
+        Self::new_with_config(true) // 默认启用 MFT
+    }
+    
+    pub fn new_with_config(use_mft: bool) -> Self {
         // 全盘搜索路径
         let mut search_paths = Vec::new();
         
@@ -127,7 +133,7 @@ impl FileSearchPlugin {
             matcher: SkimMatcherV2::default(),
             search_paths,
             config: Arc::new(RwLock::new(FileSearchConfig {
-                use_mft: true,
+                use_mft,
             })),
         }
     }
@@ -280,12 +286,9 @@ impl FileSearchPlugin {
     
     /// 获取缓存文件路径
     fn get_cache_path() -> Result<PathBuf> {
-        let app_data = directories::ProjectDirs::from("", "", "iLauncher")
-            .ok_or_else(|| anyhow::anyhow!("Failed to get app data directory"))?;
+        use crate::utils::paths;
         
-        let cache_dir = app_data.cache_dir();
-        std::fs::create_dir_all(cache_dir)?;
-        
+        let cache_dir = paths::get_cache_dir()?;
         Ok(cache_dir.join("file_index.bin"))
     }
     
@@ -321,37 +324,12 @@ impl FileSearchPlugin {
     
     /// 扫描文件（超快速）
     async fn scan_files(paths: &[PathBuf], use_mft: bool) -> Result<Vec<FileItem>> {
-        // Windows: 如果启用 MFT，尝试使用提权进程扫描
+        // Windows: 如果启用 MFT，直接查询数据库
         #[cfg(target_os = "windows")]
         {
             if use_mft {
-                tracing::info!("🚀 MFT mode enabled, checking scanner process...");
-                
-                // 检查扫描器进程是否已运行
-                if !ScannerLauncher::is_running() {
-                    tracing::info!("Scanner process not running, launching with elevated privileges...");
-                    
-                    // 启动管理员权限的扫描器进程
-                    if let Err(e) = ScannerLauncher::launch() {
-                        tracing::warn!("Failed to launch scanner process: {}, falling back to standard scan", e);
-                        return Self::scan_with_bfs(paths).await;
-                    }
-                    
-                    // 等待扫描器启动
-                    tracing::info!("Waiting for scanner process to start...");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
-                }
-                
-                // 尝试通过 IPC 获取扫描结果
-                match Self::scan_with_mft_ipc(paths).await {
-                    Ok(files) => {
-                        tracing::info!("✓ MFT scan via IPC completed successfully");
-                        return Ok(files);
-                    }
-                    Err(e) => {
-                        tracing::warn!("MFT IPC scan failed: {}, falling back to standard scan", e);
-                    }
-                }
+                tracing::info!("🚀 MFT mode enabled - querying from database");
+                return Self::load_from_mft_database().await;
             } else {
                 tracing::info!("⚡ MFT disabled in settings, using standard scan mode");
             }
@@ -361,61 +339,33 @@ impl FileSearchPlugin {
         Self::scan_with_bfs(paths).await
     }
     
+    /// 从 MFT 数据库加载所有文件（可选：用于初始化）
+    #[cfg(target_os = "windows")]
+    async fn load_from_mft_database() -> Result<Vec<FileItem>> {
+        use crate::mft_scanner::database;
+        use crate::utils::paths;
+        
+        // 使用统一的数据目录
+        let output_dir = paths::get_mft_database_dir()?
+            .to_string_lossy()
+            .to_string();
+        
+        // 从所有盘符的数据库加载（这里加载全量数据用于缓存）
+        // 注意：实际搜索时应该使用 search_all_drives 进行按需查询
+        tracing::info!("Loading files from MFT databases in {:?}", output_dir);
+        
+        // 暂时返回空，实际搜索时再查询
+        // 这样可以避免启动时加载全部数据（450万文件太多）
+        tracing::info!("MFT mode: will query database on demand during search");
+        Ok(Vec::new())
+    }
+    
     /// 通过 IPC 与扫描器进程通信，获取 MFT 扫描结果
     #[cfg(target_os = "windows")]
-    async fn scan_with_mft_ipc(paths: &[PathBuf]) -> Result<Vec<FileItem>> {
-        tracing::info!("Connecting to MFT scanner process via IPC...");
-        
-        // 连接到扫描器
-        let mut client = ScannerClient::connect()?;
-        
-        // 测试连接
-        client.ping()?;
-        tracing::info!("✓ Connected to scanner process");
-        
-        let mut all_files = Vec::new();
-        let start = std::time::Instant::now();
-        
-        // 对每个驱动器发起扫描请求
-        for base_path in paths {
-            if !base_path.exists() {
-                continue;
-            }
-            
-            // 获取驱动器字母
-            let drive_letter = base_path
-                .to_string_lossy()
-                .chars()
-                .next()
-                .unwrap_or('C');
-            
-            tracing::info!("⚡ Requesting MFT scan for {}:\\ ...", drive_letter);
-            
-            // 通过 IPC 请求扫描
-            match client.scan_drive(drive_letter) {
-                Ok(mft_entries) => {
-                    let count = mft_entries.len();
-                    tracing::info!("  ✓ {}:\\ → {} files", drive_letter, count);
-                    
-                    // 转换为 FileItem
-                    all_files.extend(mft_entries.into_iter().map(FileItem::from));
-                }
-                Err(e) => {
-                    tracing::error!("  ✗ Failed to scan {}:\\: {:#}", drive_letter, e);
-                    return Err(e);
-                }
-            }
-        }
-        
-        let total_elapsed = start.elapsed().as_secs_f32();
-        tracing::info!(
-            "✓ MFT IPC scan complete: {} files in {:.2}s ({:.0} files/s)",
-            all_files.len(),
-            total_elapsed,
-            all_files.len() as f32 / total_elapsed
-        );
-        
-        Ok(all_files)
+    async fn scan_with_mft_ipc(_paths: &[PathBuf]) -> Result<Vec<FileItem>> {
+        // 已废弃：MFT 现在使用数据库查询，不需要 IPC
+        tracing::warn!("scan_with_mft_ipc is deprecated, use database queries instead");
+        Ok(Vec::new())
     }
     
     /// BFS 扫描方式（所有平台）
@@ -551,7 +501,139 @@ impl FileSearchPlugin {
         Self::open_file(&folder).await
     }
     
-    /// 复制到剪贴板
+        /// 从 MFT 数据库查询文件
+    #[cfg(target_os = "windows")]
+    async fn query_from_mft_database(&self, search: &str, _ctx: &QueryContext) -> Result<Vec<QueryResult>> {
+        use crate::mft_scanner::database;
+        use crate::utils::paths;
+        
+        // 使用统一的数据目录
+        let output_dir = paths::get_mft_database_dir()?
+            .to_string_lossy()
+            .to_string();
+        
+        // 检查数据库是否存在
+        let db_dir = std::path::Path::new(&output_dir);
+        if !db_dir.exists() {
+            tracing::warn!("MFT database directory not found: {}", output_dir);
+            return Ok(vec![QueryResult {
+                id: "mft_scanning".to_string(),
+                title: "⚡ MFT Scanner is indexing...".to_string(),
+                subtitle: "Please wait for initial scan to complete".to_string(),
+                icon: WoxImage::emoji("⏳"),
+                preview: None,
+                score: 100,
+                context_data: serde_json::Value::Null,
+                group: None,
+                plugin_id: self.metadata.id.clone(),
+                refreshable: false,
+                actions: vec![],
+            }]);
+        }
+        
+        // 查询数据库（限制返回50个结果）
+        let mft_entries = match database::search_all_drives(search, &output_dir, 50) {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::error!("MFT database query failed: {:#}", e);
+                return Ok(vec![QueryResult {
+                    id: "mft_error".to_string(),
+                    title: "❌ MFT Query Failed".to_string(),
+                    subtitle: format!("Error: {}", e),
+                    icon: WoxImage::emoji("⚠️"),
+                    preview: None,
+                    score: 100,
+                    context_data: serde_json::Value::Null,
+                    group: None,
+                    plugin_id: self.metadata.id.clone(),
+                    refreshable: false,
+                    actions: vec![],
+                }]);
+            }
+        };
+        
+        // 如果没有结果，返回提示
+        if mft_entries.is_empty() {
+            return Ok(vec![QueryResult {
+                id: "no_results".to_string(),
+                title: "No files found".to_string(),
+                subtitle: format!("No matches for '{}'", search),
+                icon: WoxImage::emoji("🔍"),
+                preview: None,
+                score: 0,
+                context_data: serde_json::Value::Null,
+                group: None,
+                plugin_id: self.metadata.id.clone(),
+                refreshable: false,
+                actions: vec![],
+            }]);
+        }
+        
+        // 转换为 QueryResult
+        let mut results = Vec::new();
+        for entry in mft_entries {
+            let icon = if entry.is_dir {
+                WoxImage::emoji("📁")
+            } else {
+                WoxImage::emoji("📄")
+            };
+            
+            results.push(QueryResult {
+                id: entry.path.clone(),
+                title: entry.name.clone(),
+                subtitle: entry.path.clone(),
+                icon,
+                preview: Some(Preview::Text(format!(
+                    "Path: {}\nType: {}\nSize: {} bytes",
+                    entry.path,
+                    if entry.is_dir { "Directory" } else { "File" },
+                    entry.size
+                ))),
+                score: entry.priority.max(50),
+                context_data: serde_json::json!({
+                    "path": entry.path,
+                    "is_dir": entry.is_dir,
+                }),
+                group: None,
+                plugin_id: self.metadata.id.clone(),
+                refreshable: false,
+                actions: vec![
+                    Action {
+                        id: "open".to_string(),
+                        name: if entry.is_dir {
+                            "Open Folder".to_string()
+                        } else {
+                            "Open File".to_string()
+                        },
+                        icon: Some(WoxImage::emoji("📂")),
+                        is_default: true,
+                        prevent_hide: false,
+                        hotkey: None,
+                    },
+                    Action {
+                        id: "open_folder".to_string(),
+                        name: "Open Containing Folder".to_string(),
+                        icon: Some(WoxImage::emoji("📁")),
+                        is_default: false,
+                        prevent_hide: false,
+                        hotkey: None,
+                    },
+                    Action {
+                        id: "copy_path".to_string(),
+                        name: "Copy Path".to_string(),
+                        icon: Some(WoxImage::emoji("📋")),
+                        is_default: false,
+                        prevent_hide: false,
+                        hotkey: None,
+                    },
+                ],
+            });
+        }
+        
+        Ok(results)
+    }
+    
+    /// 复制文本到剪贴板
     async fn copy_to_clipboard(text: &str) -> Result<()> {
         let text = text.to_string();
         
@@ -660,6 +742,16 @@ impl Plugin for FileSearchPlugin {
             return Ok(Vec::new());
         }
         
+        // 检查是否启用 MFT，启用则直接查询数据库
+        #[cfg(target_os = "windows")]
+        {
+            let use_mft = self.config.read().await.use_mft;
+            if use_mft {
+                return self.query_from_mft_database(search, ctx).await;
+            }
+        }
+        
+        // 标准 BFS 模式：使用内存索引
         let files = self.files.read().await;
         
         // 如果还没扫描完成
