@@ -117,12 +117,10 @@ pub struct StorageManager {
 
 impl StorageManager {
     pub fn new() -> Result<Self> {
-        // 获取应用数据目录
-        let app_data_dir = if let Some(data_dir) = directories::ProjectDirs::from("com", "iLauncher", "iLauncher") {
-            data_dir.data_dir().to_path_buf()
-        } else {
-            PathBuf::from(".")
-        };
+        // 使用统一的 AppData\Local\iLauncher 目录
+        use crate::utils::paths;
+        
+        let app_data_dir = paths::get_app_data_dir()?;
 
         // 创建必要的目录
         let config_dir = app_data_dir.join("config");

@@ -93,11 +93,11 @@ impl StatisticsManager {
     
     /// 获取数据库路径
     fn get_db_path() -> Result<PathBuf> {
-        let app_data = directories::ProjectDirs::from("", "", "iLauncher")
-            .ok_or_else(|| anyhow::anyhow!("Failed to get app data directory"))?;
+        use crate::utils::paths;
         
-        let data_dir = app_data.data_dir();
-        std::fs::create_dir_all(data_dir)?;
+        let app_data_dir = paths::get_app_data_dir()?;
+        let data_dir = app_data_dir.join("data");
+        std::fs::create_dir_all(&data_dir)?;
         
         Ok(data_dir.join("statistics.db"))
     }

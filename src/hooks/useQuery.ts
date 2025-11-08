@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult } from '../types';
 
@@ -8,21 +8,42 @@ export function useQuery() {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [loading, setLoading] = useState(false);
   
+  // 使用 ref 跟踪最新的查询序列号
+  const queryIdRef = useRef(0);
+  
   const performQuery = useCallback(async (input: string) => {
     if (!input.trim()) {
       setResults([]);
       return;
     }
     
+    // 生成新的查询ID
+    const currentQueryId = ++queryIdRef.current;
+    
     setLoading(true);
     try {
       const data = await invoke<QueryResult[]>('query', { input });
-      setResults(data);
+      
+      // 只有当这是最新的查询时才更新结果
+      if (currentQueryId === queryIdRef.current) {
+        setResults(data);
+      } else {
+        console.log('[useQuery] Discarding stale query result:', { 
+          currentQueryId, 
+          latestQueryId: queryIdRef.current 
+        });
+      }
     } catch (error) {
       console.error('Query failed:', error);
-      setResults([]);
+      // 只有当这是最新的查询时才清空结果
+      if (currentQueryId === queryIdRef.current) {
+        setResults([]);
+      }
     } finally {
-      setLoading(false);
+      // 只有当这是最新的查询时才关闭 loading
+      if (currentQueryId === queryIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
   

@@ -122,6 +122,75 @@ pub async fn save_config(
     storage.save_config(&config).await.map_err(|e| e.to_string())
 }
 
+/// 切换 MFT 开关（Windows only）
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn toggle_mft(
+    enabled: bool,
+    storage: State<'_, StorageManager>,
+) -> Result<(), String> {
+    use std::process::Command;
+    
+    // 读取当前 file_search 插件配置
+    let mut plugin_config = storage
+        .get_plugin_config("file_search")
+        .await
+        .unwrap_or_else(|_| serde_json::json!({}));
+    
+    // 更新 use_mft 字段
+    if let Some(obj) = plugin_config.as_object_mut() {
+        obj.insert("use_mft".to_string(), serde_json::json!(enabled));
+    }
+    
+    // 保存插件配置
+    storage
+        .save_plugin_config("file_search", plugin_config)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    tracing::info!("✓ File Search plugin config updated: use_mft = {}", enabled);
+    
+    if enabled {
+        // 启动 MFT service 子进程（使用管理员权限）
+        tracing::info!("MFT enabled, starting MFT service subprocess with admin rights...");
+        
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get exe path: {}", e))?;
+        
+        // 使用 PowerShell Start-Process -Verb RunAs 请求管理员权限
+        let ps_command = format!(
+            "Start-Process -FilePath '{}' -ArgumentList '--mft-service' -Verb RunAs -WindowStyle Hidden",
+            exe_path.display()
+        );
+        
+        Command::new("powershell.exe")
+            .args(["-WindowStyle", "Hidden", "-Command", &ps_command])
+            .spawn()
+            .map_err(|e| format!("Failed to start MFT service: {}", e))?;
+        
+        tracing::info!("✓ MFT service launch requested (UAC prompt will appear)");
+    } else {
+        // 停止 MFT service（发送信号或杀掉进程）
+        tracing::info!("MFT disabled, stopping MFT service...");
+        
+        // 强制终止所有 MFT Service 进程
+        #[cfg(target_os = "windows")]
+        {
+            // 查找并终止带有 --mft-service 参数的进程
+            let _ = Command::new("powershell.exe")
+                .args([
+                    "-Command",
+                    "Get-Process ilauncher | Where-Object { $_.CommandLine -like '*--mft-service*' } | Stop-Process -Force"
+                ])
+                .output();
+        }
+        
+        tracing::info!("✓ MFT service stop requested");
+    }
+    
+    Ok(())
+}
+
 /// 清除缓存
 #[tauri::command]
 pub async fn clear_cache(storage: State<'_, StorageManager>) -> Result<(), String> {
@@ -161,6 +230,101 @@ pub async fn get_statistics(stats: State<'_, StatisticsManager>) -> Result<Stati
 #[tauri::command]
 pub async fn clear_statistics(stats: State<'_, StatisticsManager>) -> Result<(), String> {
     stats.cleanup_old_data().await.map_err(|e| e.to_string())
+}
+
+/// 获取 MFT 扫描状态（Windows only）
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn get_mft_status() -> Result<MftStatus, String> {
+    use std::path::Path;
+    use crate::utils::paths;
+    
+    let output_dir = paths::get_mft_database_dir()
+        .map_err(|e| format!("Failed to get database directory: {}", e))?;
+    
+    // 检查数据库目录
+    if !output_dir.exists() {
+        return Ok(MftStatus {
+            is_scanning: true,
+            is_ready: false,
+            database_exists: false,
+            drives: vec![],
+            total_files: 0,
+            message: "MFT database not found. Scanner may not be running.".to_string(),
+        });
+    }
+    
+    // 检查各个盘符的数据库
+    let mut drives = Vec::new();
+    let mut total_files = 0u64;
+    
+    for drive in b'A'..=b'Z' {
+        let drive_letter = drive as char;
+        let db_path = output_dir.join(format!("{}.db", drive_letter));
+        
+        if db_path.exists() {
+            // 检查数据库大小
+            if let Ok(metadata) = std::fs::metadata(&db_path) {
+                let size_mb = metadata.len() / 1024 / 1024;
+                
+                // 估算文件数（粗略：1MB ≈ 10000 文件）
+                let estimated_files = (metadata.len() / 100) as u64;
+                total_files += estimated_files;
+                
+                drives.push(MftDriveInfo {
+                    letter: drive_letter,
+                    database_size_mb: size_mb,
+                    estimated_files,
+                });
+            }
+        }
+    }
+    
+    let is_ready = !drives.is_empty();
+    let message = if is_ready {
+        format!("MFT ready: {} drives, ~{} files indexed", drives.len(), total_files)
+    } else {
+        "MFT scanner is running initial scan...".to_string()
+    };
+    
+    Ok(MftStatus {
+        is_scanning: !is_ready,
+        is_ready,
+        database_exists: true,
+        drives,
+        total_files,
+        message,
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub async fn get_mft_status() -> Result<MftStatus, String> {
+    Ok(MftStatus {
+        is_scanning: false,
+        is_ready: false,
+        database_exists: false,
+        drives: vec![],
+        total_files: 0,
+        message: "MFT is only available on Windows".to_string(),
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct MftStatus {
+    pub is_scanning: bool,
+    pub is_ready: bool,
+    pub database_exists: bool,
+    pub drives: Vec<MftDriveInfo>,
+    pub total_files: u64,
+    pub message: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct MftDriveInfo {
+    pub letter: char,
+    pub database_size_mb: u64,
+    pub estimated_files: u64,
 }
 
 #[derive(serde::Serialize)]
