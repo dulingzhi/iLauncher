@@ -232,6 +232,8 @@ pub fn run_mft_scanner() {
 pub fn run_mft_service(args: &[String]) {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+    use std::thread;
     use tracing::{info, error, warn};
     
     // 初始化日志
@@ -434,6 +436,15 @@ pub fn run_mft_service(args: &[String]) {
     info!("💡 Press Ctrl+C to stop monitoring and exit");
     info!("");
     
+    // 🔥 主线程等待停止信号（而不是等待监控线程）
+    // 这样可以确保更快地响应退出信号
+    while running.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(500));
+    }
+    
+    info!("");
+    info!("🛑 Shutdown signal received, waiting for monitors to stop...");
+    
     // 等待所有监控线程退出
     for handle in monitor_handles {
         handle.join().unwrap();
@@ -468,18 +479,28 @@ fn monitor_ui_process(ui_pid: u32, running: std::sync::Arc<std::sync::atomic::At
         if !process_exists {
             info!("⚠️  UI process (PID: {}) has exited, shutting down MFT Service...", ui_pid);
             
-            // 设置停止标志，让监控线程优雅退出
+            // 🔥 立即设置停止标志
             running.store(false, Ordering::SeqCst);
             
-            // 等待 3 秒让监控线程清理
-            thread::sleep(Duration::from_secs(3));
+            // 🔥 等待监控线程清理（减少到 2 秒）
+            thread::sleep(Duration::from_secs(2));
             
             info!("👋 MFT Service exiting due to UI process termination");
+            
+            // 🔥 使用 libc 的 _exit 强制退出整个进程（包括所有线程）
+            // std::process::exit() 可能会被阻塞在某些线程上
+            #[cfg(target_os = "windows")]
+            unsafe {
+                // Windows: 直接调用 ExitProcess
+                windows::Win32::System::Threading::ExitProcess(0);
+            }
+            
+            // 如果上面的调用失败，使用标准退出
             std::process::exit(0);
         }
         
-        // 每 2 秒检查一次（缩短检查间隔，更快响应）
-        thread::sleep(Duration::from_secs(2));
+        // 每秒检查一次（更快响应，原来是2秒）
+        thread::sleep(Duration::from_secs(1));
     }
 }
 
