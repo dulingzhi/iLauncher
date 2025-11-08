@@ -7,6 +7,7 @@
 - 🚀 快速启动：Rust 核心提供极致性能
 - 🎨 现代化 UI：React + Tailwind CSS
 - 🔌 插件系统：支持 Python、Node.js、脚本插件
+- ⚡ MFT 扫描：毫秒级文件搜索（450万+ 文件）
 - 🤖 AI 集成：支持 OpenAI、Claude 等
 - 🎯 全局热键：Alt/Cmd + Space 快速调用
 - 💾 轻量级：内存占用 < 50MB
@@ -70,30 +71,100 @@
 - **搜索**: fuzzy-matcher
 - **日志**: tracing
 
-## 🚀 开发
+## 🚀 快速开始
 
-### 安装依赖
-
-```bash
-# 前端依赖
-npm install
-
-# Rust 依赖会自动安装
-```
-
-### 运行开发服务器
+### 安装
 
 ```bash
-npm run tauri dev
+# 克隆项目
+git clone https://github.com/dulingzhi/iLauncher.git
+cd iLauncher
+
+# 安装依赖
+bun install
+cd src-tauri
+cargo build --release
+
+# 开发模式
+bun tauri dev
+
+# 构建发布版
+bun tauri build
 ```
 
-### 构建生产版本
+### 运行模式
 
-```bash
-npm run tauri build
+iLauncher 是一个**单一可执行文件**，通过命令行参数切换不同模式：
+
+#### 🖥️ GUI 模式（默认）
+```powershell
+# 双击启动或命令行
+.\ilauncher.exe
+
+# 如果启用了 MFT，会自动启动后台扫描进程
 ```
 
-## ⌨️ 快捷键
+#### ⚡ MFT Service 模式（后台扫描）
+```powershell
+# 自动启动（GUI 模式下，如果配置启用）
+.\ilauncher.exe --mft-service
+
+# 手动管理
+# 1. 全量扫描所有 NTFS 盘符
+# 2. 实时监听文件变化
+# 3. 数据写入 SQLite：%TEMP%\ilauncher_mft\*.db
+```
+
+**MFT 功能开关**：
+
+编辑配置文件 `%APPDATA%\iLauncher\config\config.json`：
+
+```json
+{
+  "advanced": {
+    "enable_mft": true  // true=启用 MFT，false=使用 BFS
+  }
+}
+```
+
+或通过 Tauri 命令（前端调用）：
+
+```typescript
+import { invoke } from '@tauri-apps/api/tauri';
+
+await invoke('toggle_mft', { enabled: true });  // 启用
+await invoke('toggle_mft', { enabled: false }); // 禁用
+```
+
+### MFT 性能数据
+
+| 指标 | MFT 模式 | BFS 模式 |
+|------|----------|----------|
+| 扫描 450 万文件 | 9 秒 | 5-10 分钟 |
+| 搜索延迟 | <50ms | 100-500ms |
+| 实时更新 | 是 | 否 |
+| 权限要求 | 管理员 | 普通用户 |
+
+详细文档：[MFT UI Integration Guide](./MFT_UI_INTEGRATION.md)
+```
+
+#### 📁 MFT Service 模式（文件索引）
+```powershell
+# 全量扫描 + 实时监控（需要管理员权限）
+.\ilauncher.exe --mft-service
+
+# 仅扫描一次
+.\ilauncher.exe --mft-service --scan-only
+
+# 指定驱动器和输出目录
+.\ilauncher.exe --mft-service --drives C,D --output "D:/mft_db"
+```
+
+📖 **详细使用指南**: 查看 [ILAUNCHER_USAGE.md](./ILAUNCHER_USAGE.md)
+
+🧪 **测试脚本**: 运行 `.\test_ilauncher.ps1` 验证所有功能
+
+## 🏗️ 技术栈
 
 - `Alt/Cmd + Space` - 显示/隐藏启动器
 - `↑` / `↓` - 选择结果
