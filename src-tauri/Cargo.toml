@@ -55,6 +55,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # 文件系统
 walkdir = "2"
 
+# 命令行解析（用于 scanner/monitor 二进制）
+clap = { version = "4", features = ["derive"] }
+ctrlc = "3.4"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
     "Win32_Foundation",
@@ -75,3 +79,4 @@ interprocess = { version = "2.2.1", features = ["tokio"] }
 directories = "5"
 dirs = "5"
 sysinfo = "0.31"
+

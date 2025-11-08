@@ -1,143 +1,244 @@
-// Windows USN Journal 扫描器 - 使用原生 Windows API
+// Windows USN Journal 扫描器 - 完整路径重建版本
 
 use anyhow::{Result, Context};
-use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
-use std::ptr;
-use tracing::{info, error, warn};
+use tracing::{info, error};
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::System::IO::DeviceIoControl;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MftFileEntry {
-    pub path: String,
-    pub name: String,
-    pub is_dir: bool,
-    pub size: u64,
-    pub modified: i64,
-}
+use crate::mft_scanner::types::*;
+use crate::mft_scanner::database::Database;
 
 pub struct UsnScanner {
     drive_letter: char,
+    frn_map: FrnMap,  // 🔹 关键：FRN 映射表
 }
-
-// USN Journal 数据结构
-#[repr(C)]
-#[derive(Debug, Default)]
-struct UsnJournalData {
-    usn_journal_id: u64,
-    first_usn: i64,
-    next_usn: i64,
-    lowest_valid_usn: i64,
-    max_usn: i64,
-    maximum_size: u64,
-    allocation_delta: u64,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct CreateUsnJournalData {
-    maximum_size: u64,
-    allocation_delta: u64,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct MftEnumData {
-    start_file_reference_number: u64,
-    low_usn: i64,
-    high_usn: i64,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-#[allow(dead_code)]
-struct UsnRecordV2 {
-    record_length: u32,
-    major_version: u16,
-    minor_version: u16,
-    file_reference_number: u64,
-    parent_file_reference_number: u64,
-    usn: i64,
-    time_stamp: i64,
-    reason: u32,
-    source_info: u32,
-    security_id: u32,
-    file_attributes: u32,
-    file_name_length: u16,
-    file_name_offset: u16,
-    // 后面跟着文件名 (WCHAR)
-}
-
-// IOCTL 代码
-const FSCTL_QUERY_USN_JOURNAL: u32 = 0x000900f4;
-const FSCTL_CREATE_USN_JOURNAL: u32 = 0x000900e7;
-const FSCTL_ENUM_USN_DATA: u32 = 0x000900b3;
 
 impl UsnScanner {
     pub fn new(drive_letter: char) -> Self {
-        Self { drive_letter }
+        Self {
+            drive_letter,
+            frn_map: FrnMap::new(),
+        }
     }
-
+    
     /// 检查是否有管理员权限
     pub fn check_admin_rights() -> bool {
         use windows::Win32::UI::Shell::IsUserAnAdmin;
-        
-        unsafe {
-            IsUserAnAdmin().as_bool()
-        }
+        unsafe { IsUserAnAdmin().as_bool() }
     }
-
-    /// 扫描指定驱动器的所有文件（使用 USN Journal API）
-    pub fn scan(&self) -> Result<Vec<MftFileEntry>> {
-        info!("🚀 Starting USN Journal scan for drive {}:", self.drive_letter);
+    
+    /// 扫描并保存到数据库
+    pub fn scan_to_database(&mut self, output_dir: &str, config: &ScanConfig) -> Result<()> {
+        info!("🚀 Starting scan for drive {}:", self.drive_letter);
         
         // 1. 检查管理员权限
-        info!("🔐 Checking administrator privileges...");
         if !Self::check_admin_rights() {
             error!("❌ Requires administrator privileges");
-            return Err(anyhow::anyhow!("Administrator privileges required for USN Journal scanning"));
+            return Err(anyhow::anyhow!("Administrator privileges required"));
         }
         info!("✓ Running with administrator privileges");
         
         // 2. 打开卷句柄
         info!("💾 Opening volume {}:...", self.drive_letter);
         let volume_handle = self.open_volume()?;
-        info!("✓ Volume handle opened successfully");
+        info!("✓ Volume handle opened");
         
-        // 3. 查询 USN Journal 数据
-        info!("📖 Querying USN Journal data...");
-        let journal_data = match self.query_usn_journal(volume_handle) {
-            Ok(data) => {
-                info!("✓ USN Journal ID: {:016X}", data.usn_journal_id);
-                data
+        // 3. 查询 USN Journal
+        info!("📖 Querying USN Journal...");
+        let journal_data = self.query_usn_journal(volume_handle)?;
+        info!("✓ USN Journal ID: {:016X}", journal_data.usn_journal_id);
+        
+        // 4. 🔹 第一阶段：构建 FRN 映射表
+        info!("🔍 Building FRN map (Phase 1)...");
+        self.build_frn_map(volume_handle, &journal_data)?;
+        info!("✓ FRN map built: {} entries", self.frn_map.len());
+        
+        // 5. 🔹 第二阶段：重建完整路径并保存
+        info!("� Rebuilding paths and saving to database (Phase 2)...");
+        let mut db = Database::open(self.drive_letter, output_dir)?;
+        
+        let mut entries = Vec::new();
+        let mut count = 0;
+        const BATCH_SIZE: usize = 100_000;  // 每 10 万条提交一次
+        
+        for (frn, parent_info) in &self.frn_map {
+            // 🔹 递归查询完整路径
+            match self.get_path(*frn) {
+                Ok(full_path) => {
+                    // 过滤忽略路径
+                    if config.is_ignore(&full_path) {
+                        continue;
+                    }
+                    
+                    let ascii_sum = Database::calc_ascii_sum(&parent_info.filename);
+                    
+                    entries.push(MftFileEntry {
+                        path: full_path,
+                        name: parent_info.filename.clone(),
+                        is_dir: false,  // TODO: 从属性判断
+                        size: 0,
+                        modified: 0,
+                        ascii_sum,
+                        priority: 0,  // TODO: 从配置读取
+                    });
+                    
+                    count += 1;
+                    
+                    // 批量提交
+                    if entries.len() >= BATCH_SIZE {
+                        db.insert_batch(&entries)?;
+                        info!("   Progress: {} files saved", count);
+                        entries.clear();
+                    }
+                }
+                Err(e) => {
+                    // 路径重建失败，跳过
+                    continue;
+                }
             }
-            Err(e) => {
-                error!("❌ Failed to query USN Journal: {:#}", e);
-                unsafe { CloseHandle(volume_handle); }
-                return Err(e);
-            }
-        };
+        }
         
-        // 4. 枚举所有文件
-        info!("🔍 Enumerating files via USN Journal...");
-        let files = match self.enum_usn_data(volume_handle, &journal_data) {
-            Ok(f) => f,
-            Err(e) => {
-                error!("❌ Failed to enumerate USN data: {:#}", e);
-                unsafe { CloseHandle(volume_handle); }
-                return Err(e);
-            }
-        };
+        // 保存剩余记录
+        if !entries.is_empty() {
+            db.insert_batch(&entries)?;
+        }
         
-        info!("✓ Scan completed: {} files found", files.len());
+        info!("✅ Scan completed: {} files saved to database", count);
         
-        // 关闭句柄
         unsafe { CloseHandle(volume_handle); }
+        Ok(())
+    }
+    
+    /// 🔹 第一阶段：构建 FRN 映射表
+    fn build_frn_map(&mut self, volume_handle: HANDLE, journal_data: &UsnJournalData) -> Result<()> {
+        let mut enum_data = MftEnumData {
+            start_file_reference_number: 0,
+            low_usn: 0,
+            high_usn: journal_data.next_usn,
+        };
         
-        Ok(files)
+        const BUFFER_SIZE: usize = 1024 * 1024;  // 1MB buffer
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+        let mut bytes_returned: u32 = 0;
+        let mut iteration = 0;
+        
+        loop {
+            iteration += 1;
+            
+            unsafe {
+                let result = DeviceIoControl(
+                    volume_handle,
+                    FSCTL_ENUM_USN_DATA,
+                    Some(&enum_data as *const _ as *const _),
+                    std::mem::size_of::<MftEnumData>() as u32,
+                    Some(buffer.as_mut_ptr() as *mut _),
+                    BUFFER_SIZE as u32,
+                    Some(&mut bytes_returned),
+                    None,
+                );
+                
+                if result.is_err() {
+                    let error = GetLastError();
+                    if error.0 == 38 {  // ERROR_HANDLE_EOF
+                        break;
+                    } else {
+                        return Err(anyhow::anyhow!("DeviceIoControl failed: {:?}", error));
+                    }
+                }
+                
+                if bytes_returned < 8 {
+                    break;
+                }
+                
+                // 更新下一个起始位置
+                let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
+                enum_data.start_file_reference_number = next_usn as u64;
+                
+                // 解析 USN 记录并建立映射
+                let mut offset = 8usize;
+                while offset + std::mem::size_of::<UsnRecordV2>() <= bytes_returned as usize {
+                    let record_ptr = buffer.as_ptr().add(offset) as *const UsnRecordV2;
+                    let record = &*record_ptr;
+                    
+                    if record.record_length == 0 {
+                        break;
+                    }
+                    
+                    // 🔹 提取文件名
+                    let name = self.extract_filename(record);
+                    
+                    // 🔹 建立映射：FRN → {ParentFRN, Filename}
+                    self.frn_map.insert(
+                        record.file_reference_number,
+                        ParentInfo {
+                            parent_frn: record.parent_file_reference_number,
+                            filename: name,
+                        },
+                    );
+                    
+                    offset += record.record_length as usize;
+                }
+                
+                if iteration % 100 == 0 {
+                    info!("   Building FRN map: {} entries (iteration {})", 
+                          self.frn_map.len(), iteration);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// 🔹 第二阶段：递归查询重建完整路径
+    fn get_path(&self, frn: u64) -> Result<String> {
+        let mut path_parts = Vec::new();
+        let mut current_frn = frn;
+        let mut depth = 0;
+        const MAX_DEPTH: usize = 100;  // 防止无限循环
+        
+        loop {
+            depth += 1;
+            if depth > MAX_DEPTH {
+                return Err(anyhow::anyhow!("Path too deep"));
+            }
+            
+            match self.frn_map.get(&current_frn) {
+                Some(info) => {
+                    path_parts.push(info.filename.clone());
+                    current_frn = info.parent_frn;
+                }
+                None => {
+                    // 到达根目录
+                    break;
+                }
+            }
+        }
+        
+        // 反转路径（从根到叶）
+        path_parts.reverse();
+        
+        // 拼接完整路径
+        let path = if path_parts.is_empty() {
+            format!("{}:\\", self.drive_letter)
+        } else {
+            format!("{}:\\{}", self.drive_letter, path_parts.join("\\"))
+        };
+        
+        Ok(path)
+    }
+    
+    /// 提取文件名（UTF-16 转 String）
+    fn extract_filename(&self, record: &UsnRecordV2) -> String {
+        unsafe {
+            let name_ptr = (record as *const UsnRecordV2 as *const u8)
+                .add(record.file_name_offset as usize) as *const u16;
+            let name_len = record.file_name_length as usize / 2;
+            let name_slice = std::slice::from_raw_parts(name_ptr, name_len);
+            String::from_utf16_lossy(name_slice)
+        }
     }
     
     /// 打开卷句柄
@@ -159,12 +260,11 @@ impl UsnScanner {
                 None,
             )?;
             
-            info!("   Volume handle: {:?}", handle);
             Ok(handle)
         }
     }
     
-    /// 查询 USN Journal 数据
+    /// 查询 USN Journal
     fn query_usn_journal(&self, volume_handle: HANDLE) -> Result<UsnJournalData> {
         let mut journal_data = UsnJournalData::default();
         let mut bytes_returned: u32 = 0;
@@ -180,17 +280,11 @@ impl UsnScanner {
                 Some(&mut bytes_returned),
                 None,
             ) {
-                Ok(_) => {}
+                Ok(_) => {},
                 Err(e) => {
-                    error!("❌ FSCTL_QUERY_USN_JOURNAL failed with error: {:?}", e);
-                    
-                    // 如果USN Journal不存在，尝试创建
-                    if e.code().0 as u32 == 0x80070490 { // ERROR_JOURNAL_NOT_ACTIVE
-                        info!("   USN Journal not active, attempting to create...");
-                        return self.create_usn_journal(volume_handle);
-                    }
-                    
-                    return Err(anyhow::anyhow!("Failed to query USN Journal: {:?}", e));
+                    // 如果不存在，尝试创建
+                    self.create_usn_journal(volume_handle)?;
+                    return self.query_usn_journal(volume_handle);
                 }
             }
         }
@@ -199,9 +293,9 @@ impl UsnScanner {
     }
     
     /// 创建 USN Journal
-    fn create_usn_journal(&self, volume_handle: HANDLE) -> Result<UsnJournalData> {
+    fn create_usn_journal(&self, volume_handle: HANDLE) -> Result<()> {
         let create_data = CreateUsnJournalData {
-            maximum_size: 0x800000,  // 8MB
+            maximum_size: 0x800000,      // 8MB
             allocation_delta: 0x100000,  // 1MB
         };
         
@@ -218,123 +312,12 @@ impl UsnScanner {
                 Some(&mut bytes_returned),
                 None,
             ) {
-                Ok(_) => {
-                    info!("✓ USN Journal created successfully");
-                }
-                Err(e) => {
-                    return Err(anyhow::anyhow!("Failed to create USN Journal: {:?}", e));
-                }
+                Ok(_) => {},
+                Err(e) => return Err(anyhow::anyhow!("Failed to create USN Journal: {:?}", e)),
             }
         }
         
-        // 重新查询
-        self.query_usn_journal(volume_handle)
-    }
-    
-    /// 枚举 USN 数据
-    fn enum_usn_data(&self, volume_handle: HANDLE, journal_data: &UsnJournalData) -> Result<Vec<MftFileEntry>> {
-        let mut files = Vec::new();
-        
-        // 设置枚举参数
-        let mut enum_data = MftEnumData {
-            start_file_reference_number: 0,
-            low_usn: 0,
-            high_usn: journal_data.next_usn,
-        };
-        
-        const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        let mut bytes_returned: u32 = 0;
-        
-        info!("   Starting enumeration (NextUsn: {})", journal_data.next_usn);
-        let mut iteration = 0;
-        
-        loop {
-            iteration += 1;
-            
-            unsafe {
-                match DeviceIoControl(
-                    volume_handle,
-                    FSCTL_ENUM_USN_DATA,
-                    Some(&enum_data as *const _ as *const _),
-                    std::mem::size_of::<MftEnumData>() as u32,
-                    Some(buffer.as_mut_ptr() as *mut _),
-                    BUFFER_SIZE as u32,
-                    Some(&mut bytes_returned),
-                    None,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        if e.code().0 as u32 == 38 { // ERROR_HANDLE_EOF
-                            info!("   ✓ Reached end of USN data");
-                            break;
-                        } else {
-                            warn!("   DeviceIoControl iteration {} failed: {:?}", iteration, e);
-                            break;
-                        }
-                    }
-                }
-                
-                if bytes_returned == 0 {
-                    break;
-                }
-                
-                // 第一个8字节是下一个起始USN
-                if bytes_returned < 8 {
-                    break;
-                }
-                
-                let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
-                enum_data.start_file_reference_number = next_usn as u64;
-                
-                // 解析USN记录
-                let mut offset = 8usize;
-                while offset + std::mem::size_of::<UsnRecordV2>() <= bytes_returned as usize {
-                    let record_ptr = buffer.as_ptr().add(offset) as *const UsnRecordV2;
-                    let record = &*record_ptr;
-                    
-                    if record.record_length == 0 {
-                        break;
-                    }
-                    
-                    // 提取文件名
-                    let name_offset = offset + record.file_name_offset as usize;
-                    let name_length = record.file_name_length as usize;
-                    
-                    if name_offset + name_length <= bytes_returned as usize {
-                        let name_slice = &buffer[name_offset..name_offset + name_length];
-                        let name_u16 = std::slice::from_raw_parts(
-                            name_slice.as_ptr() as *const u16,
-                            name_length / 2,
-                        );
-                        let name = String::from_utf16_lossy(name_u16);
-                        
-                        // 检查文件属性
-                        let is_dir = (record.file_attributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
-                        
-                        // 跳过系统文件（可选）
-                        let is_system = (record.file_attributes & FILE_ATTRIBUTE_SYSTEM.0) != 0;
-                        
-                        if !is_system {
-                            files.push(MftFileEntry {
-                                path: String::new(), // USN不直接提供完整路径，需要后续解析
-                                name,
-                                is_dir,
-                                size: 0, // USN_RECORD_V2没有文件大小
-                                modified: record.time_stamp,
-                            });
-                        }
-                    }
-                    
-                    offset += record.record_length as usize;
-                }
-                
-                if iteration % 100 == 0 {
-                    info!("   Progress: {} files found (iteration {})", files.len(), iteration);
-                }
-            }
-        }
-        
-        Ok(files)
+        info!("✓ USN Journal created");
+        Ok(())
     }
 }
