@@ -1986,6 +1986,7 @@ dependencies = [
  "fuzzy-matcher",
  "global-hotkey",
  "interprocess",
+ "rayon",
  "regex",
  "rusqlite",
  "rustc-hash",

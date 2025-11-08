@@ -49,9 +49,10 @@ export function useQuery() {
   
   const debouncedQuery = useCallback((input: string) => {
     clearTimeout(debounceTimer);
+    // 🔥 优化：减少 debounce 延迟到 50ms（MFT 查询很快）
     debounceTimer = setTimeout(() => {
       performQuery(input);
-    }, 100);
+    }, 50);
   }, [performQuery]);
   
   return { results, loading, debouncedQuery };
