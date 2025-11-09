@@ -62,7 +62,8 @@ impl UsnScanner {
         
         let mut entries = Vec::new();
         let mut count = 0;
-        const BATCH_SIZE: usize = 500_000;  // 🔥 优化: 增大到50万,减少提交次数
+        const BATCH_SIZE: usize = 50_000;  // 🔥 内存优化: 降低到5万,减少内存峰值 (原50万)
+        entries.reserve(BATCH_SIZE);  // 🔥 预分配容量,避免多次扩容
         
         for (frn, parent_info) in &self.frn_map {
             // 🔹 递归查询完整路径
@@ -83,12 +84,12 @@ impl UsnScanner {
                     
                     count += 1;
                     
-                    // 🔥 优化：增大批次，减少写入次数
-                    // 批量提交 (每 10000 条记录)
+                    // 🔥 优化：批量提交后立即释放内存
                     if entries.len() >= BATCH_SIZE {
                         db.insert_batch(&entries)?;
                         info!("   Progress: {} files saved", count);
                         entries.clear();
+                        entries.shrink_to(BATCH_SIZE);  // 🔥 释放多余容量,保持固定大小
                     }
                 }
                 Err(e) => {
@@ -103,6 +104,10 @@ impl UsnScanner {
             db.insert_batch(&entries)?;
         }
         
+        // 🔥 释放 FRN map 内存 (扫描完成后不再需要)
+        self.frn_map.clear();
+        self.frn_map.shrink_to_fit();
+        
         info!("✅ Scan completed: {} files saved to database", count);
         
         unsafe { CloseHandle(volume_handle); }
@@ -111,6 +116,11 @@ impl UsnScanner {
     
     /// 🔹 第一阶段：构建 FRN 映射表
     fn build_frn_map(&mut self, volume_handle: HANDLE, journal_data: &UsnJournalData) -> Result<()> {
+        // 🔥 内存优化: 预估容量并预分配,避免多次扩容
+        // 估算: next_usn / 平均记录大小(~100 bytes) ≈ 文件数量
+        let estimated_capacity = (journal_data.next_usn / 100).max(100_000) as usize;
+        self.frn_map.reserve(estimated_capacity.min(3_000_000));  // 最多预留300万
+        
         let mut enum_data = MftEnumData {
             start_file_reference_number: 0,
             low_usn: 0,
