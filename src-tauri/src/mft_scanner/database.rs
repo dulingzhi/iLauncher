@@ -50,11 +50,10 @@ impl Database {
         
         conn.execute_batch("
             PRAGMA temp_store = MEMORY;
-            PRAGMA cache_size = -524288;      -- 🔥 512MB缓存(原256MB)
+            PRAGMA cache_size = -524288;      -- 🔥 512MB缓存
             PRAGMA page_size = 65535;
-            PRAGMA journal_mode = MEMORY;     -- 🔥 内存模式(原OFF)
-            PRAGMA synchronous = OFF;
-            PRAGMA locking_mode = EXCLUSIVE;  -- 🔥 独占锁,避免锁争用
+            PRAGMA journal_mode = WAL;        -- 🔥 WAL 模式，允许读写并发
+            PRAGMA synchronous = NORMAL;      -- 🔥 WAL 模式下可降低同步级别
         ")?;
         
         let mut db = Self { conn, drive_letter };

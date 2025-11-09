@@ -62,7 +62,6 @@ impl UsnMonitor {
         
         // 5. 🔹 进入监控循环（阻塞式）
         info!("🔄 Entering monitoring loop (blocking mode)...");
-        let mut db = Database::create_for_write(self.drive_letter, output_dir)?;  // 🔥 使用写入模式
         
         let mut read_data = ReadUsnJournalData {
             start_usn: journal_data.next_usn,
@@ -112,8 +111,8 @@ impl UsnMonitor {
                 let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
                 read_data.start_usn = next_usn;
                 
-                // 🔹 解析 USN 记录并更新数据库
-                self.process_usn_records(&buffer, bytes_returned as usize, &mut db, config)?;
+                // � 解析 USN 记录并更新数据库（临时打开写连接）
+                self.process_usn_records(&buffer, bytes_returned as usize, output_dir, config)?;
             }
         }
     }
@@ -123,7 +122,7 @@ impl UsnMonitor {
         &mut self,
         buffer: &[u8],
         bytes_returned: usize,
-        db: &mut Database,
+        output_dir: &str,
         config: &ScanConfig,
     ) -> Result<()> {
         let mut offset = 8usize;
@@ -200,9 +199,12 @@ impl UsnMonitor {
             }
         }
         
-        // 批量插入
+        // 🔥 批量插入（临时打开写连接，立即释放）
         if !entries.is_empty() {
+            let mut db = Database::create_for_write(self.drive_letter, output_dir)?;
             db.insert_batch(&entries)?;
+            drop(db);  // 🔥 立即释放写锁，避免阻塞读连接
+            info!("   ✅ Inserted {} new entries", entries.len());
         }
         
         Ok(())
