@@ -232,6 +232,7 @@ pub fn run_mft_scanner() {
 pub fn test_scanner_memory() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
     use std::time::Instant;
+    use std::thread;
     
     tracing_subscriber::registry()
         .with(
@@ -241,29 +242,75 @@ pub fn test_scanner_memory() {
         .with(tracing_subscriber::fmt::layer())
         .init();
     
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║          Scanner Memory Test                               ║");
-    println!("╚════════════════════════════════════════════════════════════╝");
-    println!("\n📊 Monitoring memory usage during D: drive scan...");
-    println!("🔍 Open Task Manager to observe memory consumption\n");
+    // 解析命令行参数检查是否是多盘测试
+    let args: Vec<String> = std::env::args().collect();
+    let parallel = args.contains(&"--parallel".to_string());
     
-    println!("Press Enter to start scanning...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
-    
-    let start = Instant::now();
-    
-    let mut scanner = mft_scanner::UsnScanner::new('D');
-    let config = mft_scanner::ScanConfig::default();
-    
-    println!("🚀 Starting scan...\n");
-    match scanner.scan_to_database("./test_db", &config) {
-        Ok(_) => {
-            let duration = start.elapsed();
-            println!("\n✅ Scan completed in {:.2}s", duration.as_secs_f64());
+    if parallel {
+        println!("╔════════════════════════════════════════════════════════════╗");
+        println!("║          Multi-Drive Parallel Scanner Test                ║");
+        println!("╚════════════════════════════════════════════════════════════╝");
+        println!("\n📊 Testing C:, D:, E: drives in parallel...");
+        println!("🔍 Open Task Manager to observe memory consumption\n");
+        
+        println!("Press Enter to start parallel scanning...");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        
+        let start = Instant::now();
+        
+        // 并行扫描多个盘
+        let handles: Vec<_> = vec!['C', 'D', 'E'].into_iter().map(|drive| {
+            thread::spawn(move || {
+                let mut scanner = mft_scanner::UsnScanner::new(drive);
+                let config = mft_scanner::ScanConfig::default();
+                
+                println!("🚀 Starting scan for {}:", drive);
+                match scanner.scan_to_database(&format!("./test_db_{}", drive), &config) {
+                    Ok(_) => {
+                        println!("✅ {}: completed", drive);
+                    }
+                    Err(e) => {
+                        eprintln!("❌ {}: failed - {}", drive, e);
+                    }
+                }
+            })
+        }).collect();
+        
+        // 等待所有线程完成
+        for handle in handles {
+            handle.join().unwrap();
         }
-        Err(e) => {
-            eprintln!("\n❌ Scan failed: {}", e);
+        
+        let duration = start.elapsed();
+        println!("\n✅ All drives completed in {:.2}s", duration.as_secs_f64());
+        
+    } else {
+        // 单盘测试
+        println!("╔════════════════════════════════════════════════════════════╗");
+        println!("║          Scanner Memory Test                               ║");
+        println!("╚════════════════════════════════════════════════════════════╝");
+        println!("\n📊 Monitoring memory usage during D: drive scan...");
+        println!("🔍 Open Task Manager to observe memory consumption\n");
+        
+        println!("Press Enter to start scanning...");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        
+        let start = Instant::now();
+        
+        let mut scanner = mft_scanner::UsnScanner::new('D');
+        let config = mft_scanner::ScanConfig::default();
+        
+        println!("🚀 Starting scan...\n");
+        match scanner.scan_to_database("./test_db", &config) {
+            Ok(_) => {
+                let duration = start.elapsed();
+                println!("\n✅ Scan completed in {:.2}s", duration.as_secs_f64());
+            }
+            Err(e) => {
+                eprintln!("\n❌ Scan failed: {}", e);
+            }
         }
     }
     

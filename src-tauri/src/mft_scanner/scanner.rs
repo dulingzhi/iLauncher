@@ -86,8 +86,11 @@ impl UsnScanner {
         let mut path_buffer = String::with_capacity(512);
         let mut path_parts: Vec<&str> = Vec::with_capacity(50);
         
-        // 🔥 只迭代一次 FRN keys
-        for frn in self.frn_map.keys().cloned().collect::<Vec<u64>>() {
+        // 🔥 核心优化：使用引用迭代，避免 collect
+        // HashMap 的 keys() 返回引用，我们在内部循环中复制单个 u64
+        for frn_ref in self.frn_map.keys() {
+            let frn = *frn_ref;  // 只复制一个 u64 (8 bytes)
+            
             if let Some(parent_info) = self.frn_map.get(&frn) {
                 // 🔹 重建路径（重用 buffer）
                 path_parts.clear();

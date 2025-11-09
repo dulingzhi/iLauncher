@@ -133,36 +133,32 @@ impl Database {
     /// 🔥 使用 FTS5 全文搜索（性能提升 100-1000 倍）
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<MftFileEntry>> {
         let start = std::time::Instant::now();
-        let mut results = Vec::new();
         
-        // 🔥 FTS5 智能查询：
-        // 1. 完整匹配：直接匹配 "opera.exe"（用双引号转义特殊字符）
-        // 2. 前缀匹配：匹配 "opera*"（支持 "opera" 匹配 "opera.exe"）
-        // 使用 OR 组合，确保两种情况都能匹配
-        // 重要：前缀匹配也需要双引号包裹，避免 . 等特殊字符语法错误
-        let fts_query = format!("\"{}\" OR \"{}*\"", query, query);
+        // 🔥 超短查询优化: 只搜索高优先级文件
+        if query.len() <= 2 {
+            let results = self.search_high_priority_only(query, limit)?;
+            
+            let elapsed = start.elapsed();
+            tracing::info!(
+                "FTS5 search (fast) completed: query={}, results={}, time={:.2}ms",
+                query,
+                results.len(),
+                elapsed.as_secs_f64() * 1000.0
+            );
+            
+            return Ok(results);
+        }
+        
+        // 正常查询流程
+        let mut results = Vec::new();
+        let fts_query = format!("{}*", query);
         
         tracing::debug!("FTS5 search query: {}", fts_query);
         
-        // 🔥 FTS5 全文搜索 + BM25 排序优化 + 去重：
-        // - MATCH 使用倒排索引（极快）
-        // - rank: FTS5 内置 BM25 相关性评分（越小越相关）
-        // - priority DESC: 同等相关性下，优先显示 exe/lnk
-        // - GROUP BY path: 去除重复路径（只保留 BM25 分数最高的一条）
-        // - MIN(rank): 选择相关性最高的记录
-        // 
-        // BM25 优势：
-        // - 完整匹配 "sys.dll" 的分数高于部分匹配 "system32"
-        // - 短文件名匹配分数高于长文件名
-        // - 自动处理词频和文档长度归一化
-        let sql = "
-            SELECT path, priority, MIN(rank) as best_rank
-            FROM files_fts 
-            WHERE filename MATCH ?1 
-            GROUP BY path
-            ORDER BY best_rank, priority DESC 
-            LIMIT ?2
-        ";
+        let sql = "SELECT path, priority FROM files_fts 
+                   WHERE filename MATCH ?1 
+                   ORDER BY rank, priority DESC 
+                   LIMIT ?2";
         
         let mut stmt = self.conn.prepare(sql)?;
         let mut rows = stmt.query(params![fts_query, limit])?;
@@ -171,7 +167,6 @@ impl Database {
         while let Some(row) = rows.next()? {
             let path: String = row.get(0)?;
             let priority: i32 = row.get(1)?;
-            // best_rank 字段可选读取（用于调试）
             
             results.push(MftFileEntry {
                 path,
@@ -188,6 +183,36 @@ impl Database {
             limit,
             elapsed.as_secs_f64() * 1000.0
         );
+        
+        Ok(results)
+    }
+    
+    /// 🔥 快速搜索: 只查询高优先级文件
+    fn search_high_priority_only(&self, query: &str, limit: usize) -> Result<Vec<MftFileEntry>> {
+        let mut results = Vec::new();
+        
+        // 🔥 使用 FTS5 前缀查询 + priority 过滤
+        // ^query* 表示文件名开头匹配
+        let fts_query = format!("^{}*", query);
+        
+        let sql = "SELECT path, priority FROM files_fts 
+                   WHERE filename MATCH ?1 AND priority >= 50
+                   ORDER BY priority DESC 
+                   LIMIT ?2";
+        
+        let mut stmt = self.conn.prepare(sql)?;
+        let mut rows = stmt.query(params![fts_query, limit])?;
+        
+        while let Some(row) = rows.next()? {
+            let path: String = row.get(0)?;
+            let priority: i32 = row.get(1)?;
+            
+            results.push(MftFileEntry {
+                path,
+                priority,
+                ascii_sum: 0,
+            });
+        }
         
         Ok(results)
     }

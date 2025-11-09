@@ -55,10 +55,9 @@ impl UsnMonitor {
         let journal_data = self.query_usn_journal(volume_handle)?;
         info!("✓ USN Journal ID: {:016X}", journal_data.usn_journal_id);
         
-        // 4. 🔹 构建初始 FRN 映射表（从现有数据库）
-        info!("🔍 Loading FRN map from database...");
-        self.load_frn_map_from_db(output_dir)?;
-        info!("✓ FRN map loaded: {} entries", self.frn_map.len());
+        // 4. � 跳过加载 FRN Map（避免巨大内存占用）
+        // Monitor 模式下，文件变化会实时构建路径，不需要预加载所有映射
+        info!("💡 Monitor mode: FRN map will be built incrementally on demand");
         
         // 5. 🔹 进入监控循环（阻塞式）
         info!("🔄 Entering monitoring loop (blocking mode)...");
