@@ -5,6 +5,20 @@ fn main() {
     // 检查启动参数
     let args: Vec<String> = std::env::args().collect();
     
+    // 🔹 内存测试模式
+    if args.contains(&"--test-memory".to_string()) {
+        #[cfg(target_os = "windows")]
+        {
+            ilauncher_lib::test_scanner_memory();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            eprintln!("Scanner test is only available on Windows");
+            std::process::exit(1);
+        }
+        return;
+    }
+    
     // 🔹 MFT Service 模式（全量扫描 + 实时监控）
     if args.contains(&"--mft-service".to_string()) {
         #[cfg(target_os = "windows")]

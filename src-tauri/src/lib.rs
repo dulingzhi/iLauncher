@@ -227,6 +227,57 @@ pub fn run_mft_scanner() {
     std::process::exit(1);
 }
 
+/// 🔹 测试 Scanner 内存占用
+#[cfg(target_os = "windows")]
+pub fn test_scanner_memory() {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+    use std::time::Instant;
+    
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "ilauncher=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+    
+    println!("╔════════════════════════════════════════════════════════════╗");
+    println!("║          Scanner Memory Test                               ║");
+    println!("╚════════════════════════════════════════════════════════════╝");
+    println!("\n📊 Monitoring memory usage during D: drive scan...");
+    println!("🔍 Open Task Manager to observe memory consumption\n");
+    
+    println!("Press Enter to start scanning...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    
+    let start = Instant::now();
+    
+    let mut scanner = mft_scanner::UsnScanner::new('D');
+    let config = mft_scanner::ScanConfig::default();
+    
+    println!("🚀 Starting scan...\n");
+    match scanner.scan_to_database("./test_db", &config) {
+        Ok(_) => {
+            let duration = start.elapsed();
+            println!("\n✅ Scan completed in {:.2}s", duration.as_secs_f64());
+        }
+        Err(e) => {
+            eprintln!("\n❌ Scan failed: {}", e);
+        }
+    }
+    
+    println!("\nPress Enter to exit (check final memory in Task Manager)...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn test_scanner_memory() {
+    eprintln!("Scanner test is only available on Windows");
+    std::process::exit(1);
+}
+
 /// 🔹 运行 MFT Service（全量扫描 + 实时监控）
 #[cfg(target_os = "windows")]
 pub fn run_mft_service(args: &[String]) {

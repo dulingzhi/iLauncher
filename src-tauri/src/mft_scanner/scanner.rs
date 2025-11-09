@@ -69,8 +69,73 @@ impl UsnScanner {
         output_dir: &str,
         config: &ScanConfig,
     ) -> Result<()> {
+        // 🔥 阶段 1：只构建 FRN Map（不重建路径）
+        info!("📍 Phase 1: Building FRN map (minimal memory)...");
+        self.build_frn_map_minimal(volume_handle, journal_data)?;
+        info!("✓ FRN map built: {} entries", self.frn_map.len());
+        
+        // 🔥 阶段 2：流式重建路径 + 批量写入数据库
+        info!("📝 Phase 2: Streaming path reconstruction and database write...");
         let mut db = Database::create_for_write(self.drive_letter, output_dir)?;
         
+        const BATCH_SIZE: usize = 5_000;  // 🔥 5千条批量 (降低内存)
+        let mut entries = Vec::with_capacity(BATCH_SIZE);
+        let mut total_count = 0;
+        
+        // 🔥 关键优化：重用 String buffer 和 path_parts 数组
+        let mut path_buffer = String::with_capacity(512);
+        let mut path_parts: Vec<&str> = Vec::with_capacity(50);
+        
+        // 🔥 只迭代一次 FRN keys
+        for frn in self.frn_map.keys().cloned().collect::<Vec<u64>>() {
+            if let Some(parent_info) = self.frn_map.get(&frn) {
+                // 🔹 重建路径（重用 buffer）
+                path_parts.clear();
+                path_buffer.clear();
+                
+                if let Ok(()) = self.get_path_reuse(frn, &mut path_parts, &mut path_buffer) {
+                    if !config.is_ignore(&path_buffer) {
+                        let ascii_sum = Database::calc_ascii_sum(&parent_info.filename);
+                        
+                        entries.push(MftFileEntry {
+                            path: path_buffer.clone(),  // 只在这里克隆一次
+                            ascii_sum,
+                            priority: 0,
+                        });
+                        
+                        total_count += 1;
+                        
+                        // 🔥 批量写入
+                        if entries.len() >= BATCH_SIZE {
+                            db.insert_batch(&entries)?;
+                            entries.clear();
+                            entries.shrink_to(BATCH_SIZE);  // 释放多余容量
+                            
+                            if total_count % 50_000 == 0 {
+                                info!("   Progress: {} files saved", total_count);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 保存剩余记录
+        if !entries.is_empty() {
+            db.insert_batch(&entries)?;
+        }
+        
+        // 🔥 释放 FRN map 内存
+        self.frn_map.clear();
+        self.frn_map.shrink_to_fit();
+        
+        info!("✅ Stream scan completed: {} files saved", total_count);
+        
+        Ok(())
+    }
+    
+    /// 🔥 最小化内存：只构建 FRN Map，不重建路径
+    fn build_frn_map_minimal(&mut self, volume_handle: HANDLE, journal_data: &UsnJournalData) -> Result<()> {
         let mut enum_data = MftEnumData {
             start_file_reference_number: 0,
             low_usn: 0,
@@ -78,13 +143,9 @@ impl UsnScanner {
         };
         
         const BUFFER_SIZE: usize = 1024 * 1024;  // 1MB buffer
-        const BATCH_SIZE: usize = 10_000;  // 🔥 1万条批量写入 (降低内存)
-        
         let mut buffer = vec![0u8; BUFFER_SIZE];
-        let mut entries = Vec::with_capacity(BATCH_SIZE);
         let mut bytes_returned: u32 = 0;
         let mut iteration = 0;
-        let mut total_count = 0;
         
         loop {
             iteration += 1;
@@ -118,7 +179,7 @@ impl UsnScanner {
                 let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
                 enum_data.start_file_reference_number = next_usn as u64;
                 
-                // 解析 USN 记录
+                // 🔥 只解析并建立映射，不重建路径
                 let mut offset = 8usize;
                 while offset + std::mem::size_of::<UsnRecordV2>() <= bytes_returned as usize {
                     let record_ptr = buffer.as_ptr().add(offset) as *const UsnRecordV2;
@@ -131,68 +192,62 @@ impl UsnScanner {
                     let frn = record.file_reference_number;
                     let filename = self.extract_filename(record);
                     
-                    // 🔹 边扫描边建立映射
+                    // 🔹 只建立映射
                     self.frn_map.insert(
                         frn,
                         ParentInfo {
                             parent_frn: record.parent_file_reference_number,
-                            filename: filename.clone(),
+                            filename,
                         },
                     );
                     
-                    // 🔹 立即重建路径并写入
-                    if let Ok(full_path) = self.get_path(frn) {
-                        if !config.is_ignore(&full_path) {
-                            let ascii_sum = Database::calc_ascii_sum(&filename);
-                            
-                            entries.push(MftFileEntry {
-                                path: full_path,
-                                ascii_sum,
-                                priority: 0,
-                            });
-                            
-                            total_count += 1;
-                            
-                            // 🔥 批量写入
-                            if entries.len() >= BATCH_SIZE {
-                                db.insert_batch(&entries)?;
-                                entries.clear();
-                                entries.shrink_to(BATCH_SIZE);  // 释放多余容量
-                                
-                                if iteration % 10 == 0 {
-                                    info!("   Progress: {} files saved", total_count);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // 🔥 控制 FRN map 大小 (保留最近 50 万条)
-                    if self.frn_map.len() > 500_000 {
-                        // 简单策略：保留一半
-                        let keys_to_remove: Vec<u64> = self.frn_map.keys()
-                            .take(self.frn_map.len() / 2)
-                            .cloned()
-                            .collect();
-                        for key in keys_to_remove {
-                            self.frn_map.remove(&key);
-                        }
-                    }
-                    
                     offset += record.record_length as usize;
+                }
+                
+                if iteration % 100 == 0 {
+                    info!("   Building FRN map: {} entries", self.frn_map.len());
                 }
             }
         }
         
-        // 保存剩余记录
-        if !entries.is_empty() {
-            db.insert_batch(&entries)?;
+        Ok(())
+    }
+    
+    /// 🔹 递归查询完整路径（重用 buffer，避免内存分配）
+    fn get_path_reuse<'a>(&'a self, frn: u64, path_parts: &mut Vec<&'a str>, buffer: &mut String) -> Result<()> {
+        let mut current_frn = frn;
+        let mut depth = 0;
+        const MAX_DEPTH: usize = 100;
+        
+        // 收集路径组件（引用）
+        loop {
+            depth += 1;
+            if depth > MAX_DEPTH {
+                return Err(anyhow::anyhow!("Path too deep"));
+            }
+            
+            match self.frn_map.get(&current_frn) {
+                Some(info) => {
+                    path_parts.push(&info.filename);
+                    current_frn = info.parent_frn;
+                }
+                None => break,
+            }
         }
         
-        // 🔥 释放 FRN map 内存
-        self.frn_map.clear();
-        self.frn_map.shrink_to_fit();
+        // 拼接路径到 buffer
+        buffer.push(self.drive_letter);
+        buffer.push_str(":\\");
         
-        info!("✅ Stream scan completed: {} files saved", total_count);
+        for part in path_parts.iter().rev() {
+            buffer.push_str(part);
+            buffer.push('\\');
+        }
+        
+        // 移除末尾的反斜杠
+        if buffer.ends_with('\\') && buffer.len() > 3 {
+            buffer.pop();
+        }
         
         Ok(())
     }
