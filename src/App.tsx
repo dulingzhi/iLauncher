@@ -16,7 +16,7 @@ type View = 'search' | 'settings' | 'plugins' | 'clipboard';
 
 // 不同视图的窗口配置
 const VIEW_CONFIGS = {
-  search: { width: 700, height: 500 },      // 搜索框使用较窄的窗口
+  search: { width: 700, height: 580 },      // 🔥 增加高度以完整显示结果列表（搜索框60px + 列表450px + 边距70px）
   settings: { width: 1000, height: 700 },   // 设置页面使用宽窗口
   plugins: { width: 1000, height: 700 },    // 插件管理使用宽窗口
   clipboard: { width: 900, height: 650 },   // 剪贴板历史使用中等宽度

@@ -15,24 +15,44 @@ pub async fn query(
     manager: State<'_, PluginManager>,
     stats: State<'_, StatisticsManager>,
 ) -> Result<Vec<QueryResult>, String> {
+    let query_start = std::time::Instant::now();
+    tracing::debug!("🔍 Query started: '{}'", input);
+    
     // 记录查询
     if !input.is_empty() {
         let _ = stats.record_query(&input).await;
     }
     
     // 执行查询
+    let plugin_query_start = std::time::Instant::now();
     let mut results = manager.query(&input).await.map_err(|e| e.to_string())?;
+    let plugin_elapsed = plugin_query_start.elapsed();
     
     // 根据历史使用情况调整分数
+    let score_adjust_start = std::time::Instant::now();
     for result in &mut results {
         if let Ok(usage_count) = stats.get_result_score(&result.id, &result.plugin_id).await {
             // 给常用结果加分（每次使用加10分）
             result.score += usage_count * 10;
         }
     }
+    let score_elapsed = score_adjust_start.elapsed();
     
     // 重新排序
+    let sort_start = std::time::Instant::now();
     results.sort_by(|a, b| b.score.cmp(&a.score));
+    let sort_elapsed = sort_start.elapsed();
+    
+    let total_elapsed = query_start.elapsed();
+    tracing::info!(
+        "✅ Query completed: '{}' → {} results in {:.2}ms (plugin: {:.2}ms, score: {:.2}ms, sort: {:.2}ms)",
+        input,
+        results.len(),
+        total_elapsed.as_secs_f64() * 1000.0,
+        plugin_elapsed.as_secs_f64() * 1000.0,
+        score_elapsed.as_secs_f64() * 1000.0,
+        sort_elapsed.as_secs_f64() * 1000.0
+    );
     
     Ok(results)
 }

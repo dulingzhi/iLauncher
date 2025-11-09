@@ -58,7 +58,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
   useEffect(() => {
     if (selectedItemRef.current && resultsContainerRef.current) {
       selectedItemRef.current.scrollIntoView({
-        block: 'nearest',
+        block: 'nearest',  // 🔥 使用 nearest，避免不必要的滚动
         behavior: 'smooth',
       });
     }
@@ -287,7 +287,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
       {results.length > 0 && (
         <div 
           ref={resultsContainerRef}
-          className="max-h-[450px] overflow-y-auto"
+          className="max-h-[450px] overflow-y-auto pb-2"
           style={{ backgroundColor: 'var(--color-surface)' }}
         >
           {results.map((result, index) => (

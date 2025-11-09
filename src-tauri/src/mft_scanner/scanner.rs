@@ -57,8 +57,8 @@ impl UsnScanner {
         info!("✓ FRN map built: {} entries", self.frn_map.len());
         
         // 5. 🔹 第二阶段：重建完整路径并保存
-        info!("� Rebuilding paths and saving to database (Phase 2)...");
-        let mut db = Database::open(self.drive_letter, output_dir)?;
+        info!("📝 Rebuilding paths and saving to database (Phase 2)...");
+        let mut db = Database::create_for_write(self.drive_letter, output_dir)?;
         
         let mut entries = Vec::new();
         let mut count = 0;
@@ -77,17 +77,14 @@ impl UsnScanner {
                     
                     entries.push(MftFileEntry {
                         path: full_path,
-                        name: parent_info.filename.clone(),
-                        is_dir: false,  // TODO: 从属性判断
-                        size: 0,
-                        modified: 0,
                         ascii_sum,
                         priority: 0,  // TODO: 从配置读取
                     });
                     
                     count += 1;
                     
-                    // 批量提交
+                    // 🔥 优化：增大批次，减少写入次数
+                    // 批量提交 (每 10000 条记录)
                     if entries.len() >= BATCH_SIZE {
                         db.insert_batch(&entries)?;
                         info!("   Progress: {} files saved", count);

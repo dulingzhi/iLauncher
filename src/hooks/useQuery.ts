@@ -19,22 +19,29 @@ export function useQuery() {
     
     // 生成新的查询ID
     const currentQueryId = ++queryIdRef.current;
+    const queryStartTime = performance.now();
+    
+    console.log(`[Query] Starting query #${currentQueryId}: "${input}"`);
     
     setLoading(true);
     try {
       const data = await invoke<QueryResult[]>('query', { input });
+      const queryElapsed = performance.now() - queryStartTime;
       
       // 只有当这是最新的查询时才更新结果
       if (currentQueryId === queryIdRef.current) {
         setResults(data);
+        console.log(`[Query] ✅ Completed #${currentQueryId}: ${data.length} results in ${queryElapsed.toFixed(2)}ms`);
       } else {
         console.log('[useQuery] Discarding stale query result:', { 
           currentQueryId, 
-          latestQueryId: queryIdRef.current 
+          latestQueryId: queryIdRef.current,
+          elapsed: `${queryElapsed.toFixed(2)}ms`
         });
       }
     } catch (error) {
-      console.error('Query failed:', error);
+      const queryElapsed = performance.now() - queryStartTime;
+      console.error(`[Query] ❌ Failed #${currentQueryId} after ${queryElapsed.toFixed(2)}ms:`, error);
       // 只有当这是最新的查询时才清空结果
       if (currentQueryId === queryIdRef.current) {
         setResults([]);

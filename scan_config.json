@@ -1,5 +1,9 @@
 {
-  "drives": ["C", "D"],
+  "drives": [
+    "C",
+    "D",
+    "E"
+  ],
   "output_dir": "D:/mft_db",
   "ignore_paths": [
     "$Recycle.Bin",

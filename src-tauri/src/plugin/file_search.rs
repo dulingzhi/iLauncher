@@ -43,11 +43,11 @@ struct FileItem {
 impl From<MftFileEntry> for FileItem {
     fn from(mft: MftFileEntry) -> Self {
         Self {
-            path: mft.path,
-            name: mft.name,
-            is_dir: mft.is_dir,
-            size: mft.size,
-            modified: mft.modified,
+            path: mft.path.clone(),
+            name: mft.name(),
+            is_dir: mft.is_dir(),
+            size: mft.size(),
+            modified: mft.modified(),
         }
     }
 }
@@ -504,6 +504,7 @@ impl FileSearchPlugin {
         /// 从 MFT 数据库查询文件
     #[cfg(target_os = "windows")]
     async fn query_from_mft_database(&self, search: &str, _ctx: &QueryContext) -> Result<Vec<QueryResult>> {
+        let query_start = std::time::Instant::now();
         use crate::mft_scanner::database;
         use crate::utils::paths;
         
@@ -511,6 +512,8 @@ impl FileSearchPlugin {
         let output_dir = paths::get_mft_database_dir()?
             .to_string_lossy()
             .to_string();
+        
+        tracing::debug!("🔍 MFT query: '{}' from {}", search, output_dir);
         
         // 检查数据库是否存在
         let db_dir = std::path::Path::new(&output_dir);
@@ -572,7 +575,9 @@ impl FileSearchPlugin {
         // 转换为 QueryResult
         let mut results = Vec::new();
         for entry in mft_entries {
-            let icon = if entry.is_dir {
+            let is_dir = entry.is_dir();
+            let name = entry.name();
+            let icon = if is_dir {
                 WoxImage::emoji("📁")
             } else {
                 WoxImage::emoji("📄")
@@ -580,19 +585,19 @@ impl FileSearchPlugin {
             
             results.push(QueryResult {
                 id: entry.path.clone(),
-                title: entry.name.clone(),
+                title: name.clone(),
                 subtitle: entry.path.clone(),
                 icon,
                 preview: Some(Preview::Text(format!(
                     "Path: {}\nType: {}\nSize: {} bytes",
                     entry.path,
-                    if entry.is_dir { "Directory" } else { "File" },
-                    entry.size
+                    if is_dir { "Directory" } else { "File" },
+                    entry.size()
                 ))),
                 score: entry.priority.max(50),
                 context_data: serde_json::json!({
                     "path": entry.path,
-                    "is_dir": entry.is_dir,
+                    "is_dir": is_dir,
                 }),
                 group: None,
                 plugin_id: self.metadata.id.clone(),
@@ -600,7 +605,7 @@ impl FileSearchPlugin {
                 actions: vec![
                     Action {
                         id: "open".to_string(),
-                        name: if entry.is_dir {
+                        name: if is_dir {
                             "Open Folder".to_string()
                         } else {
                             "Open File".to_string()
@@ -629,6 +634,14 @@ impl FileSearchPlugin {
                 ],
             });
         }
+        
+        let query_elapsed = query_start.elapsed();
+        tracing::info!(
+            "✅ MFT query completed: '{}' → {} results in {:.2}ms",
+            search,
+            results.len(),
+            query_elapsed.as_secs_f64() * 1000.0
+        );
         
         Ok(results)
     }

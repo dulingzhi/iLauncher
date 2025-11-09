@@ -187,10 +187,6 @@ impl UsnMonitor {
                             
                             entries.push(MftFileEntry {
                                 path: full_path.clone(),
-                                name: name.clone(),
-                                is_dir: (record.file_attributes & crate::mft_scanner::types::FILE_ATTRIBUTE_DIRECTORY) != 0,
-                                size: 0,
-                                modified: record.time_stamp,
                                 ascii_sum,
                                 priority: 0,
                             });
@@ -214,8 +210,30 @@ impl UsnMonitor {
     
     /// 🔹 从数据库加载 FRN 映射表
     fn load_frn_map_from_db(&mut self, output_dir: &str) -> Result<()> {
-        // TODO: 从 SQLite 查询所有文件路径，重建 FRN 映射
-        // 暂时返回空映射
+        use crate::mft_scanner::database::Database;
+        
+        info!("📚 Loading FRN map from database for drive {}...", self.drive_letter);
+        let start = std::time::Instant::now();
+        
+        let mut db = Database::open(self.drive_letter, output_dir)?;
+        
+        // 从数据库查询所有文件路径，重建 FRN 映射
+        let entries = db.get_all_entries()?;
+        
+        info!("⚠️  FRN map reconstruction requires re-scanning MFT (not implemented)");
+        info!("💡 Monitoring will work for new files, but existing file paths may be incomplete");
+        
+        // TODO: 完整实现需要：
+        // 1. 在数据库中存储 FRN 字段
+        // 2. 或重新扫描 MFT 构建 FRN 映射
+        // 临时方案：只监控新建文件，现有文件路径可能不完整
+        
+        info!("📚 Database has {} entries, FRN map: {} entries in {:.2}s", 
+            entries.len(),
+            self.frn_map.len(), 
+            start.elapsed().as_secs_f64()
+        );
+        
         Ok(())
     }
     

@@ -15,23 +15,42 @@ pub struct ParentInfo {
 /// FRN 映射表：FRN → {ParentFRN, Filename}
 pub type FrnMap = HashMap<u64, ParentInfo>;
 
-/// MFT 文件条目
+/// MFT 文件条目（FTS5 优化版）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MftFileEntry {
     /// 完整路径，如 "C:\Users\Documents\file.txt"
     pub path: String,
-    /// 文件名，如 "file.txt"
-    pub name: String,
-    /// 是否是目录
-    pub is_dir: bool,
-    /// 文件大小（字节）
-    pub size: u64,
-    /// 修改时间（Windows FILETIME）
-    pub modified: i64,
-    /// ASCII 值总和（用于分组）
-    pub ascii_sum: i32,
-    /// 优先级
+    /// 优先级（5=.exe, 4=.lnk, 3=.bat, 2=.txt, 1=其他, 0=默认, -1=文件夹）
     pub priority: i32,
+    /// ASCII 值总和（保留兼容性，扫描器仍需要）
+    pub ascii_sum: i32,
+}
+
+impl MftFileEntry {
+    /// 提取文件名
+    pub fn name(&self) -> String {
+        self.path
+            .trim_end_matches('\\')
+            .split('\\')
+            .last()
+            .unwrap_or("")
+            .to_string()
+    }
+    
+    /// 判断是否是目录
+    pub fn is_dir(&self) -> bool {
+        self.path.ends_with('\\')
+    }
+    
+    /// 文件大小（FTS5 版本不存储，返回 0）
+    pub fn size(&self) -> u64 {
+        0
+    }
+    
+    /// 修改时间（FTS5 版本不存储，返回 0）
+    pub fn modified(&self) -> i64 {
+        0
+    }
 }
 
 /// 扫描配置

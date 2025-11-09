@@ -187,7 +187,7 @@ pub fn run_mft_scanner() {
     // 创建日志目录（统一到 AppData\Local\iLauncher\logs）
     let log_dir = paths::get_log_dir()
         .expect("Failed to create log directory");
-    let file_appender = rolling::daily(&log_dir, "mft_scanner.log");
+    let file_appender = rolling::never(&log_dir, "mft_scanner.log");
     
     // 初始化日志（写入文件）
     tracing_subscriber::registry()
@@ -235,18 +235,35 @@ pub fn run_mft_service(args: &[String]) {
     use std::time::Duration;
     use std::thread;
     use tracing::{info, error, warn};
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
+    use tracing_appender::rolling;
     
-    // 初始化日志
+    // 🔥 初始化文件日志（写入 AppData\Local\iLauncher\logs\mft_service.log）
+    let log_dir = match crate::utils::paths::get_log_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("Failed to create log directory: {}", e);
+            std::process::exit(1);
+        }
+    };
+    
+    let file_appender = rolling::never(&log_dir, "mft_service.log");
+    
+    // 初始化日志（同时输出到文件）
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "ilauncher=info,mft=info".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(fmt::layer().with_writer(file_appender).with_ansi(false))
         .init();
     
+    info!("╔════════════════════════════════════════════════════════════╗");
+    info!("║          MFT Service Starting                              ║");
+    info!("╚════════════════════════════════════════════════════════════╝");
     info!("🚀 MFT Service starting...");
     info!("📅 {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    info!("📝 Log file: {:?}", log_dir.join("mft_service.log"));
     
     // 解析命令行参数（简单解析，不使用 clap）
     let mut output_dir: Option<String> = None;
@@ -468,13 +485,21 @@ fn monitor_ui_process(ui_pid: u32, running: std::sync::Arc<std::sync::atomic::At
     use std::time::Duration;
     use std::thread;
     use std::sync::atomic::Ordering;
-    use tracing::info;
+    use tracing::{info, debug};
     
     info!("🔍 Starting UI process monitor thread (PID: {})", ui_pid);
     
+    let mut check_count = 0;
     loop {
+        check_count += 1;
+        
         // 检查进程是否还存在
         let process_exists = check_process_exists(ui_pid);
+        
+        // 每10秒输出一次心跳日志
+        if check_count % 10 == 0 {
+            debug!("💓 UI process monitor heartbeat: PID {} exists = {}", ui_pid, process_exists);
+        }
         
         if !process_exists {
             info!("⚠️  UI process (PID: {}) has exited, shutting down MFT Service...", ui_pid);
@@ -483,23 +508,25 @@ fn monitor_ui_process(ui_pid: u32, running: std::sync::Arc<std::sync::atomic::At
             running.store(false, Ordering::SeqCst);
             
             // 🔥 等待监控线程清理（减少到 2 秒）
+            info!("⏳ Waiting 2 seconds for monitors to clean up...");
             thread::sleep(Duration::from_secs(2));
             
             info!("👋 MFT Service exiting due to UI process termination");
             
-            // 🔥 使用 libc 的 _exit 强制退出整个进程（包括所有线程）
-            // std::process::exit() 可能会被阻塞在某些线程上
+            // 🔥 强制终止整个进程
+            info!("💀 Force terminating process...");
             #[cfg(target_os = "windows")]
             unsafe {
-                // Windows: 直接调用 ExitProcess
-                windows::Win32::System::Threading::ExitProcess(0);
+                // Windows: 直接调用 TerminateProcess 终止自己
+                use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+                let _ = TerminateProcess(GetCurrentProcess(), 0);
             }
             
             // 如果上面的调用失败，使用标准退出
             std::process::exit(0);
         }
         
-        // 每秒检查一次（更快响应，原来是2秒）
+        // 每秒检查一次
         thread::sleep(Duration::from_secs(1));
     }
 }
@@ -508,23 +535,29 @@ fn monitor_ui_process(ui_pid: u32, running: std::sync::Arc<std::sync::atomic::At
 #[cfg(target_os = "windows")]
 fn check_process_exists(pid: u32) -> bool {
     use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION};
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use tracing::debug;
     
     unsafe {
-        // 尝试打开进程句柄
-        let handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
+        // 尝试打开进程句柄（使用更低权限的查询）
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
         
-        if let Ok(h) = handle {
-            if h.is_invalid() {
-                return false;
+        match handle {
+            Ok(h) => {
+                if h.is_invalid() {
+                    debug!("❌ PID {} handle is invalid", pid);
+                    return false;
+                }
+                
+                // 成功打开说明进程存在，关闭句柄
+                let _ = CloseHandle(h);
+                true
             }
-            
-            // 成功打开说明进程存在，关闭句柄
-            let _ = CloseHandle(h);
-            true
-        } else {
-            // 无法打开说明进程不存在
-            false
+            Err(e) => {
+                // 无法打开说明进程不存在
+                debug!("❌ Failed to open PID {}: {:?}", pid, e);
+                false
+            }
         }
     }
 }
