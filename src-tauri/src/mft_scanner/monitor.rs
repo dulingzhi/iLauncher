@@ -62,7 +62,7 @@ impl UsnMonitor {
         
         // 5. 🔹 进入监控循环（阻塞式）
         info!("🔄 Entering monitoring loop (blocking mode)...");
-        let mut db = Database::open(self.drive_letter, output_dir)?;
+        let mut db = Database::create_for_write(self.drive_letter, output_dir)?;  // 🔥 使用写入模式
         
         let mut read_data = ReadUsnJournalData {
             start_usn: journal_data.next_usn,
