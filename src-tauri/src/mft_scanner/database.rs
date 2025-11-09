@@ -54,6 +54,7 @@ impl Database {
             PRAGMA page_size = 65535;
             PRAGMA journal_mode = WAL;        -- 🔥 WAL 模式，允许读写并发
             PRAGMA synchronous = NORMAL;      -- 🔥 WAL 模式下可降低同步级别
+            PRAGMA wal_autocheckpoint = 1000; -- 🔥 每 1000 页才 checkpoint（默认 1000）
         ")?;
         
         let mut db = Self { conn, drive_letter };

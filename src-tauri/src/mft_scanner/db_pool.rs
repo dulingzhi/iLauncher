@@ -88,6 +88,7 @@ impl DatabasePool {
             PRAGMA page_size = 65535;
             PRAGMA journal_mode = WAL;     -- WAL 模式
             PRAGMA synchronous = NORMAL;   -- WAL 模式下安全
+            PRAGMA wal_autocheckpoint = 0; -- 🔥 禁用自动 checkpoint，避免阻塞
         ")?;
         
         let entry = Arc::new(Mutex::new(PoolEntry {
