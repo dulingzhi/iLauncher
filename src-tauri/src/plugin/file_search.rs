@@ -505,7 +505,7 @@ impl FileSearchPlugin {
     #[cfg(target_os = "windows")]
     async fn query_from_mft_database(&self, search: &str, _ctx: &QueryContext) -> Result<Vec<QueryResult>> {
         let query_start = std::time::Instant::now();
-        use crate::mft_scanner::database;
+        use crate::mft_scanner::db_pool;  // 🔥 使用连接池
         use crate::utils::paths;
         
         // 使用统一的数据目录
@@ -534,8 +534,8 @@ impl FileSearchPlugin {
             }]);
         }
         
-        // 查询数据库（限制返回50个结果）
-        let mft_entries = match database::search_all_drives(search, &output_dir, 50) {
+        // 🔥 使用连接池查询（避免 database is locked）
+        let mft_entries = match db_pool::search_all_drives_pooled(search, &output_dir, 50) {
             Ok(entries) => entries,
             Err(e) => {
                 tracing::error!("MFT database query failed: {:#}", e);

@@ -13,6 +13,9 @@ pub mod monitor;
 pub mod database;
 
 #[cfg(target_os = "windows")]
+pub mod db_pool;
+
+#[cfg(target_os = "windows")]
 pub mod config;
 
 // 重新导出核心类型
