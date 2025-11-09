@@ -77,20 +77,17 @@ impl DatabasePool {
             anyhow::bail!("Database not found: {}", db_path);
         }
         
-        // 🔥 只读模式 + 共享缓存（关键优化）
-        let conn = Connection::open_with_flags(
-            &db_path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY 
-                | rusqlite::OpenFlags::SQLITE_OPEN_SHARED_CACHE,  // 🔥 共享缓存模式
-        )?;
+        // 🔥 WAL 模式需要读写权限（用于创建 .wal 和 .shm 文件）
+        // WAL 允许多个读连接 + 1个写连接并发，所以读写模式是安全的
+        let conn = Connection::open(&db_path)?;
         
-        // 优化配置
+        // 优化配置（与写入模式保持一致）
         conn.execute_batch("
             PRAGMA temp_store = MEMORY;
             PRAGMA cache_size = -262144;   -- 256MB 缓存
             PRAGMA page_size = 65535;
-            PRAGMA journal_mode = OFF;     -- 只读模式不需要日志
-            PRAGMA synchronous = OFF;      -- 只读模式不需要同步
+            PRAGMA journal_mode = WAL;     -- WAL 模式
+            PRAGMA synchronous = NORMAL;   -- WAL 模式下安全
         ")?;
         
         let entry = Arc::new(Mutex::new(PoolEntry {
