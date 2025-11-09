@@ -20,7 +20,7 @@ impl UsnScanner {
     pub fn new(drive_letter: char) -> Self {
         Self {
             drive_letter,
-            frn_map: FrnMap::new(),
+            frn_map: FrnMap::default(),  // 🔥 使用 FxHashMap
         }
     }
     
@@ -62,7 +62,7 @@ impl UsnScanner {
         
         let mut entries = Vec::new();
         let mut count = 0;
-        const BATCH_SIZE: usize = 100_000;  // 每 10 万条提交一次
+        const BATCH_SIZE: usize = 500_000;  // 🔥 优化: 增大到50万,减少提交次数
         
         for (frn, parent_info) in &self.frn_map {
             // 🔹 递归查询完整路径
@@ -204,7 +204,7 @@ impl UsnScanner {
             
             match self.frn_map.get(&current_frn) {
                 Some(info) => {
-                    path_parts.push(info.filename.clone());
+                    path_parts.push(&info.filename);  // 🔥 存储引用而非克隆
                     current_frn = info.parent_frn;
                 }
                 None => {
@@ -214,15 +214,23 @@ impl UsnScanner {
             }
         }
         
-        // 反转路径（从根到叶）
-        path_parts.reverse();
+        // 🔥 优化: 预分配容量并直接拼接,避免join()的额外分配
+        let estimated_len = path_parts.iter().map(|s| s.len()).sum::<usize>() 
+            + path_parts.len()  // 反斜杠
+            + 3;  // "C:\"
         
-        // 拼接完整路径
-        let path = if path_parts.is_empty() {
-            format!("{}:\\", self.drive_letter)
-        } else {
-            format!("{}:\\{}", self.drive_letter, path_parts.join("\\"))
-        };
+        let mut path = String::with_capacity(estimated_len);
+        path.push(self.drive_letter);
+        path.push_str(":\\");
+        
+        // 反转并拼接(从根到叶)
+        for (i, part) in path_parts.iter().rev().enumerate() {
+            if i > 0 {
+                path.push('\\');
+            }
+            path.push_str(part);
+        }
+        
         
         Ok(path)
     }

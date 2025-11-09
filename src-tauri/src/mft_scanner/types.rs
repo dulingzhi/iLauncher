@@ -1,7 +1,7 @@
 // MFT 扫描器类型定义
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;  // 🔥 使用高性能哈希
 
 /// 父目录信息
 #[derive(Debug, Clone)]
@@ -13,7 +13,8 @@ pub struct ParentInfo {
 }
 
 /// FRN 映射表：FRN → {ParentFRN, Filename}
-pub type FrnMap = HashMap<u64, ParentInfo>;
+/// 🔥 使用 FxHashMap 替代 HashMap (快 2-3x)
+pub type FrnMap = FxHashMap<u64, ParentInfo>;
 
 /// MFT 文件条目（FTS5 优化版）
 #[derive(Debug, Clone, Serialize, Deserialize)]

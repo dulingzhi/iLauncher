@@ -23,7 +23,7 @@ impl UsnMonitor {
     pub fn new(drive_letter: char) -> Self {
         Self {
             drive_letter,
-            frn_map: FrnMap::new(),
+            frn_map: FrnMap::default(),  // 🔥 使用 default() 替代 new()
         }
     }
     
