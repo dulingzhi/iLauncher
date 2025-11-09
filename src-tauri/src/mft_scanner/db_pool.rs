@@ -114,12 +114,13 @@ impl DatabasePool {
         // FTS5 查询
         let fts_query = format!("\"{}\" OR \"{}*\"", query, query);
         
+        // 🔥 优化: 去除 GROUP BY (FTS5 每个 path 只有一条记录)
+        // 直接按 BM25 rank + priority 排序，大幅提升性能
         let sql = "
-            SELECT path, priority, MIN(rank) as best_rank
+            SELECT path, priority
             FROM files_fts 
             WHERE filename MATCH ?1 
-            GROUP BY path
-            ORDER BY best_rank, priority DESC 
+            ORDER BY rank, priority DESC 
             LIMIT ?2
         ";
         
