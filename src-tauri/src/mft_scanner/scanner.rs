@@ -51,75 +51,25 @@ impl UsnScanner {
         let journal_data = self.query_usn_journal(volume_handle)?;
         info!("✓ USN Journal ID: {:016X}", journal_data.usn_journal_id);
         
-        // 4. 🔹 第一阶段：构建 FRN 映射表
-        info!("🔍 Building FRN map (Phase 1)...");
-        self.build_frn_map(volume_handle, &journal_data)?;
-        info!("✓ FRN map built: {} entries", self.frn_map.len());
+        // 4. 🔹 新策略：流式扫描 + 即时写入 (避免 10GB 内存占用)
+        info!("🔍 Streaming scan with immediate database write...");
+        self.stream_scan_to_database(volume_handle, &journal_data, output_dir, config)?;
         
-        // 5. 🔹 第二阶段：重建完整路径并保存
-        info!("📝 Rebuilding paths and saving to database (Phase 2)...");
-        let mut db = Database::create_for_write(self.drive_letter, output_dir)?;
+        info!("✓ Scan completed");
         
-        let mut entries = Vec::new();
-        let mut count = 0;
-        const BATCH_SIZE: usize = 50_000;  // 🔥 内存优化: 降低到5万,减少内存峰值 (原50万)
-        entries.reserve(BATCH_SIZE);  // 🔥 预分配容量,避免多次扩容
-        
-        for (frn, parent_info) in &self.frn_map {
-            // 🔹 递归查询完整路径
-            match self.get_path(*frn) {
-                Ok(full_path) => {
-                    // 过滤忽略路径
-                    if config.is_ignore(&full_path) {
-                        continue;
-                    }
-                    
-                    let ascii_sum = Database::calc_ascii_sum(&parent_info.filename);
-                    
-                    entries.push(MftFileEntry {
-                        path: full_path,
-                        ascii_sum,
-                        priority: 0,  // TODO: 从配置读取
-                    });
-                    
-                    count += 1;
-                    
-                    // 🔥 优化：批量提交后立即释放内存
-                    if entries.len() >= BATCH_SIZE {
-                        db.insert_batch(&entries)?;
-                        info!("   Progress: {} files saved", count);
-                        entries.clear();
-                        entries.shrink_to(BATCH_SIZE);  // 🔥 释放多余容量,保持固定大小
-                    }
-                }
-                Err(e) => {
-                    // 路径重建失败，跳过
-                    continue;
-                }
-            }
-        }
-        
-        // 保存剩余记录
-        if !entries.is_empty() {
-            db.insert_batch(&entries)?;
-        }
-        
-        // 🔥 释放 FRN map 内存 (扫描完成后不再需要)
-        self.frn_map.clear();
-        self.frn_map.shrink_to_fit();
-        
-        info!("✅ Scan completed: {} files saved to database", count);
-        
-        unsafe { CloseHandle(volume_handle); }
+        unsafe { let _ = CloseHandle(volume_handle); }
         Ok(())
     }
     
-    /// 🔹 第一阶段：构建 FRN 映射表
-    fn build_frn_map(&mut self, volume_handle: HANDLE, journal_data: &UsnJournalData) -> Result<()> {
-        // 🔥 内存优化: 预估容量并预分配,避免多次扩容
-        // 估算: next_usn / 平均记录大小(~100 bytes) ≈ 文件数量
-        let estimated_capacity = (journal_data.next_usn / 100).max(100_000) as usize;
-        self.frn_map.reserve(estimated_capacity.min(3_000_000));  // 最多预留300万
+    /// 🔹 流式扫描：边扫描边写入，避免内存爆炸
+    fn stream_scan_to_database(
+        &mut self,
+        volume_handle: HANDLE,
+        journal_data: &UsnJournalData,
+        output_dir: &str,
+        config: &ScanConfig,
+    ) -> Result<()> {
+        let mut db = Database::create_for_write(self.drive_letter, output_dir)?;
         
         let mut enum_data = MftEnumData {
             start_file_reference_number: 0,
@@ -128,9 +78,13 @@ impl UsnScanner {
         };
         
         const BUFFER_SIZE: usize = 1024 * 1024;  // 1MB buffer
+        const BATCH_SIZE: usize = 10_000;  // 🔥 1万条批量写入 (降低内存)
+        
         let mut buffer = vec![0u8; BUFFER_SIZE];
+        let mut entries = Vec::with_capacity(BATCH_SIZE);
         let mut bytes_returned: u32 = 0;
         let mut iteration = 0;
+        let mut total_count = 0;
         
         loop {
             iteration += 1;
@@ -164,7 +118,7 @@ impl UsnScanner {
                 let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
                 enum_data.start_file_reference_number = next_usn as u64;
                 
-                // 解析 USN 记录并建立映射
+                // 解析 USN 记录
                 let mut offset = 8usize;
                 while offset + std::mem::size_of::<UsnRecordV2>() <= bytes_returned as usize {
                     let record_ptr = buffer.as_ptr().add(offset) as *const UsnRecordV2;
@@ -174,32 +128,76 @@ impl UsnScanner {
                         break;
                     }
                     
-                    // 🔹 提取文件名
-                    let name = self.extract_filename(record);
+                    let frn = record.file_reference_number;
+                    let filename = self.extract_filename(record);
                     
-                    // 🔹 建立映射：FRN → {ParentFRN, Filename}
+                    // 🔹 边扫描边建立映射
                     self.frn_map.insert(
-                        record.file_reference_number,
+                        frn,
                         ParentInfo {
                             parent_frn: record.parent_file_reference_number,
-                            filename: name,
+                            filename: filename.clone(),
                         },
                     );
                     
+                    // 🔹 立即重建路径并写入
+                    if let Ok(full_path) = self.get_path(frn) {
+                        if !config.is_ignore(&full_path) {
+                            let ascii_sum = Database::calc_ascii_sum(&filename);
+                            
+                            entries.push(MftFileEntry {
+                                path: full_path,
+                                ascii_sum,
+                                priority: 0,
+                            });
+                            
+                            total_count += 1;
+                            
+                            // 🔥 批量写入
+                            if entries.len() >= BATCH_SIZE {
+                                db.insert_batch(&entries)?;
+                                entries.clear();
+                                entries.shrink_to(BATCH_SIZE);  // 释放多余容量
+                                
+                                if iteration % 10 == 0 {
+                                    info!("   Progress: {} files saved", total_count);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 🔥 控制 FRN map 大小 (保留最近 50 万条)
+                    if self.frn_map.len() > 500_000 {
+                        // 简单策略：保留一半
+                        let keys_to_remove: Vec<u64> = self.frn_map.keys()
+                            .take(self.frn_map.len() / 2)
+                            .cloned()
+                            .collect();
+                        for key in keys_to_remove {
+                            self.frn_map.remove(&key);
+                        }
+                    }
+                    
                     offset += record.record_length as usize;
-                }
-                
-                if iteration % 100 == 0 {
-                    info!("   Building FRN map: {} entries (iteration {})", 
-                          self.frn_map.len(), iteration);
                 }
             }
         }
         
+        // 保存剩余记录
+        if !entries.is_empty() {
+            db.insert_batch(&entries)?;
+        }
+        
+        // 🔥 释放 FRN map 内存
+        self.frn_map.clear();
+        self.frn_map.shrink_to_fit();
+        
+        info!("✅ Stream scan completed: {} files saved", total_count);
+        
         Ok(())
     }
     
-    /// 🔹 第二阶段：递归查询重建完整路径
+    /// 🔹 递归查询完整路径
     fn get_path(&self, frn: u64) -> Result<String> {
         let mut path_parts = Vec::new();
         let mut current_frn = frn;
