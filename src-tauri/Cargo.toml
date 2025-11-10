@@ -50,6 +50,12 @@ urlencoding = "2"
 rustc-hash = "2"  # 高性能哈希
 rayon = "1.10"    # 并行计算
 
+# 🔥 prompt.txt 技术栈：压缩索引
+bumpalo = { version = "3.14", features = ["collections"] }  # Arena 分配器
+roaring = "0.10"  # RoaringBitmap 压缩位图
+fst = "0.4"  # FST 有限状态转换器
+memmap2 = "0.9"  # 内存映射
+
 # 数据库
 rusqlite = { version = "0.32", features = ["bundled", "vtab", "modern_sqlite"] }
 once_cell = "1.19"  # 全局懒加载单例

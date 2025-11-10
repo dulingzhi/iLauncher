@@ -433,48 +433,33 @@ pub fn run_mft_service(args: &[String]) {
     
     info!("✓ Drives to process: {:?}", drives);
     
-    // ============ 阶段 1: 全量扫描 ============
+    // ============ 阶段 1: 全量扫描 (使用新的 prompt.txt 方案) ============
     info!("");
     info!("╔═══════════════════════════════════════════╗");
     info!("║    Phase 1: Full Disk Scan                ║");
+    info!("║    (StreamingBuilder + 3-gram Index)      ║");
     info!("╚═══════════════════════════════════════════╝");
     info!("");
     
     let scan_start = std::time::Instant::now();
     
-    // 多线程扫描所有驱动器
-    let handles: Vec<_> = drives
-        .iter()
-        .map(|&drive| {
-            let output_dir_clone = output_dir.clone();
-            let config_clone = config.clone();
-            
-            std::thread::spawn(move || {
-                info!("📀 Starting scan for drive {}:", drive);
-                
-                let mut scanner = mft_scanner::UsnScanner::new(drive);
-                
-                match scanner.scan_to_database(&output_dir_clone, &config_clone) {
-                    Ok(_) => {
-                        info!("✅ Drive {} scan completed", drive);
-                        Ok(drive)
-                    }
-                    Err(e) => {
-                        error!("❌ Drive {} scan failed: {:#}", drive, e);
-                        Err(e)
-                    }
-                }
-            })
-        })
-        .collect();
+    // 🔥 使用新的 MultiDriveScanner（基于 prompt.txt）
+    let mut scan_config = config.clone();
+    scan_config.drives = drives.clone();
+    scan_config.output_dir = output_dir.clone();
     
-    // 等待所有扫描完成
-    let mut scanned_drives = Vec::new();
-    for handle in handles {
-        if let Ok(Ok(drive)) = handle.join() {
-            scanned_drives.push(drive);
+    let scanner = mft_scanner::MultiDriveScanner::new(&scan_config);
+    
+    let scanned_drives = match scanner.scan_all() {
+        Ok(_) => {
+            info!("✅ All drives scanned successfully");
+            drives.clone()
         }
-    }
+        Err(e) => {
+            error!("❌ Scan failed: {:#}", e);
+            Vec::new()
+        }
+    };
     
     let scan_elapsed = scan_start.elapsed();
     info!("");
@@ -491,9 +476,10 @@ pub fn run_mft_service(args: &[String]) {
         std::process::exit(0);
     }
     
-    // ============ 阶段 2: 实时监控 ============
+    // ============ 阶段 2: 实时监控 (使用 USN Incremental Updater) ============
     info!("╔═══════════════════════════════════════════╗");
     info!("║    Phase 2: Real-time Monitoring          ║");
+    info!("║    (USN Journal + RoaringBitmap Updates)  ║");
     info!("╚═══════════════════════════════════════════╝");
     info!("");
     
@@ -526,22 +512,25 @@ pub fn run_mft_service(args: &[String]) {
         .iter()
         .map(|&drive| {
             let output_dir_clone = output_dir.clone();
-            let config_clone = config.clone();
             let running_clone = running.clone();
             
             std::thread::spawn(move || {
-                info!("👀 Starting monitor for drive {}:", drive);
+                info!("👀 Starting USN incremental updater for drive {}:", drive);
                 
-                let mut monitor = mft_scanner::UsnMonitor::new(drive);
+                // 🔥 使用新的 UsnIncrementalUpdater（基于 prompt.txt）
+                let mut updater = mft_scanner::UsnIncrementalUpdater::new(drive, output_dir_clone.clone());
                 
-                // 启动监控（阻塞式运行，直到收到停止信号）
-                match monitor.start_monitoring_with_signal(&output_dir_clone, &config_clone, running_clone) {
-                    Ok(_) => {
-                        info!("✓ Monitor for drive {} stopped gracefully", drive);
-                    }
-                    Err(e) => {
-                        error!("❌ Monitor for drive {} error: {:#}", drive, e);
-                    }
+                // 初始化 USN 位置
+                if let Err(e) = updater.initialize() {
+                    error!("❌ Failed to initialize USN updater for drive {}: {:#}", drive, e);
+                    return;
+                }
+                
+                // 阻塞式监控，直到收到停止信号
+                if let Err(e) = updater.start_monitoring(running_clone) {
+                    error!("❌ USN monitoring error on drive {}: {:#}", drive, e);
+                } else {
+                    info!("✓ USN updater for drive {} stopped gracefully", drive);
                 }
             })
         })
