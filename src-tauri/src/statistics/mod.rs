@@ -215,7 +215,7 @@ impl StatisticsManager {
         Ok(())
     }
     
-    /// 获取结果的使用次数
+    /// 获取结果的使用次数（支持模糊匹配）
     pub async fn get_result_score(&self, result_id: &str, plugin_id: &str) -> Result<i32> {
         let result_id = result_id.to_string();
         let plugin_id = plugin_id.to_string();
@@ -224,13 +224,35 @@ impl StatisticsManager {
         let count = tokio::task::spawn_blocking(move || {
             let conn = db.blocking_lock();
             
-            let count: Option<i32> = conn.query_row(
+            // 🔥 优先精确匹配
+            let exact_count: Option<i32> = conn.query_row(
                 "SELECT count FROM result_clicks WHERE result_id = ?1 AND plugin_id = ?2",
                 params![&result_id, &plugin_id],
                 |row| row.get(0),
             ).ok();
             
-            Ok::<i32, anyhow::Error>(count.unwrap_or(0))
+            if let Some(count) = exact_count {
+                return Ok::<i32, anyhow::Error>(count);
+            }
+            
+            // 🔥 如果没有精确匹配，尝试模糊匹配（相同 plugin 下的标题包含关系）
+            let fuzzy_count: Option<i32> = conn.query_row(
+                "SELECT MAX(count) FROM result_clicks 
+                 WHERE plugin_id = ?1 AND (
+                     result_id LIKE ?2 OR 
+                     ?3 LIKE '%' || result_id || '%' OR
+                     title LIKE '%' || ?4 || '%'
+                 )",
+                params![
+                    &plugin_id,
+                    format!("%{}%", &result_id),
+                    &result_id,
+                    &result_id
+                ],
+                |row| row.get(0),
+            ).ok().flatten();
+            
+            Ok::<i32, anyhow::Error>(fuzzy_count.unwrap_or(0))
         })
         .await??;
         
