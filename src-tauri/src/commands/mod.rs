@@ -38,20 +38,36 @@ pub async fn query(
     let mut matched_mru = Vec::new();
     let input_lower = input.to_lowercase();
     
+    tracing::debug!("📋 MRU items: {} total", mru_results.len());
+    
     for mru_item in mru_results {
         // 检查 MRU 项是否匹配当前搜索
         let title_lower = mru_item.title.to_lowercase();
         let id_lower = mru_item.result_id.to_lowercase();
         
         if title_lower.contains(&input_lower) || id_lower.contains(&input_lower) {
-            // 从插件结果中查找对应项
-            if let Some(pos) = plugin_results.iter().position(|r| 
-                r.id == mru_item.result_id && r.plugin_id == mru_item.plugin_id
-            ) {
+            tracing::debug!("✅ MRU match: '{}' (id: {}, count: {})", mru_item.title, mru_item.result_id, mru_item.count);
+            
+            // 🔥 从插件结果中查找对应项（支持路径模糊匹配）
+            if let Some(pos) = plugin_results.iter().position(|r| {
+                // 方法1: 完全匹配 result_id
+                (r.id == mru_item.result_id && r.plugin_id == mru_item.plugin_id) ||
+                // 方法2: 路径包含关系（处理完整路径 vs 文件名）
+                (r.plugin_id == mru_item.plugin_id && (
+                    r.id.to_lowercase().contains(&id_lower) ||
+                    id_lower.contains(&r.id.to_lowercase())
+                )) ||
+                // 方法3: 标题匹配
+                (r.plugin_id == mru_item.plugin_id && r.title.to_lowercase() == title_lower)
+            }) {
                 let mut result = plugin_results.remove(pos);
                 // 🔥 MRU 项给予极高分数（确保排在最前）
                 result.score = 1000 + mru_item.count * 10;
+                tracing::debug!("🎯 Found in plugin results: '{}' -> score {}", result.title, result.score);
                 matched_mru.push(result);
+            } else {
+                tracing::warn!("⚠️ MRU item not found in plugin results: '{}' (id: {}, plugin: {})", 
+                    mru_item.title, mru_item.result_id, mru_item.plugin_id);
             }
         }
     }
