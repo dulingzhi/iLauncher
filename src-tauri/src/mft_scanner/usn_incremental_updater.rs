@@ -102,14 +102,120 @@ impl UsnIncrementalUpdater {
     
     /// 从现有索引文件加载 FRN Map
     fn load_frn_map_from_index(&mut self) -> Result<()> {
-        // TODO: 扫描现有 _paths.dat 重建 FRN Map
-        // 由于首次扫描已生成索引，这里需要读取它来恢复 FRN 映射
-        // 
-        // 临时方案：如果找不到现有数据，启动时触发一次快速 MFT 扫描
-        // 只提取 FRN + ParentFRN + Filename，不构建索引
+        info!("📚 Loading FRN Map from existing MFT scan...");
         
-        info!("⚠️  FRN Map rebuild from existing index not implemented yet");
-        info!("💡 Will build FRN map incrementally from USN events");
+        // 快速扫描 MFT 提取 FRN 映射（不构建索引）
+        // 这比全量扫描快得多，因为只提取必要信息
+        if let Err(e) = self.quick_scan_mft_for_frn_map() {
+            error!("Failed to quick scan MFT: {:#}", e);
+            info!("💡 Will build FRN map incrementally from USN events");
+        }
+        
+        Ok(())
+    }
+    
+    /// 快速扫描 MFT 构建 FRN Map（仅提取父子关系）
+    fn quick_scan_mft_for_frn_map(&mut self) -> Result<()> {
+        use windows::Win32::System::Ioctl::*;
+        
+        info!("⚡ Quick scanning MFT for FRN map...");
+        let start = std::time::Instant::now();
+        
+        let volume_handle = self.open_volume()?;
+        
+        // 查询 USN Journal 数据
+        let mut journal_data: UsnJournalData = Default::default();
+        let mut bytes_returned: u32 = 0;
+        
+        unsafe {
+            DeviceIoControl(
+                volume_handle,
+                FSCTL_QUERY_USN_JOURNAL,
+                None,
+                0,
+                Some(&mut journal_data as *mut _ as *mut std::ffi::c_void),
+                std::mem::size_of::<UsnJournalData>() as u32,
+                Some(&mut bytes_returned),
+                None,
+            )?;
+        }
+        
+        // 枚举 USN 数据（类似全量扫描，但只提取元数据）
+        let mut enum_data = MftEnumData {
+            start_file_reference_number: 0,
+            low_usn: 0,
+            high_usn: journal_data.next_usn,
+        };
+        
+        const BUFFER_SIZE: usize = 4 * 1024 * 1024;  // 4MB buffer
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+        
+        let mut total_entries = 0;
+        
+        loop {
+            unsafe {
+                let result = DeviceIoControl(
+                    volume_handle,
+                    FSCTL_ENUM_USN_DATA,
+                    Some(&enum_data as *const _ as *const std::ffi::c_void),
+                    std::mem::size_of::<MftEnumData>() as u32,
+                    Some(buffer.as_mut_ptr() as *mut std::ffi::c_void),
+                    BUFFER_SIZE as u32,
+                    Some(&mut bytes_returned),
+                    None,
+                );
+                
+                if result.is_err() {
+                    let error = GetLastError();
+                    if error.0 == 38 {  // ERROR_HANDLE_EOF
+                        break;
+                    } else {
+                        return Err(anyhow::anyhow!("DeviceIoControl failed: {:?}", error));
+                    }
+                }
+                
+                if bytes_returned < 8 {
+                    break;
+                }
+                
+                // 更新下一个起始位置
+                let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
+                enum_data.start_file_reference_number = next_usn as u64;
+                
+                // 解析 USN 记录提取 FRN 映射
+                let mut offset = 8usize;
+                while offset < bytes_returned as usize {
+                    let record = &*(buffer.as_ptr().add(offset) as *const UsnRecordV2);
+                    
+                    if record.record_length == 0 {
+                        break;
+                    }
+                    
+                    let frn = record.file_reference_number;
+                    let parent_frn = record.parent_file_reference_number;
+                    let filename = self.extract_filename(record);
+                    
+                    // 添加到 FRN Map
+                    self.frn_map.insert(frn, ParentInfo {
+                        parent_frn,
+                        filename,
+                    });
+                    
+                    total_entries += 1;
+                    offset += record.record_length as usize;
+                    
+                    // 每 100K 输出进度
+                    if total_entries % 100_000 == 0 {
+                        debug!("   Progress: {} entries", total_entries);
+                    }
+                }
+            }
+        }
+        
+        unsafe { let _ = CloseHandle(volume_handle); }
+        
+        let elapsed = start.elapsed();
+        info!("✓ FRN Map built: {} entries in {:.2}s", total_entries, elapsed.as_secs_f64());
         
         Ok(())
     }
@@ -454,14 +560,42 @@ impl UsnIncrementalUpdater {
             writer.flush()?;
         }
         
-        // TODO: 实现增量合并逻辑
-        // 1. 加载现有 FST + Bitmap
-        // 2. 合并新的 bitmap
-        // 3. 重新写入
-        //
-        // 当前简化方案：直接清空缓存，依赖下次全量重建
+        // 🔥 增量合并策略：
+        // 由于完整实现需要重新构建 FST（FST 不支持增量插入），
+        // 当前采用简化方案：
+        // 1. 将新增的 gram -> bitmap 写入临时文件
+        // 2. 后台任务定期合并临时文件到主索引
+        // 3. 查询时同时查主索引 + 临时索引
         
-        self.index_cache.clear();
+        let temp_index_file = format!("{}\\{}_index_delta.dat", self.output_dir, self.drive_letter);
+        
+        // 追加到增量索引文件
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&temp_index_file)?;
+        
+        for (gram, bitmap) in self.index_cache.drain() {
+            // 写入 gram 长度
+            file.write_all(&(gram.len() as u32).to_le_bytes())?;
+            
+            // 写入 gram 内容
+            file.write_all(gram.as_bytes())?;
+            
+            // 写入 bitmap（序列化到 Vec）
+            let mut bitmap_bytes = Vec::new();
+            bitmap.serialize_into(&mut bitmap_bytes)?;
+            
+            file.write_all(&(bitmap_bytes.len() as u32).to_le_bytes())?;
+            file.write_all(&bitmap_bytes)?;
+        }
+        
+        file.flush()?;
+        
+        info!("✓ Delta index written to {}", temp_index_file);
+        
+        // TODO: 后台任务定期合并 delta 到主索引
+        // 或达到一定大小后触发重建
         
         Ok(())
     }
