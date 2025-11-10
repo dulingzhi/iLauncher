@@ -5,11 +5,16 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tracing::info;
+use std::fs;
+use std::io::Write;
+use tracing::{info, warn};
 
 use super::streaming_builder::StreamingBuilder;
 use super::index_builder::IndexBuilder;
 use super::types::ScanConfig;
+
+// 🔥 当前数据格式版本（变更后需要重建）
+const DATA_FORMAT_VERSION: u32 = 2;  // v1: SQLite, v2: FST+RoaringBitmap
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DiskType {
@@ -155,6 +160,9 @@ impl MultiDriveScanner {
         info!("╚═══════════════════════════════════════════╝");
         info!("");
         
+        // 🔥 检查数据格式版本，如有变更则清理旧数据
+        self.check_and_cleanup_old_data()?;
+        
         let total_start = Instant::now();
         
         // 分组：SSD 并行，HDD 串行
@@ -207,6 +215,53 @@ impl MultiDriveScanner {
         info!("⏱️  Total time: {:.2}s", total_elapsed.as_secs_f32());
         info!("✓ Successfully scanned: {:?}", scanned_drives.lock().unwrap());
         info!("");
+        
+        Ok(())
+    }
+    
+    /// 检查数据格式版本并清理旧数据
+    fn check_and_cleanup_old_data(&self) -> Result<()> {
+        let version_file = format!("{}\\version.txt", self.output_dir);
+        
+        // 读取现有版本
+        let current_version = if std::path::Path::new(&version_file).exists() {
+            fs::read_to_string(&version_file)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .unwrap_or(1)  // 旧版本默认为 1
+        } else {
+            1  // 首次运行
+        };
+        
+        // 如果版本不匹配，清理旧数据
+        if current_version != DATA_FORMAT_VERSION {
+            warn!("🔄 Data format changed (v{} -> v{}), cleaning old files...", 
+                  current_version, DATA_FORMAT_VERSION);
+            
+            // 创建输出目录（如果不存在）
+            fs::create_dir_all(&self.output_dir).ok();
+            
+            // 删除所有旧的索引文件
+            if let Ok(entries) = fs::read_dir(&self.output_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(ext) = path.extension() {
+                        // 删除 .dat, .fst, .db, .tmp 文件
+                        if ext == "dat" || ext == "fst" || ext == "db" || ext == "tmp" {
+                            if let Some(name) = path.file_name() {
+                                info!("   ❌ Removing old file: {:?}", name);
+                                fs::remove_file(&path).ok();
+                            }
+                        }
+                    }
+                }
+            }
+            
+            info!("✓ Old data cleaned, will rebuild from scratch");
+        }
+        
+        // 写入当前版本
+        fs::write(&version_file, DATA_FORMAT_VERSION.to_string())?;
         
         Ok(())
     }
