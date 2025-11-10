@@ -19,15 +19,29 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 初始化日志
+    use tracing_appender::rolling;
+    use crate::utils::paths;
+    
+    // 🔥 创建日志目录和文件写入器
+    let log_dir = paths::get_log_dir()
+        .expect("Failed to create log directory");
+    let file_appender = rolling::daily(&log_dir, "ilauncher.log");
+    
+    // 初始化日志（同时输出到控制台和文件）
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "ilauncher=debug,tauri=info".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer()) // 控制台输出
+        .with(tracing_subscriber::fmt::layer() // 文件输出（无颜色）
+            .with_writer(file_appender)
+            .with_ansi(false))
         .init();
 
+    tracing::info!("========== iLauncher Started at {} ==========", 
+                   chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    tracing::info!("📝 Log file: {:?}", log_dir.join("ilauncher.log"));
     tracing::info!("Starting iLauncher...");
 
     tauri::Builder::default()
