@@ -230,14 +230,23 @@ impl MultiDriveScanner {
                 .and_then(|s| s.trim().parse::<u32>().ok())
                 .unwrap_or(1)  // 旧版本默认为 1
         } else {
-            1  // 首次运行
+            0  // 首次运行
         };
         
-        // 如果版本不匹配，清理旧数据
-        if current_version != DATA_FORMAT_VERSION {
+        // 🔥 始终清理旧文件（因为每次启动都会全量重建）
+        let should_cleanup = if current_version == 0 {
+            info!("🆕 First run, cleaning any residual files...");
+            true
+        } else if current_version != DATA_FORMAT_VERSION {
             warn!("🔄 Data format changed (v{} -> v{}), cleaning old files...", 
                   current_version, DATA_FORMAT_VERSION);
-            
+            true
+        } else {
+            info!("🔄 Rebuilding index (full MFT scan)...");
+            true  // 每次都清理，因为会全量重建
+        };
+        
+        if should_cleanup {
             // 创建输出目录（如果不存在）
             fs::create_dir_all(&self.output_dir).ok();
             
@@ -245,6 +254,12 @@ impl MultiDriveScanner {
             if let Ok(entries) = fs::read_dir(&self.output_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
+                    
+                    // 跳过 version.txt
+                    if path.ends_with("version.txt") {
+                        continue;
+                    }
+                    
                     if let Some(ext) = path.extension() {
                         // 删除 .dat, .fst, .db, .tmp 文件
                         if ext == "dat" || ext == "fst" || ext == "db" || ext == "tmp" {
@@ -257,7 +272,7 @@ impl MultiDriveScanner {
                 }
             }
             
-            info!("✓ Old data cleaned, will rebuild from scratch");
+            info!("✓ Old data cleaned");
         }
         
         // 写入当前版本
