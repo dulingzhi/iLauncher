@@ -55,6 +55,7 @@ bumpalo = { version = "3.14", features = ["collections"] }  # Arena 分配器
 roaring = "0.10"  # RoaringBitmap 压缩位图
 fst = "0.4"  # FST 有限状态转换器
 memmap2 = "0.9"  # 内存映射
+smartstring = "1"  # 内联小字符串优化（<23 bytes 无堆分配）
 
 # 数据库
 rusqlite = { version = "0.32", features = ["bundled", "vtab", "modern_sqlite"] }

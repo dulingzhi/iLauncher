@@ -8,6 +8,7 @@
 use anyhow::Result;
 use roaring::RoaringBitmap;
 use rustc_hash::FxHashMap;
+use smartstring::alias::String as SmartString;  // 内联小字符串优化
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Write, Read, Seek, SeekFrom, BufWriter, BufReader};
@@ -21,11 +22,11 @@ use windows::Win32::System::IO::DeviceIoControl;
 
 use super::types::*;
 
-/// 父目录信息
+/// 父目录信息（优化内存占用）
 #[derive(Clone, Debug)]
 struct ParentInfo {
     parent_frn: u64,
-    filename: String,
+    filename: SmartString,  // 🔥 小字符串 (<23 bytes) 无堆分配
 }
 
 /// USN 增量更新器
@@ -537,14 +538,14 @@ impl UsnIncrementalUpdater {
     }
     
     /// 提取文件名
-    unsafe fn extract_filename(&self, record: &UsnRecordV2) -> String {
+    unsafe fn extract_filename(&self, record: &UsnRecordV2) -> SmartString {
         let name_offset = record.file_name_offset as usize;
         let name_len = record.file_name_length as usize / 2;
         
         let name_ptr = (record as *const UsnRecordV2 as *const u8).add(name_offset) as *const u16;
         let name_slice = std::slice::from_raw_parts(name_ptr, name_len);
         
-        String::from_utf16_lossy(name_slice)
+        SmartString::from(String::from_utf16_lossy(name_slice).as_str())
     }
     
     /// 刷新索引缓存到磁盘
