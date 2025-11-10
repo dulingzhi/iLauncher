@@ -577,8 +577,8 @@ impl FileSearchPlugin {
                 }
             };
             
-            // 执行查询（限制 50 条结果）
-            let file_ids = match query.search(search, 50) {
+            // 执行查询（限制 200 条结果，确保 MRU 项不被截断）
+            let file_ids = match query.search(search, 200) {
                 Ok(ids) => ids,
                 Err(e) => {
                     tracing::error!("FST search failed for drive {}: {:#}", drive, e);

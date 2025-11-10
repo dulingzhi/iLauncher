@@ -347,4 +347,98 @@ impl StatisticsManager {
         tracing::info!("Cleaned up old statistics data");
         Ok(())
     }
+    
+    /// 🔥 从 MRU 记录创建 QueryResult（用于注入）
+    pub async fn create_result_from_mru(&self, mru: &ResultStat) -> Result<crate::core::types::QueryResult> {
+        use crate::core::types::{QueryResult, Action, WoxImage, Preview};
+        use std::path::Path;
+        
+        // 判断是文件还是目录
+        let path = Path::new(&mru.result_id);
+        let is_dir = path.is_dir();
+        let is_file = path.is_file();
+        
+        // 创建图标
+        let icon = if is_dir {
+            WoxImage::emoji("📁")
+        } else if is_file {
+            WoxImage::emoji("📄")
+        } else {
+            // 文件不存在，使用历史记录图标
+            WoxImage::emoji("⭐")
+        };
+        
+        // 创建预览
+        let preview = if is_file || is_dir {
+            Some(Preview::Text(format!(
+                "Path: {}\nType: {}\n\n⭐ Recently used {} times\nLast used: {}",
+                mru.result_id,
+                if is_dir { "Directory" } else { "File" },
+                mru.count,
+                mru.last_used.format("%Y-%m-%d %H:%M:%S")
+            )))
+        } else {
+            Some(Preview::Text(format!(
+                "Path: {}\nStatus: File not found\n\n⭐ Recently used {} times\nLast used: {}",
+                mru.result_id,
+                mru.count,
+                mru.last_used.format("%Y-%m-%d %H:%M:%S")
+            )))
+        };
+        
+        // 创建操作列表
+        let mut actions = vec![
+            Action {
+                id: "open".to_string(),
+                name: if is_dir {
+                    "Open Folder".to_string()
+                } else {
+                    "Open File".to_string()
+                },
+                icon: Some(WoxImage::emoji("📂")),
+                is_default: true,
+                prevent_hide: false,
+                hotkey: None,
+            },
+            Action {
+                id: "copy_path".to_string(),
+                name: "Copy Path".to_string(),
+                icon: Some(WoxImage::emoji("📋")),
+                is_default: false,
+                prevent_hide: false,
+                hotkey: None,
+            },
+        ];
+        
+        // 如果是文件，添加"打开所在文件夹"
+        if is_file {
+            actions.insert(1, Action {
+                id: "open_folder".to_string(),
+                name: "Open Containing Folder".to_string(),
+                icon: Some(WoxImage::emoji("📁")),
+                is_default: false,
+                prevent_hide: false,
+                hotkey: None,
+            });
+        }
+        
+        Ok(QueryResult {
+            id: mru.result_id.clone(),
+            title: mru.title.clone(),
+            subtitle: format!("⭐ {} times | {}", mru.count, mru.result_id),
+            icon,
+            preview,
+            score: 1000 + mru.count * 10,  // 高分确保置顶
+            context_data: serde_json::json!({
+                "path": mru.result_id,
+                "is_dir": is_dir,
+                "from_mru": true,
+                "usage_count": mru.count,
+            }),
+            group: Some("⭐ Recently Used".to_string()),
+            plugin_id: mru.plugin_id.clone(),
+            refreshable: false,
+            actions,
+        })
+    }
 }

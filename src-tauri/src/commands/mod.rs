@@ -33,8 +33,8 @@ pub async fn query(
     let mut plugin_results = manager.query(&input).await.map_err(|e| e.to_string())?;
     let plugin_elapsed = plugin_query_start.elapsed();
     
-    // 🔥 步骤 3: 过滤 MRU 中匹配当前搜索的项
-    let filter_start = std::time::Instant::now();
+    // 🔥 步骤 3: 注入 MRU 匹配项（直接创建结果，不依赖插件）
+    let inject_start = std::time::Instant::now();
     let mut matched_mru = Vec::new();
     let input_lower = input.to_lowercase();
     
@@ -48,67 +48,47 @@ pub async fn query(
         // 判断 MRU 项是否与当前搜索相关
         let is_match = title_lower.contains(&input_lower) || id_lower.contains(&input_lower);
         
-        if is_match {
-            tracing::debug!("✅ MRU item matches search: '{}' (id: {}, plugin: {}, count: {})", 
-                mru_item.title, mru_item.result_id, mru_item.plugin_id, mru_item.count);
-            
-            // 🔥 从插件结果中查找对应项
-            // 优先精确匹配，失败则尝试路径包含关系
-            let found_pos = plugin_results.iter().position(|r| {
-                if r.plugin_id != mru_item.plugin_id {
-                    return false;
-                }
-                
-                // 方法1: 完全匹配 (最可靠)
-                if r.id == mru_item.result_id {
-                    tracing::debug!("  → 精确匹配: {}", r.id);
-                    return true;
-                }
-                
-                // 方法2: 路径规范化后匹配（处理大小写和路径分隔符）
-                let r_id_normalized = r.id.to_lowercase().replace("/", "\\");
-                let mru_id_normalized = mru_item.result_id.to_lowercase().replace("/", "\\");
-                if r_id_normalized == mru_id_normalized {
-                    tracing::debug!("  → 规范化匹配: {} == {}", r.id, mru_item.result_id);
-                    return true;
-                }
-                
-                // 方法3: 双向路径包含（处理完整路径 vs 相对路径）
-                if r_id_normalized.contains(&mru_id_normalized) || mru_id_normalized.contains(&r_id_normalized) {
-                    tracing::debug!("  → 路径包含: {} <-> {}", r.id, mru_item.result_id);
-                    return true;
-                }
-                
-                // 方法4: 标题精确匹配
-                if r.title.to_lowercase() == title_lower {
-                    tracing::debug!("  → 标题匹配: {}", r.title);
-                    return true;
-                }
-                
-                false
-            });
-            
-            if let Some(pos) = found_pos {
-                let mut result = plugin_results.remove(pos);
-                // 🔥 MRU 项给予极高分数（确保排在最前）
-                result.score = 1000 + mru_item.count * 10;
-                tracing::info!("🎯 MRU boosted: '{}' → score {} (used {} times)", 
-                    result.title, result.score, mru_item.count);
-                matched_mru.push(result);
-            } else {
-                tracing::warn!("⚠️ MRU item not found in current plugin results: '{}' (id: {}, plugin: {})", 
-                    mru_item.title, mru_item.result_id, mru_item.plugin_id);
-                tracing::warn!("   Available plugin results: {}", 
-                    plugin_results.iter()
-                        .filter(|r| r.plugin_id == mru_item.plugin_id)
-                        .map(|r| format!("'{}'", r.id))
-                        .take(3)
-                        .collect::<Vec<_>>()
-                        .join(", "));
+        if !is_match {
+            continue;
+        }
+        
+        tracing::debug!("✅ MRU item matches search: '{}' (id: {}, plugin: {}, count: {})", 
+            mru_item.title, mru_item.result_id, mru_item.plugin_id, mru_item.count);
+        
+        // 🔥 方案 A: 先尝试从插件结果中找到并提升
+        let found_pos = plugin_results.iter().position(|r| {
+            if r.plugin_id != mru_item.plugin_id {
+                return false;
             }
+            
+            let r_id_normalized = r.id.to_lowercase().replace("/", "\\");
+            let mru_id_normalized = mru_item.result_id.to_lowercase().replace("/", "\\");
+            
+            r_id_normalized == mru_id_normalized || 
+            r.title.to_lowercase() == title_lower ||
+            r_id_normalized.contains(&mru_id_normalized) ||
+            mru_id_normalized.contains(&r_id_normalized)
+        });
+        
+        if let Some(pos) = found_pos {
+            // 插件返回了这个结果，提升分数
+            let mut result = plugin_results.remove(pos);
+            result.score = 1000 + mru_item.count * 10;
+            tracing::info!("🎯 MRU boosted (from plugin): '{}' → score {}", result.title, result.score);
+            matched_mru.push(result);
+        } else {
+            // 🔥 方案 B: 插件没有返回，直接注入 MRU 结果
+            tracing::info!("💉 MRU injected (not in plugin results): '{}' (id: {})", 
+                mru_item.title, mru_item.result_id);
+            
+            // 🔥 直接创建 QueryResult（复用 MRU 的元数据）
+            let injected_result = stats.create_result_from_mru(&mru_item).await
+                .map_err(|e| format!("Failed to create MRU result: {}", e))?;
+            
+            matched_mru.push(injected_result);
         }
     }
-    let filter_elapsed = filter_start.elapsed();
+    let inject_elapsed = inject_start.elapsed();
     
     // 🔥 步骤 4: 为剩余插件结果调整分数
     let score_adjust_start = std::time::Instant::now();
@@ -132,14 +112,14 @@ pub async fn query(
     
     let total_elapsed = query_start.elapsed();
     tracing::info!(
-        "✅ Query completed: '{}' → {} results ({} MRU) in {:.2}ms (mru: {:.2}ms, plugin: {:.2}ms, filter: {:.2}ms, score: {:.2}ms, sort: {:.2}ms)",
+        "✅ Query completed: '{}' → {} results ({} MRU) in {:.2}ms (mru: {:.2}ms, plugin: {:.2}ms, inject: {:.2}ms, score: {:.2}ms, sort: {:.2}ms)",
         input,
         final_results.len(),
         mru_count,
         total_elapsed.as_secs_f64() * 1000.0,
         mru_elapsed.as_secs_f64() * 1000.0,
         plugin_elapsed.as_secs_f64() * 1000.0,
-        filter_elapsed.as_secs_f64() * 1000.0,
+        inject_elapsed.as_secs_f64() * 1000.0,
         score_elapsed.as_secs_f64() * 1000.0,
         sort_elapsed.as_secs_f64() * 1000.0
     );
