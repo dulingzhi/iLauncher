@@ -42,13 +42,13 @@ if ($Follow) {
     Get-Content $logFile.FullName -Wait -Tail $Lines | Where-Object {
         $_ -match $Filter
     } | ForEach-Object {
-        if ($_ -match "ERROR|❌") {
+        if ($_ -match "ERROR") {
             Write-Host $_ -ForegroundColor Red
-        } elseif ($_ -match "WARN|⚠") {
+        } elseif ($_ -match "WARN") {
             Write-Host $_ -ForegroundColor Yellow
-        } elseif ($_ -match "MRU boosted|🎯") {
+        } elseif ($_ -match "MRU boosted") {
             Write-Host $_ -ForegroundColor Green
-        } elseif ($_ -match "Query completed|✅") {
+        } elseif ($_ -match "Query completed") {
             Write-Host $_ -ForegroundColor Cyan
         } else {
             Write-Host $_
@@ -71,15 +71,15 @@ if ($Follow) {
         Write-Host ""
         
         foreach ($log in $logs) {
-            if ($log -match "ERROR|❌") {
+            if ($log -match "ERROR") {
                 Write-Host $log -ForegroundColor Red
-            } elseif ($log -match "WARN|⚠") {
+            } elseif ($log -match "WARN") {
                 Write-Host $log -ForegroundColor Yellow
-            } elseif ($log -match "MRU boosted|🎯") {
+            } elseif ($log -match "MRU boosted") {
                 Write-Host $log -ForegroundColor Green
-            } elseif ($log -match "Query completed|✅") {
+            } elseif ($log -match "Query completed") {
                 Write-Host $log -ForegroundColor Cyan
-            } elseif ($log -match "DEBUG|🔍") {
+            } elseif ($log -match "DEBUG") {
                 Write-Host $log -ForegroundColor Gray
             } elseif ($log -match "record_result_click") {
                 Write-Host $log -ForegroundColor Magenta

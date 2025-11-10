@@ -25,7 +25,7 @@ pub fn run() {
     // 🔥 创建日志目录和文件写入器
     let log_dir = paths::get_log_dir()
         .expect("Failed to create log directory");
-    let file_appender = rolling::daily(&log_dir, "ilauncher.log");
+    let file_appender = rolling::never(&log_dir, "ilauncher.log");
     
     // 初始化日志（同时输出到控制台和文件）
     tracing_subscriber::registry()
