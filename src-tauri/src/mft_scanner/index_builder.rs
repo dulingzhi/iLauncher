@@ -153,6 +153,12 @@ pub struct IndexQuery {
     drive_letter: char,
     fst_map: Map<memmap2::Mmap>,
     bitmap_mmap: memmap2::Mmap,
+    delta_index: Option<DeltaIndex>,  // 增量索引
+}
+
+/// Delta 索引（内存中的增量更新）
+struct DeltaIndex {
+    gram_bitmaps: HashMap<String, RoaringBitmap>,
 }
 
 impl IndexQuery {
@@ -174,14 +180,67 @@ impl IndexQuery {
                 .map(&File::open(bitmap_file)?)?
         };
         
+        // 加载 delta 索引（如果存在）
+        let delta_index = Self::load_delta_index(drive_letter, output_dir).ok();
+        
         Ok(Self {
             drive_letter,
             fst_map,
             bitmap_mmap,
+            delta_index,
         })
     }
     
-    /// 查询关键词（< 30ms）
+    /// 加载 delta 索引文件
+    fn load_delta_index(drive_letter: char, output_dir: &str) -> Result<DeltaIndex> {
+        let delta_file = format!("{}\\{}_index_delta.dat", output_dir, drive_letter);
+        
+        if !std::path::Path::new(&delta_file).exists() {
+            return Err(anyhow::anyhow!("Delta index not found"));
+        }
+        
+        let mut file = std::fs::File::open(delta_file)?;
+        let mut gram_bitmaps = HashMap::new();
+        
+        use std::io::Read;
+        
+        loop {
+            // 读取 gram 长度
+            let mut len_buf = [0u8; 4];
+            if file.read_exact(&mut len_buf).is_err() {
+                break; // EOF
+            }
+            let gram_len = u32::from_le_bytes(len_buf) as usize;
+            
+            // 读取 gram 内容
+            let mut gram_bytes = vec![0u8; gram_len];
+            file.read_exact(&mut gram_bytes)?;
+            let gram = String::from_utf8(gram_bytes)?;
+            
+            // 读取 bitmap 长度
+            let mut bitmap_len_buf = [0u8; 4];
+            file.read_exact(&mut bitmap_len_buf)?;
+            let bitmap_len = u32::from_le_bytes(bitmap_len_buf) as usize;
+            
+            // 读取 bitmap 数据
+            let mut bitmap_bytes = vec![0u8; bitmap_len];
+            file.read_exact(&mut bitmap_bytes)?;
+            
+            // 反序列化 bitmap
+            let bitmap = RoaringBitmap::deserialize_from(&bitmap_bytes[..])?;
+            
+            // 合并到 delta 索引（如果已存在则并集）
+            gram_bitmaps.entry(gram)
+                .and_modify(|existing| *existing |= bitmap.clone())
+                .or_insert(bitmap);
+        }
+        
+        tracing::info!("✓ Loaded delta index: {} unique grams", gram_bitmaps.len());
+        
+        Ok(DeltaIndex { gram_bitmaps })
+    }
+    
+    /// 查询关键词（< 30ms，支持 delta）
     pub fn search(&self, keyword: &str, limit: usize) -> Result<Vec<u32>> {
         let query_start = std::time::Instant::now();
         
@@ -197,14 +256,26 @@ impl IndexQuery {
         // 🔥 步骤 2: 查找每个 gram 的 bitmap（约 1-2ms）
         let mut bitmaps = Vec::new();
         for gram in &query_grams {
-            if let Some(offset) = self.fst_map.get(gram) {
-                if let Some(bitmap) = self.load_bitmap(offset)? {
-                    bitmaps.push(bitmap);
-                }
+            // 从主索引查询
+            let mut bitmap = if let Some(offset) = self.fst_map.get(gram) {
+                self.load_bitmap(offset)?.unwrap_or_else(RoaringBitmap::new)
             } else {
-                // 任意一个 gram 不存在，直接返回空
+                RoaringBitmap::new()
+            };
+            
+            // 🔥 从 delta 索引查询并合并
+            if let Some(delta) = &self.delta_index {
+                if let Some(delta_bitmap) = delta.gram_bitmaps.get(gram) {
+                    bitmap |= delta_bitmap;
+                }
+            }
+            
+            // 如果合并后仍为空，说明没有结果
+            if bitmap.is_empty() {
                 return Ok(Vec::new());
             }
+            
+            bitmaps.push(bitmap);
         }
         
         // 🔥 步骤 3: 快速交集运算（约 1-5ms）
@@ -220,10 +291,11 @@ impl IndexQuery {
         
         let elapsed = query_start.elapsed();
         tracing::debug!(
-            "3-gram search: '{}' -> {} results in {:.2}ms",
+            "3-gram search: '{}' -> {} results in {:.2}ms (delta: {})",
             keyword,
             results.len(),
-            elapsed.as_secs_f64() * 1000.0
+            elapsed.as_secs_f64() * 1000.0,
+            self.delta_index.is_some()
         );
         
         Ok(results)

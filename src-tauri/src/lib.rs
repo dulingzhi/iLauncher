@@ -514,6 +514,9 @@ pub fn run_mft_service(args: &[String]) {
             let output_dir_clone = output_dir.clone();
             let running_clone = running.clone();
             
+            // 🔥 启动后台合并任务（每个驱动器独立）
+            mft_scanner::DeltaMerger::start_background_merge(drive, output_dir_clone.clone());
+            
             std::thread::spawn(move || {
                 info!("👀 Starting USN incremental updater for drive {}:", drive);
                 

@@ -32,6 +32,9 @@ pub mod multi_drive_scanner;
 #[cfg(target_os = "windows")]
 pub mod usn_incremental_updater;
 
+#[cfg(target_os = "windows")]
+pub mod delta_merger;
+
 // 重新导出核心类型
 #[cfg(target_os = "windows")]
 pub use types::{MftFileEntry, ScanConfig, FrnMap, ParentInfo};
@@ -61,3 +64,5 @@ pub use multi_drive_scanner::{MultiDriveScanner, DiskType};
 #[cfg(target_os = "windows")]
 pub use usn_incremental_updater::UsnIncrementalUpdater;
 
+#[cfg(target_os = "windows")]
+pub use delta_merger::DeltaMerger;
