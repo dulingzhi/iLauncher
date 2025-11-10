@@ -75,6 +75,20 @@ impl FileSearchPlugin {
         Self::new_with_config(true) // 默认启用 MFT
     }
     
+    /// 获取所有固定磁盘驱动器
+    #[cfg(target_os = "windows")]
+    fn get_fixed_drives() -> Vec<char> {
+        let mut drives = Vec::new();
+        for drive in b'A'..=b'Z' {
+            let drive_char = drive as char;
+            let path = format!("{}:\\", drive_char);
+            if std::path::Path::new(&path).exists() {
+                drives.push(drive_char);
+            }
+        }
+        drives
+    }
+    
     pub fn new_with_config(use_mft: bool) -> Self {
         // 全盘搜索路径
         let mut search_paths = Vec::new();
@@ -501,11 +515,11 @@ impl FileSearchPlugin {
         Self::open_file(&folder).await
     }
     
-        /// 从 MFT 数据库查询文件
+        /// 从 MFT 索引查询文件（基于 FST+RoaringBitmap）
     #[cfg(target_os = "windows")]
     async fn query_from_mft_database(&self, search: &str, _ctx: &QueryContext) -> Result<Vec<QueryResult>> {
         let query_start = std::time::Instant::now();
-        use crate::mft_scanner::db_pool;  // 🔥 使用连接池
+        use crate::mft_scanner::{IndexQuery, PathReader};
         use crate::utils::paths;
         
         // 使用统一的数据目录
@@ -513,9 +527,9 @@ impl FileSearchPlugin {
             .to_string_lossy()
             .to_string();
         
-        tracing::debug!("🔍 MFT query: '{}' from {}", search, output_dir);
+        tracing::debug!("🔍 MFT FST query: '{}' from {}", search, output_dir);
         
-        // 检查数据库是否存在
+        // 检查索引文件是否存在
         let db_dir = std::path::Path::new(&output_dir);
         if !db_dir.exists() {
             tracing::warn!("MFT database directory not found: {}", output_dir);
@@ -534,30 +548,117 @@ impl FileSearchPlugin {
             }]);
         }
         
-        // 🔥 使用连接池查询（避免 database is locked）
-        let mft_entries = match db_pool::search_all_drives_pooled(search, &output_dir, 50) {
-            Ok(entries) => entries,
-            Err(e) => {
-                tracing::error!("MFT database query failed: {:#}", e);
-                return Ok(vec![QueryResult {
-                    id: "mft_error".to_string(),
-                    title: "❌ MFT Query Failed".to_string(),
-                    subtitle: format!("Error: {}", e),
-                    icon: WoxImage::emoji("⚠️"),
-                    preview: None,
-                    score: 100,
-                    context_data: serde_json::Value::Null,
-                    group: None,
-                    plugin_id: self.metadata.id.clone(),
-                    refreshable: false,
-                    actions: vec![],
-                }]);
-            }
-        };
+        // 🔥 获取所有驱动器并查询
+        let drives = Self::get_fixed_drives();
+        let mut all_results = Vec::new();
         
-        // 如果没有结果，返回提示
-        if mft_entries.is_empty() {
-            return Ok(vec![QueryResult {
+        for drive in drives {
+            // 检查该驱动器的索引文件是否存在
+            let fst_file = format!("{}\\{}_index.fst", output_dir, drive);
+            if !std::path::Path::new(&fst_file).exists() {
+                continue;
+            }
+            
+            // 打开索引查询器
+            let query = match IndexQuery::open(drive, &output_dir) {
+                Ok(q) => q,
+                Err(e) => {
+                    tracing::error!("Failed to open index for drive {}: {:#}", drive, e);
+                    continue;
+                }
+            };
+            
+            // 打开路径读取器
+            let path_reader = match PathReader::open(drive, &output_dir) {
+                Ok(pr) => pr,
+                Err(e) => {
+                    tracing::error!("Failed to open path reader for drive {}: {:#}", drive, e);
+                    continue;
+                }
+            };
+            
+            // 执行查询（限制 50 条结果）
+            let file_ids = match query.search(search, 50) {
+                Ok(ids) => ids,
+                Err(e) => {
+                    tracing::error!("FST search failed for drive {}: {:#}", drive, e);
+                    continue;
+                }
+            };
+            
+            // 读取路径并构建结果
+            for file_id in file_ids {
+                if let Ok(path) = path_reader.get_path(file_id) {
+                    // 判断是否为目录（简单检查）
+                    let is_dir = std::path::Path::new(&path).is_dir();
+                    let name = std::path::Path::new(&path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&path)
+                        .to_string();
+                    
+                    let icon = if is_dir {
+                        WoxImage::emoji("📁")
+                    } else {
+                        WoxImage::emoji("📄")
+                    };
+                    
+                    all_results.push(QueryResult {
+                        id: path.clone(),
+                        title: name.clone(),
+                        subtitle: path.clone(),
+                        icon,
+                        preview: Some(Preview::Text(format!(
+                            "Path: {}\nType: {}",
+                            path,
+                            if is_dir { "Directory" } else { "File" }
+                        ))),
+                        score: 70,  // 默认分数
+                        context_data: serde_json::json!({
+                            "path": path,
+                            "is_dir": is_dir,
+                        }),
+                        group: None,
+                        plugin_id: self.metadata.id.clone(),
+                        refreshable: false,
+                        actions: vec![
+                            Action {
+                                id: "open".to_string(),
+                                name: if is_dir {
+                                    "Open Folder".to_string()
+                                } else {
+                                    "Open File".to_string()
+                                },
+                                icon: Some(WoxImage::emoji("📂")),
+                                is_default: true,
+                                prevent_hide: false,
+                                hotkey: None,
+                            },
+                            Action {
+                                id: "open_folder".to_string(),
+                                name: "Open Containing Folder".to_string(),
+                                icon: Some(WoxImage::emoji("📁")),
+                                is_default: false,
+                                prevent_hide: false,
+                                hotkey: None,
+                            },
+                            Action {
+                                id: "copy_path".to_string(),
+                                name: "Copy Path".to_string(),
+                                icon: Some(WoxImage::emoji("📋")),
+                                is_default: false,
+                                prevent_hide: false,
+                                hotkey: None,
+                            },
+                        ],
+                    });
+                }
+            }
+        }
+        
+        // 如果没有结果
+        if all_results.is_empty() {
+            all_results.push(QueryResult {
                 id: "no_results".to_string(),
                 title: "No files found".to_string(),
                 subtitle: format!("No matches for '{}'", search),
@@ -569,81 +670,18 @@ impl FileSearchPlugin {
                 plugin_id: self.metadata.id.clone(),
                 refreshable: false,
                 actions: vec![],
-            }]);
-        }
-        
-        // 转换为 QueryResult
-        let mut results = Vec::new();
-        for entry in mft_entries {
-            let is_dir = entry.is_dir();
-            let name = entry.name();
-            let icon = if is_dir {
-                WoxImage::emoji("📁")
-            } else {
-                WoxImage::emoji("📄")
-            };
-            
-            results.push(QueryResult {
-                id: entry.path.clone(),
-                title: name.clone(),
-                subtitle: entry.path.clone(),
-                icon,
-                preview: Some(Preview::Text(format!(
-                    "Path: {}\nType: {}\nSize: {} bytes",
-                    entry.path,
-                    if is_dir { "Directory" } else { "File" },
-                    entry.size()
-                ))),
-                score: entry.priority.max(50),
-                context_data: serde_json::json!({
-                    "path": entry.path,
-                    "is_dir": is_dir,
-                }),
-                group: None,
-                plugin_id: self.metadata.id.clone(),
-                refreshable: false,
-                actions: vec![
-                    Action {
-                        id: "open".to_string(),
-                        name: if is_dir {
-                            "Open Folder".to_string()
-                        } else {
-                            "Open File".to_string()
-                        },
-                        icon: Some(WoxImage::emoji("📂")),
-                        is_default: true,
-                        prevent_hide: false,
-                        hotkey: None,
-                    },
-                    Action {
-                        id: "open_folder".to_string(),
-                        name: "Open Containing Folder".to_string(),
-                        icon: Some(WoxImage::emoji("📁")),
-                        is_default: false,
-                        prevent_hide: false,
-                        hotkey: None,
-                    },
-                    Action {
-                        id: "copy_path".to_string(),
-                        name: "Copy Path".to_string(),
-                        icon: Some(WoxImage::emoji("📋")),
-                        is_default: false,
-                        prevent_hide: false,
-                        hotkey: None,
-                    },
-                ],
             });
         }
         
         let query_elapsed = query_start.elapsed();
         tracing::info!(
-            "✅ MFT query completed: '{}' → {} results in {:.2}ms",
+            "✅ MFT FST query completed: '{}' → {} results in {:.2}ms",
             search,
-            results.len(),
+            all_results.len(),
             query_elapsed.as_secs_f64() * 1000.0
         );
         
-        Ok(results)
+        Ok(all_results)
     }
     
     /// 复制文本到剪贴板
