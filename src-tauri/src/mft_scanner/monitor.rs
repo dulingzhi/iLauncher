@@ -1,6 +1,6 @@
 // USN Journal 实时监控器 - 持续监听文件变化
 
-use anyhow::{Result, Context};
+use anyhow::Result;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::time::Duration;

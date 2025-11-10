@@ -356,7 +356,6 @@ impl FileSearchPlugin {
     /// 从 MFT 数据库加载所有文件（可选：用于初始化）
     #[cfg(target_os = "windows")]
     async fn load_from_mft_database() -> Result<Vec<FileItem>> {
-        use crate::mft_scanner::database;
         use crate::utils::paths;
         
         // 使用统一的数据目录
@@ -371,14 +370,6 @@ impl FileSearchPlugin {
         // 暂时返回空，实际搜索时再查询
         // 这样可以避免启动时加载全部数据（450万文件太多）
         tracing::info!("MFT mode: will query database on demand during search");
-        Ok(Vec::new())
-    }
-    
-    /// 通过 IPC 与扫描器进程通信，获取 MFT 扫描结果
-    #[cfg(target_os = "windows")]
-    async fn scan_with_mft_ipc(_paths: &[PathBuf]) -> Result<Vec<FileItem>> {
-        // 已废弃：MFT 现在使用数据库查询，不需要 IPC
-        tracing::warn!("scan_with_mft_ipc is deprecated, use database queries instead");
         Ok(Vec::new())
     }
     
@@ -577,8 +568,8 @@ impl FileSearchPlugin {
                 }
             };
             
-            // 执行查询（限制 200 条结果，确保 MRU 项不被截断）
-            let file_ids = match query.search(search, 200) {
+            // 执行查询（限制 50 条结果）
+            let file_ids = match query.search(search, 50) {
                 Ok(ids) => ids,
                 Err(e) => {
                     tracing::error!("FST search failed for drive {}: {:#}", drive, e);

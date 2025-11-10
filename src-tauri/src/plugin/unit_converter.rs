@@ -170,7 +170,7 @@ impl Plugin for UnitConverterPlugin {
         // 复制结果到剪贴板
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::System::DataExchange::{SetClipboardData, OpenClipboard, CloseClipboard, EmptyClipboard};
+            use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, EmptyClipboard};
             use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
             use windows::Win32::Foundation::HWND;
             

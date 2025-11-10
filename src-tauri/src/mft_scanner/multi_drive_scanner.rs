@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::fs;
-use std::io::Write;
 use tracing::{info, warn};
 
 use super::streaming_builder::StreamingBuilder;

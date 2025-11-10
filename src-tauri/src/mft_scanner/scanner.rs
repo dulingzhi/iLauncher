@@ -1,6 +1,6 @@
 // Windows USN Journal 扫描器 - 完整路径重建版本
 
-use anyhow::{Result, Context};
+use anyhow::Result;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use tracing::{info, error};
@@ -352,7 +352,7 @@ impl UsnScanner {
                 None,
             ) {
                 Ok(_) => {},
-                Err(e) => {
+                Err(_) => {
                     // 如果不存在，尝试创建
                     self.create_usn_journal(volume_handle)?;
                     return self.query_usn_journal(volume_handle);

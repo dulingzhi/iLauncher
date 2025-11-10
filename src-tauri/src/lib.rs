@@ -13,7 +13,6 @@ mod utils;
 #[cfg(target_os = "windows")]
 pub mod mft_scanner;
 
-use storage::StorageManager;
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

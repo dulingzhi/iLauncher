@@ -4,7 +4,7 @@ use anyhow::Result;
 use roaring::RoaringBitmap;
 use fst::{Map, MapBuilder, Streamer};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Write, BufWriter};
 use std::path::Path;
 use std::time::Duration;

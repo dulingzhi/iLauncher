@@ -504,7 +504,7 @@ impl UsnIncrementalUpdater {
     }
     
     /// 删除文件（更新索引）
-    fn remove_file(&mut self, frn: u64) -> Result<()> {
+    fn remove_file(&mut self, _frn: u64) -> Result<()> {
         // TODO: 从 bitmap 中移除对应的 bit
         // 由于 RoaringBitmap 不支持直接删除，实际需要重建或标记删除
         // 这里简化：仅记录到 deleted_files
@@ -512,7 +512,7 @@ impl UsnIncrementalUpdater {
     }
     
     /// 更新文件名（更新索引）
-    fn update_file_name_in_index(&mut self, old_name: &str, new_name: &str, _frn: u64) -> Result<()> {
+    fn update_file_name_in_index(&mut self, _old_name: &str, new_name: &str, _frn: u64) -> Result<()> {
         // TODO: 找到对应的 file_id，然后：
         // 1. 从旧 3-gram 的 bitmap 中移除 file_id
         // 2. 添加到新 3-gram 的 bitmap

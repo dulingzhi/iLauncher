@@ -500,23 +500,3 @@ pub async fn clear_clipboard_history(
     clipboard.clear();
     Ok(())
 }
-
-/// 调试：检查文件索引状态
-#[tauri::command]
-pub async fn debug_file_index(
-    search_path: Option<String>,
-) -> Result<DebugIndexInfo, String> {
-    // 这是一个临时调试命令
-    // 由于 PluginManager 不暴露内部状态，这里只能提供基本信息
-    Ok(DebugIndexInfo {
-        message: format!("File search plugin internal state not accessible. Search for: {:?}", search_path),
-        suggestion: "Check console logs for detailed index information".to_string(),
-    })
-}
-
-#[derive(serde::Serialize)]
-pub struct DebugIndexInfo {
-    pub message: String,
-    pub suggestion: String,
-}
-

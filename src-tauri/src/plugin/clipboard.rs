@@ -90,10 +90,9 @@ impl ClipboardPlugin {
     async fn copy_to_clipboard(content: &str) -> Result<()> {
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::System::DataExchange::{SetClipboardData, OpenClipboard, CloseClipboard, EmptyClipboard};
+            use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, EmptyClipboard};
             use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
             use windows::Win32::Foundation::HWND;
-            use windows::core::PCSTR;
             
             unsafe {
                 OpenClipboard(HWND::default())?;

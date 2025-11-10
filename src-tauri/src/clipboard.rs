@@ -2,7 +2,6 @@ use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +30,7 @@ impl ClipboardManager {
         }
     }
 
-    pub fn start_monitoring(app_handle: tauri::AppHandle) {
+    pub fn start_monitoring(_app_handle: tauri::AppHandle) {
         let manager = Self::new();
         let items = manager.items.clone();
         
