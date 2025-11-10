@@ -38,36 +38,73 @@ pub async fn query(
     let mut matched_mru = Vec::new();
     let input_lower = input.to_lowercase();
     
-    tracing::debug!("📋 MRU items: {} total", mru_results.len());
+    tracing::debug!("📋 Checking {} MRU items against input: '{}'", mru_results.len(), input);
     
     for mru_item in mru_results {
         // 检查 MRU 项是否匹配当前搜索
         let title_lower = mru_item.title.to_lowercase();
         let id_lower = mru_item.result_id.to_lowercase();
         
-        if title_lower.contains(&input_lower) || id_lower.contains(&input_lower) {
-            tracing::debug!("✅ MRU match: '{}' (id: {}, count: {})", mru_item.title, mru_item.result_id, mru_item.count);
+        // 判断 MRU 项是否与当前搜索相关
+        let is_match = title_lower.contains(&input_lower) || id_lower.contains(&input_lower);
+        
+        if is_match {
+            tracing::debug!("✅ MRU item matches search: '{}' (id: {}, plugin: {}, count: {})", 
+                mru_item.title, mru_item.result_id, mru_item.plugin_id, mru_item.count);
             
-            // 🔥 从插件结果中查找对应项（支持路径模糊匹配）
-            if let Some(pos) = plugin_results.iter().position(|r| {
-                // 方法1: 完全匹配 result_id
-                (r.id == mru_item.result_id && r.plugin_id == mru_item.plugin_id) ||
-                // 方法2: 路径包含关系（处理完整路径 vs 文件名）
-                (r.plugin_id == mru_item.plugin_id && (
-                    r.id.to_lowercase().contains(&id_lower) ||
-                    id_lower.contains(&r.id.to_lowercase())
-                )) ||
-                // 方法3: 标题匹配
-                (r.plugin_id == mru_item.plugin_id && r.title.to_lowercase() == title_lower)
-            }) {
+            // 🔥 从插件结果中查找对应项
+            // 优先精确匹配，失败则尝试路径包含关系
+            let found_pos = plugin_results.iter().position(|r| {
+                if r.plugin_id != mru_item.plugin_id {
+                    return false;
+                }
+                
+                // 方法1: 完全匹配 (最可靠)
+                if r.id == mru_item.result_id {
+                    tracing::debug!("  → 精确匹配: {}", r.id);
+                    return true;
+                }
+                
+                // 方法2: 路径规范化后匹配（处理大小写和路径分隔符）
+                let r_id_normalized = r.id.to_lowercase().replace("/", "\\");
+                let mru_id_normalized = mru_item.result_id.to_lowercase().replace("/", "\\");
+                if r_id_normalized == mru_id_normalized {
+                    tracing::debug!("  → 规范化匹配: {} == {}", r.id, mru_item.result_id);
+                    return true;
+                }
+                
+                // 方法3: 双向路径包含（处理完整路径 vs 相对路径）
+                if r_id_normalized.contains(&mru_id_normalized) || mru_id_normalized.contains(&r_id_normalized) {
+                    tracing::debug!("  → 路径包含: {} <-> {}", r.id, mru_item.result_id);
+                    return true;
+                }
+                
+                // 方法4: 标题精确匹配
+                if r.title.to_lowercase() == title_lower {
+                    tracing::debug!("  → 标题匹配: {}", r.title);
+                    return true;
+                }
+                
+                false
+            });
+            
+            if let Some(pos) = found_pos {
                 let mut result = plugin_results.remove(pos);
                 // 🔥 MRU 项给予极高分数（确保排在最前）
                 result.score = 1000 + mru_item.count * 10;
-                tracing::debug!("🎯 Found in plugin results: '{}' -> score {}", result.title, result.score);
+                tracing::info!("🎯 MRU boosted: '{}' → score {} (used {} times)", 
+                    result.title, result.score, mru_item.count);
                 matched_mru.push(result);
             } else {
-                tracing::warn!("⚠️ MRU item not found in plugin results: '{}' (id: {}, plugin: {})", 
+                tracing::warn!("⚠️ MRU item not found in current plugin results: '{}' (id: {}, plugin: {})", 
                     mru_item.title, mru_item.result_id, mru_item.plugin_id);
+                tracing::warn!("   Available plugin results: {}", 
+                    plugin_results.iter()
+                        .filter(|r| r.plugin_id == mru_item.plugin_id)
+                        .map(|r| format!("'{}'", r.id))
+                        .take(3)
+                        .collect::<Vec<_>>()
+                        .join(", "));
             }
         }
     }
