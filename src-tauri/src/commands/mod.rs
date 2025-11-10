@@ -23,14 +23,43 @@ pub async fn query(
         let _ = stats.record_query(&input).await;
     }
     
-    // 执行查询
+    // 🔥 步骤 1: 获取 MRU 热门结果
+    let mru_start = std::time::Instant::now();
+    let mru_results = stats.get_top_results(20).await.unwrap_or_default();
+    let mru_elapsed = mru_start.elapsed();
+    
+    // 🔥 步骤 2: 执行插件查询
     let plugin_query_start = std::time::Instant::now();
-    let mut results = manager.query(&input).await.map_err(|e| e.to_string())?;
+    let mut plugin_results = manager.query(&input).await.map_err(|e| e.to_string())?;
     let plugin_elapsed = plugin_query_start.elapsed();
     
-    // 根据历史使用情况调整分数
+    // 🔥 步骤 3: 过滤 MRU 中匹配当前搜索的项
+    let filter_start = std::time::Instant::now();
+    let mut matched_mru = Vec::new();
+    let input_lower = input.to_lowercase();
+    
+    for mru_item in mru_results {
+        // 检查 MRU 项是否匹配当前搜索
+        let title_lower = mru_item.title.to_lowercase();
+        let id_lower = mru_item.result_id.to_lowercase();
+        
+        if title_lower.contains(&input_lower) || id_lower.contains(&input_lower) {
+            // 从插件结果中查找对应项
+            if let Some(pos) = plugin_results.iter().position(|r| 
+                r.id == mru_item.result_id && r.plugin_id == mru_item.plugin_id
+            ) {
+                let mut result = plugin_results.remove(pos);
+                // 🔥 MRU 项给予极高分数（确保排在最前）
+                result.score = 1000 + mru_item.count * 10;
+                matched_mru.push(result);
+            }
+        }
+    }
+    let filter_elapsed = filter_start.elapsed();
+    
+    // 🔥 步骤 4: 为剩余插件结果调整分数
     let score_adjust_start = std::time::Instant::now();
-    for result in &mut results {
+    for result in &mut plugin_results {
         if let Ok(usage_count) = stats.get_result_score(&result.id, &result.plugin_id).await {
             // 给常用结果加分（每次使用加10分）
             result.score += usage_count * 10;
@@ -38,23 +67,31 @@ pub async fn query(
     }
     let score_elapsed = score_adjust_start.elapsed();
     
-    // 重新排序
+    // 🔥 步骤 5: 合并结果（MRU 在前，其他在后）
     let sort_start = std::time::Instant::now();
-    results.sort_by(|a, b| b.score.cmp(&a.score));
+    matched_mru.sort_by(|a, b| b.score.cmp(&a.score));
+    plugin_results.sort_by(|a, b| b.score.cmp(&a.score));
+    
+    let mru_count = matched_mru.len();  // 先记录长度
+    let mut final_results = matched_mru;
+    final_results.extend(plugin_results);
     let sort_elapsed = sort_start.elapsed();
     
     let total_elapsed = query_start.elapsed();
     tracing::info!(
-        "✅ Query completed: '{}' → {} results in {:.2}ms (plugin: {:.2}ms, score: {:.2}ms, sort: {:.2}ms)",
+        "✅ Query completed: '{}' → {} results ({} MRU) in {:.2}ms (mru: {:.2}ms, plugin: {:.2}ms, filter: {:.2}ms, score: {:.2}ms, sort: {:.2}ms)",
         input,
-        results.len(),
+        final_results.len(),
+        mru_count,
         total_elapsed.as_secs_f64() * 1000.0,
+        mru_elapsed.as_secs_f64() * 1000.0,
         plugin_elapsed.as_secs_f64() * 1000.0,
+        filter_elapsed.as_secs_f64() * 1000.0,
         score_elapsed.as_secs_f64() * 1000.0,
         sort_elapsed.as_secs_f64() * 1000.0
     );
     
-    Ok(results)
+    Ok(final_results)
 }
 
 /// 执行操作
@@ -256,7 +293,6 @@ pub async fn clear_statistics(stats: State<'_, StatisticsManager>) -> Result<(),
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn get_mft_status() -> Result<MftStatus, String> {
-    use std::path::Path;
     use crate::utils::paths;
     
     let output_dir = paths::get_mft_database_dir()
