@@ -114,19 +114,18 @@ impl PluginManager {
             raw_query: input.to_string(),
         };
         
-        let mut all_results = Vec::new();
+        let mut file_search_results = Vec::new();
+        let mut other_results = Vec::new();
         
         for plugin in &self.plugins {
             match plugin.query(&ctx).await {
                 Ok(mut results) => {
-                    // 🔹 给文件搜索插件的结果加分，提高优先级
-                    if plugin.metadata().id == "file_search" {
-                        for result in &mut results {
-                            // 给文件搜索结果加 20 分
-                            result.score += 20;
-                        }
+                    // 🔹 将文件搜索和应用搜索结果分开存放
+                    if plugin.metadata().id == "file_search" || plugin.metadata().id == "app_search" {
+                        file_search_results.append(&mut results);
+                    } else {
+                        other_results.append(&mut results);
                     }
-                    all_results.append(&mut results);
                 }
                 Err(e) => {
                     tracing::warn!("Plugin {} query failed: {}", plugin.metadata().name, e);
@@ -134,8 +133,13 @@ impl PluginManager {
             }
         }
         
-        // 按分数排序
-        all_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // 分别按分数排序
+        file_search_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        other_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        
+        // 文件搜索结果放前面，其他插件结果放后面
+        let mut all_results = file_search_results;
+        all_results.extend(other_results);
         
         Ok(all_results)
     }

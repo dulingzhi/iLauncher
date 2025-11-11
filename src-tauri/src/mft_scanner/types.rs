@@ -241,11 +241,19 @@ pub struct UsnRecordV2 {
     // 后面跟着文件名 (WCHAR)
 }
 
+/// NTFS 文件记录输入缓冲区（用于按需查询 FRN）
+#[repr(C)]
+#[derive(Debug)]
+pub struct NtfsFileRecordInputBuffer {
+    pub file_reference_number: u64,
+}
+
 // IOCTL 代码
 pub const FSCTL_QUERY_USN_JOURNAL: u32 = 0x000900f4;
 pub const FSCTL_CREATE_USN_JOURNAL: u32 = 0x000900e7;
 pub const FSCTL_ENUM_USN_DATA: u32 = 0x000900b3;
 pub const FSCTL_READ_USN_JOURNAL: u32 = 0x000900bb;
+pub const FSCTL_GET_NTFS_FILE_RECORD: u32 = 0x00090068;
 
 // 文件属性常量
 pub const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x00000010;
