@@ -45,5 +45,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": true,
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/dulingzhi/iLauncher/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

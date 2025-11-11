@@ -7,6 +7,7 @@ import { useToast } from '../hooks/useToast';
 import { applyTheme, Theme, themes } from '../theme';
 import { ThemeEditor } from './ThemeEditor';
 import { HotkeyRecorder } from './HotkeyRecorder';
+import { UpdateChecker } from './UpdateChecker';
 
 interface AppConfig {
   general: {
@@ -852,6 +853,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           className="w-4 h-4 accent-[#007acc]"
                         />
                       </label>
+                    </div>
+                  </div>
+
+                  {/* 更新检查 */}
+                  <div>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">Updates</h2>
+                    <div className="px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42]">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-medium text-gray-300">Check for Updates</span>
+                          <p className="text-xs text-gray-500 mt-0.5">Automatically check for updates on startup</p>
+                        </div>
+                        <UpdateChecker />
+                      </div>
                     </div>
                   </div>
                 </div>
