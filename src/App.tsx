@@ -93,7 +93,7 @@ function App() {
     // 监听窗口显示事件，重置为搜索视图并居中
     const setupShowListener = async () => {
       const unlisten = await appWindow.listen('tauri://focus', async () => {
-        setCurrentView('search');
+        // setCurrentView('search');
         
         // 每次显示时重新居中窗口
         try {
@@ -118,10 +118,7 @@ function App() {
     // 监听窗口失焦事件，自动隐藏并切换回搜索视图
     const setupBlurListener = async () => {
       const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
-        if (!focused) {
-          // 立即切换回搜索视图（同步操作）
-          setCurrentView('search');
-          // 稍微延迟隐藏窗口，确保视图已切换
+        if (!focused && currentView === 'search') {// 然后隐藏窗口
           setTimeout(() => {
             invoke("hide_app");
           }, 100);
@@ -178,9 +175,9 @@ function App() {
         </div>
       ) : (
         <div className="w-full h-full overflow-auto rounded-lg" style={{ backgroundColor: 'var(--color-background)', opacity: 0.98 }}>
-          {currentView === 'settings' && <Settings onClose={() => setCurrentView('search')} />}
-          {currentView === 'plugins' && <PluginManager onClose={() => setCurrentView('search')} />}
-          {currentView === 'clipboard' && <ClipboardHistory onClose={() => setCurrentView('search')} />}
+          {currentView === 'settings' && <Settings onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
+          {currentView === 'plugins' && <PluginManager onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
+          {currentView === 'clipboard' && <ClipboardHistory onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ use crate::plugin::PluginManager;
 use crate::preview;
 use crate::storage::{AppConfig, StorageManager};
 use crate::statistics::StatisticsManager;
-use tauri::State;
+use tauri::{State, Emitter};
 
 /// 查询命令
 #[tauri::command]
@@ -183,6 +183,8 @@ pub async fn show_app(window: tauri::Window) -> Result<(), String> {
 /// 隐藏应用
 #[tauri::command]
 pub async fn hide_app(window: tauri::Window) -> Result<(), String> {
+    // 发送隐藏事件到前端，让前端根据配置清空搜索结果
+    let _ = window.emit("app-hiding", ());
     window.hide().map_err(|e| e.to_string())?;
     Ok(())
 }

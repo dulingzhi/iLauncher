@@ -78,8 +78,19 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
         }
       });
       
+      // 监听 app-hiding 事件，根据配置清空搜索结果
+      const unlistenAppHiding = await appWindow.listen('app-hiding', () => {
+        if (clearOnHide) {
+          console.log('Clearing search results on hide (clear_on_hide enabled)');
+          reset();
+        } else {
+          console.log('Keeping search results on hide (clear_on_hide disabled)');
+        }
+      });
+      
       return () => {
         unlistenFocusInput();
+        unlistenAppHiding();
       };
     };
     
@@ -88,7 +99,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
     return () => {
       cleanup.then(fn => fn());
     };
-  }, [reset]);
+  }, [reset, clearOnHide]);
   
   // 当选中的结果改变时，关闭右键菜单
   useEffect(() => {
