@@ -48,20 +48,7 @@ jobs:
     needs: create-release
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04'
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -75,15 +62,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend dependencies
         run: bun install
@@ -96,7 +74,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
 
   publish-release:
     permissions:
@@ -147,13 +124,10 @@ jobs:
             
             const assets = release.assets;
             const platforms = {
-              'windows-x86_64': null,
-              'darwin-x86_64': null,
-              'darwin-aarch64': null,
-              'linux-x86_64': null
+              'windows-x86_64': null
             };
             
-            // 查找各平台的主安装包和签名文件
+            // 查找 Windows 平台的安装包和签名文件
             for (const asset of assets) {
               const name = asset.name;
               
@@ -163,39 +137,6 @@ jobs:
                 if (sigAsset) {
                   const sigResponse = await github.request(sigAsset.browser_download_url);
                   platforms['windows-x86_64'] = {
-                    url: asset.browser_download_url,
-                    signature: await sigResponse.text()
-                  };
-                }
-              }
-              // macOS x64
-              else if (name.includes('x64.app.tar.gz') && !name.includes('aarch64')) {
-                const sigAsset = assets.find(a => a.name === name + '.sig');
-                if (sigAsset) {
-                  const sigResponse = await github.request(sigAsset.browser_download_url);
-                  platforms['darwin-x86_64'] = {
-                    url: asset.browser_download_url,
-                    signature: await sigResponse.text()
-                  };
-                }
-              }
-              // macOS ARM64
-              else if (name.includes('aarch64.app.tar.gz')) {
-                const sigAsset = assets.find(a => a.name === name + '.sig');
-                if (sigAsset) {
-                  const sigResponse = await github.request(sigAsset.browser_download_url);
-                  platforms['darwin-aarch64'] = {
-                    url: asset.browser_download_url,
-                    signature: await sigResponse.text()
-                  };
-                }
-              }
-              // Linux AppImage
-              else if (name.includes('amd64.AppImage.tar.gz')) {
-                const sigAsset = assets.find(a => a.name === name + '.sig');
-                if (sigAsset) {
-                  const sigResponse = await github.request(sigAsset.browser_download_url);
-                  platforms['linux-x86_64'] = {
                     url: asset.browser_download_url,
                     signature: await sigResponse.text()
                   };
