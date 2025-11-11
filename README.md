@@ -12,6 +12,8 @@
 - 🎯 全局热键：Alt/Cmd + Space 快速调用
 - 💾 轻量级：内存占用 < 50MB
 - 🌍 跨平台：Windows、macOS、Linux
+- 🔄 自动更新：一键更新到最新版本
+- 🔐 开机自启：可选开机自动启动
 
 ## 🎯 当前进度
 
@@ -51,7 +53,35 @@
 
 ### 📋 待开发
 
-详见 [TODO.md](./TODO.md)
+详见 [TODO.md](./TODO.md) 和 [FEATURE_COMPARISON.md](./FEATURE_COMPARISON.md)
+
+## 📦 下载与安装
+
+### 最新版本
+
+访问 [Releases](https://github.com/dulingzhi/iLauncher/releases) 页面下载最新版本：
+
+- **Windows**: `iLauncher_x.x.x_x64-setup.exe` 或 `.msi`
+- **macOS**: `iLauncher_x.x.x_x64.dmg` (Intel) / `iLauncher_x.x.x_aarch64.dmg` (Apple Silicon)
+- **Linux**: `iLauncher_x.x.x_amd64.AppImage` 或 `.deb`
+
+### 自动更新
+
+iLauncher 支持自动更新：
+- 启动后自动检查更新（5秒延迟）
+- 在设置页面手动检查更新
+- 发现新版本时一键下载安装
+
+## 🔧 开发者指南
+
+### 构建与发布
+
+详细文档：
+- **本地开发**: 见下方快速开始
+- **发布新版本**: [HOW_TO_RELEASE.md](./docs/HOW_TO_RELEASE.md) ⭐
+- **发布检查清单**: [RELEASE_CHECKLIST.md](./docs/RELEASE_CHECKLIST.md)
+- **CI/CD 配置**: [.github/workflows/README.md](./.github/workflows/README.md)
+- **更新器配置**: [UPDATER_SETUP.md](./docs/UPDATER_SETUP.md)
 
 ## 🏗️ 技术栈
 
