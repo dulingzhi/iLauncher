@@ -134,6 +134,16 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       await saveGlobalConfig(config as any);
       setTheme(config.appearance.theme);
       i18n.changeLanguage(config.appearance.language);
+      
+      // 处理开机自启设置
+      try {
+        await invoke('set_autostart', { enabled: config.advanced.start_on_boot });
+      } catch (error) {
+        console.error('Failed to set autostart:', error);
+        showToast('Settings saved, but autostart setup failed', 'error');
+        return;
+      }
+      
       showToast(t('settings.saveSuccess') || 'Settings saved successfully!', 'success');
     } catch (error) {
       console.error('Failed to save config:', error);

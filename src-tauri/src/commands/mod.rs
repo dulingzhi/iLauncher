@@ -517,3 +517,34 @@ pub async fn clear_clipboard_history(
     clipboard.clear();
     Ok(())
 }
+
+/// 启用开机自启
+#[tauri::command]
+pub async fn enable_autostart() -> Result<(), String> {
+    crate::utils::autostart::enable()
+        .map_err(|e| format!("Failed to enable autostart: {}", e))
+}
+
+/// 禁用开机自启
+#[tauri::command]
+pub async fn disable_autostart() -> Result<(), String> {
+    crate::utils::autostart::disable()
+        .map_err(|e| format!("Failed to disable autostart: {}", e))
+}
+
+/// 检查开机自启状态
+#[tauri::command]
+pub async fn is_autostart_enabled() -> Result<bool, String> {
+    crate::utils::autostart::is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+/// 设置开机自启（根据布尔值启用或禁用）
+#[tauri::command]
+pub async fn set_autostart(enabled: bool) -> Result<(), String> {
+    if enabled {
+        enable_autostart().await
+    } else {
+        disable_autostart().await
+    }
+}

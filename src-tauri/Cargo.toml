@@ -90,3 +90,6 @@ directories = "5"
 dirs = "5"
 sysinfo = "0.31"
 
+# 开机自启
+auto-launch = "0.5"
+

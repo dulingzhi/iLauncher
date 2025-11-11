@@ -73,6 +73,10 @@ pub fn run() {
             commands::delete_clipboard_item,
             commands::toggle_clipboard_favorite,
             commands::clear_clipboard_history,
+            commands::enable_autostart,
+            commands::disable_autostart,
+            commands::is_autostart_enabled,
+            commands::set_autostart,
         ])
         .setup(|app| {
             // 初始化存储管理器
@@ -86,6 +90,13 @@ pub fn run() {
             
             // 将存储管理器添加到应用状态
             app.manage(storage_manager);
+            
+            // 🔥 同步开机自启状态
+            if let Err(e) = utils::autostart::sync_with_config(config.advanced.start_on_boot) {
+                tracing::warn!("Failed to sync autostart with config: {}", e);
+            } else {
+                tracing::info!("✓ Autostart synced: {}", config.advanced.start_on_boot);
+            }
             
             // 如果启用了 MFT，启动 MFT Service 子进程（需要管理员权限）
             #[cfg(target_os = "windows")]
