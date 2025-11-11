@@ -706,8 +706,9 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
     
     // 创建托盘菜单
     let show_i = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let settings_i = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+    let menu = Menu::with_items(app, &[&show_i, &settings_i, &quit_i])?;
     
     // 创建托盘图标
     let _tray = TrayIconBuilder::new()
@@ -728,9 +729,31 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
                         });
                     }
                 }
+                "settings" => {
+                    tracing::info!("⚙️  Tray menu: Open settings");
+                    if let Some(webview_window) = app.get_webview_window("main") {
+                        let window: tauri::Window = webview_window.as_ref().window();
+                        tauri::async_runtime::spawn(async move {
+                            // 显示窗口
+                            if let Err(e) = commands::show_app(window.clone()).await {
+                                tracing::error!("Failed to show app from tray: {}", e);
+                            }
+                            // TODO: 发送事件到前端打开设置页面
+                            // 可以通过 window.emit("open-settings", ()) 实现
+                            if let Err(e) = window.emit("open-settings", ()) {
+                                tracing::error!("Failed to emit open-settings event: {}", e);
+                            }
+                        });
+                    }
+                }
                 "quit" => {
                     tracing::info!("👋 Tray menu: Quit application");
-                    app.exit(0);
+                    // 优雅退出：先隐藏窗口，然后退出
+                    if let Some(webview_window) = app.get_webview_window("main") {
+                        let _ = webview_window.hide();
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::process::exit(0);
                 }
                 _ => {
                     tracing::debug!("Unhandled menu event: {:?}", event.id);

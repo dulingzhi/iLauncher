@@ -106,6 +106,15 @@ function App() {
       return unlisten;
     };
     
+    // 监听打开设置事件（从托盘菜单触发）
+    const setupOpenSettingsListener = async () => {
+      const unlisten = await appWindow.listen('open-settings', () => {
+        console.log('Opening settings from tray menu');
+        setCurrentView('settings');
+      });
+      return unlisten;
+    };
+    
     // 监听窗口失焦事件，自动隐藏并切换回搜索视图
     const setupBlurListener = async () => {
       const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
@@ -122,10 +131,12 @@ function App() {
     };
     
     const showListenerPromise = setupShowListener();
+    const openSettingsListenerPromise = setupOpenSettingsListener();
     const blurListenerPromise = setupBlurListener();
     
     return () => {
       showListenerPromise.then(fn => fn());
+      openSettingsListenerPromise.then(fn => fn());
       blurListenerPromise.then(fn => fn());
     };
   }, []);
