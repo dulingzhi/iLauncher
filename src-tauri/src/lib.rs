@@ -700,6 +700,7 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
         menu::{Menu, MenuItem},
         tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
         Manager,
+        Emitter,
     };
     
     tracing::info!("🎨 Setting up system tray icon...");
@@ -714,7 +715,7 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
     let _tray = TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
-        .menu_on_left_click(false)  // 左键点击不显示菜单
+        .show_menu_on_left_click(false)  // 左键点击不显示菜单
         .tooltip("iLauncher")
         .on_menu_event(|app, event| {
             match event.id.as_ref() {
