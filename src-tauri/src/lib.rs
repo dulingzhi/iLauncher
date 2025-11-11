@@ -179,8 +179,8 @@ pub fn run() {
             let app_handle = app.handle().clone();
             hotkey::HotkeyManager::start_listener(app_handle);
             
-            // TODO: 🔥 创建系统托盘图标和菜单（Tauri 2.x API 待完善）
-            // setup_tray_icon(app)?;
+            // 🔥 创建系统托盘图标和菜单
+            setup_tray_icon(app)?;
             
             // 🔥 移除预渲染逻辑，避免启动时窗口闪现
             // WebView 会在首次调用 show_app 时自动加载
@@ -694,28 +694,85 @@ fn check_process_exists(pid: u32) -> bool {
     }
 }
 
-/*
-/// 设置系统托盘图标和菜单（Tauri 2.x - 待实现）
+/// 设置系统托盘图标和菜单
 fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::{
+        menu::{Menu, MenuItem},
+        tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+        Manager,
+    };
+    
     tracing::info!("🎨 Setting up system tray icon...");
     
-    // 托盘图标已在 tauri.conf.json 中配置
-    // 监听托盘图标点击事件
-    let handle = app.handle().clone();
+    // 创建托盘菜单
+    let show_i = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
     
-    app.handle().tray().on_tray_event(move |event| {
-        // 点击托盘图标切换窗口显示
-        tracing::info!("🖱️  Tray icon event: {:?}", event);
-        let app_handle = handle.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = commands::toggle_app(app_handle).await {
-                tracing::error!("Failed to toggle app from tray: {}", e);
+    // 创建托盘图标
+    let _tray = TrayIconBuilder::new()
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .menu_on_left_click(false)  // 左键点击不显示菜单
+        .tooltip("iLauncher")
+        .on_menu_event(|app, event| {
+            match event.id.as_ref() {
+                "show" => {
+                    tracing::info!("📋 Tray menu: Show window");
+                    if let Some(window) = app.get_webview_window("main") {
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(e) = commands::show_app(window).await {
+                                tracing::error!("Failed to show app from tray: {}", e);
+                            }
+                        });
+                    }
+                }
+                "quit" => {
+                    tracing::info!("👋 Tray menu: Quit application");
+                    app.exit(0);
+                }
+                _ => {
+                    tracing::debug!("Unhandled menu event: {:?}", event.id);
+                }
             }
-        });
-    });
+        })
+        .on_tray_icon_event(|tray, event| {
+            match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => {
+                    tracing::info!("🖱️  Tray icon left clicked");
+                    let app = tray.app_handle();
+                    if let Some(window) = app.get_webview_window("main") {
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(e) = commands::toggle_app(window).await {
+                                tracing::error!("Failed to toggle app from tray click: {}", e);
+                            }
+                        });
+                    }
+                }
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => {
+                    tracing::info!("🖱️  Tray icon double clicked");
+                    let app = tray.app_handle();
+                    if let Some(window) = app.get_webview_window("main") {
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(e) = commands::show_app(window).await {
+                                tracing::error!("Failed to show app from tray double click: {}", e);
+                            }
+                        });
+                    }
+                }
+                _ => {}
+            }
+        })
+        .build(app)?;
     
-    tracing::info!("✓ System tray icon event handler registered");
+    tracing::info!("✓ System tray icon created successfully");
     Ok(())
 }
-*/
 
