@@ -266,8 +266,11 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
   
   return (
     <div className="w-full">
-      {/* 搜索输入框 */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border" style={{ backgroundColor: 'var(--color-surface)' }}>
+      {/* 搜索输入框 - Windows 11 风格 */}
+      <div className="flex items-center gap-3 px-6 py-4 border-b" style={{ 
+        backgroundColor: 'var(--color-surface)',
+        borderBottomColor: 'rgba(255, 255, 255, 0.08)'
+      }}>
         <Search className="w-5 h-5" style={{ color: 'var(--color-text-muted)' }} />
         <input
           ref={inputRef}
@@ -275,9 +278,9 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={t('search.placeholder')}
+          placeholder={t('search.placeholder') || 'Type to search...'}
           autoFocus
-          className="flex-1 text-lg bg-transparent outline-none"
+          className="flex-1 text-base bg-transparent outline-none placeholder:text-gray-500"
           style={{ 
             color: 'var(--color-text-primary)',
           }}
@@ -294,48 +297,58 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
         )}
       </div>
       
-      {/* 结果列表 */}
+      {/* 结果列表标题 - Windows 11 风格 */}
       {results.length > 0 && (
-        <div 
-          ref={resultsContainerRef}
-          className="max-h-[450px] overflow-y-auto pb-2"
-          style={{ backgroundColor: 'var(--color-surface)' }}
-        >
-          {results.map((result, index) => (
-            <ResultItem
-              key={result.id}
-              ref={index === selectedIndex ? selectedItemRef : null}
-              result={result}
-              isSelected={index === selectedIndex}
-              query={query}
-              onClick={() => {
-                useAppStore.setState({ selectedIndex: index });
-                // 延迟执行,确保选中状态已更新
-                setTimeout(async () => {
-                  // 检查是否是 Settings 或 Plugin Manager
-                  if (result.id === 'settings') {
-                    onOpenSettings();
-                    return;
-                  }
-                  
-                  if (result.id === 'plugin_manager') {
-                    onOpenPlugins();
-                    return;
-                  }
-                  
-                  const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
-                  if (defaultAction) {
-                    await executeAction(result.id, defaultAction.id, result.plugin_id, result.title);
-                    if (!defaultAction.prevent_hide) {
-                      await handleHide();
+        <>
+          <div className="px-6 py-2 text-xs font-medium" style={{ 
+            color: 'var(--color-text-muted)',
+            backgroundColor: 'var(--color-surface)'
+          }}>
+            Search Results
+          </div>
+          
+          {/* 结果列表 */}
+          <div 
+            ref={resultsContainerRef}
+            className="max-h-[450px] overflow-y-auto pb-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
+            style={{ backgroundColor: 'var(--color-surface)' }}
+          >
+            {results.map((result, index) => (
+              <ResultItem
+                key={result.id}
+                ref={index === selectedIndex ? selectedItemRef : null}
+                result={result}
+                isSelected={index === selectedIndex}
+                query={query}
+                onClick={() => {
+                  useAppStore.setState({ selectedIndex: index });
+                  // 延迟执行,确保选中状态已更新
+                  setTimeout(async () => {
+                    // 检查是否是 Settings 或 Plugin Manager
+                    if (result.id === 'settings') {
+                      onOpenSettings();
+                      return;
                     }
-                  }
-                }, 0);
-              }}
-              onContextMenu={(e) => handleContextMenu(e, result)}
-            />
-          ))}
-        </div>
+                    
+                    if (result.id === 'plugin_manager') {
+                      onOpenPlugins();
+                      return;
+                    }
+                    
+                    const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
+                    if (defaultAction) {
+                      await executeAction(result.id, defaultAction.id, result.plugin_id, result.title);
+                      if (!defaultAction.prevent_hide) {
+                        await handleHide();
+                      }
+                    }
+                  }, 0);
+                }}
+                onContextMenu={(e) => handleContextMenu(e, result)}
+              />
+            ))}
+          </div>
+        </>
       )}
       
       {/* 右键上下文菜单 */}
@@ -367,15 +380,16 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
     return (
       <div
         ref={ref}
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
+        className="flex items-center gap-4 px-6 py-3 cursor-pointer transition-all duration-150"
         style={{
           backgroundColor: isSelected 
-            ? 'var(--color-primary-alpha)' 
+            ? 'rgba(255, 255, 255, 0.08)' 
             : 'transparent',
+          borderLeft: isSelected ? '3px solid var(--color-primary)' : '3px solid transparent',
         }}
         onMouseEnter={(e) => {
           if (!isSelected) {
-            e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
           }
         }}
         onMouseLeave={(e) => {
@@ -386,14 +400,16 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
         onClick={onClick}
         onContextMenu={onContextMenu}
       >
-        {/* 图标 */}
-        <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-2xl">
+        {/* 图标 - 更大更现代 */}
+        <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg text-2xl" style={{
+          backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)'
+        }}>
           {result.icon.type === 'emoji' ? result.icon.data : '📄'}
         </div>
         
-        {/* 文本 */}
+        {/* 文本内容 */}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+          <div className="text-sm font-medium truncate mb-0.5" style={{ color: 'var(--color-text-primary)' }}>
             {highlightMatch(result.title, query)}
           </div>
           {result.subtitle && (
