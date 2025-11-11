@@ -186,33 +186,37 @@ impl Plugin for WebSearchPlugin {
             }
         }
         
-        // 如果没有特定关键词，但输入长度 >= 3，显示所有搜索引擎选项
-        if search.len() >= 3 {
-            for (idx, engine) in self.search_engines.iter().enumerate() {
-                let url = engine.url_template.replace("{query}", &urlencoding::encode(search));
-                
-                results.push(QueryResult {
-                    id: url.clone(),
-                    title: format!("Search '{}' on {}", search, engine.name),
-                    subtitle: format!("Keyword: {} | {}", engine.keyword, url),
-                    icon: WoxImage::emoji(&engine.icon),
-                    preview: None,
-                    score: 90 - idx as i32, // 按顺序降低分数
-                    context_data: serde_json::Value::Null,
-                    group: Some("Web Search".to_string()),
-                    plugin_id: self.metadata.id.clone(),
-                    refreshable: false,
-                    actions: vec![
-                        Action {
-                            id: "open".to_string(),
-                            name: format!("Search on {}", engine.name),
-                            icon: None,
-                            is_default: idx == 0, // 第一个是默认
-                            prevent_hide: false,
-                            hotkey: None,
-                        },
-                    ],
-                });
+        // 🔥 优化：只在输入 "?" 前缀时显示网页搜索选项，避免干扰文件搜索
+        // 用户可以输入 "? keyword" 来触发网页搜索
+        if search.starts_with("? ") && search.len() > 2 {
+            let query = search[2..].trim();
+            if !query.is_empty() {
+                for (idx, engine) in self.search_engines.iter().enumerate() {
+                    let url = engine.url_template.replace("{query}", &urlencoding::encode(query));
+                    
+                    results.push(QueryResult {
+                        id: url.clone(),
+                        title: format!("Search '{}' on {}", query, engine.name),
+                        subtitle: format!("Keyword: {} | {}", engine.keyword, url),
+                        icon: WoxImage::emoji(&engine.icon),
+                        preview: None,
+                        score: 90 - idx as i32,
+                        context_data: serde_json::Value::Null,
+                        group: Some("Web Search".to_string()),
+                        plugin_id: self.metadata.id.clone(),
+                        refreshable: false,
+                        actions: vec![
+                            Action {
+                                id: "open".to_string(),
+                                name: format!("Search on {}", engine.name),
+                                icon: None,
+                                is_default: idx == 0,
+                                prevent_hide: false,
+                                hotkey: None,
+                            },
+                        ],
+                    });
+                }
             }
         }
         
