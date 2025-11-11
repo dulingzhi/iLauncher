@@ -1,0 +1,255 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Create release
+        id: create-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${process.env.PACKAGE_VERSION}`,
+              name: `iLauncher v${process.env.PACKAGE_VERSION}`,
+              body: 'Take a look at the assets to download and install this app.',
+              draft: true,
+              prerelease: false
+            })
+            return data.id
+
+  build-tauri:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest' # for Intel based macs.
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  publish-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    needs: [create-release, build-tauri]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Publish release
+        id: publish-release
+        uses: actions/github-script@v7
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              draft: false,
+              prerelease: false
+            })
+
+  generate-updater-json:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    needs: [create-release, build-tauri]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Download release assets
+        uses: actions/github-script@v7
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id
+            });
+            
+            const assets = release.assets;
+            const platforms = {
+              'windows-x86_64': null,
+              'darwin-x86_64': null,
+              'darwin-aarch64': null,
+              'linux-x86_64': null
+            };
+            
+            // 查找各平台的主安装包和签名文件
+            for (const asset of assets) {
+              const name = asset.name;
+              
+              // Windows NSIS installer
+              if (name.includes('x64-setup.nsis.zip')) {
+                const sigAsset = assets.find(a => a.name === name + '.sig');
+                if (sigAsset) {
+                  const sigResponse = await github.request(sigAsset.browser_download_url);
+                  platforms['windows-x86_64'] = {
+                    url: asset.browser_download_url,
+                    signature: await sigResponse.text()
+                  };
+                }
+              }
+              // macOS x64
+              else if (name.includes('x64.app.tar.gz') && !name.includes('aarch64')) {
+                const sigAsset = assets.find(a => a.name === name + '.sig');
+                if (sigAsset) {
+                  const sigResponse = await github.request(sigAsset.browser_download_url);
+                  platforms['darwin-x86_64'] = {
+                    url: asset.browser_download_url,
+                    signature: await sigResponse.text()
+                  };
+                }
+              }
+              // macOS ARM64
+              else if (name.includes('aarch64.app.tar.gz')) {
+                const sigAsset = assets.find(a => a.name === name + '.sig');
+                if (sigAsset) {
+                  const sigResponse = await github.request(sigAsset.browser_download_url);
+                  platforms['darwin-aarch64'] = {
+                    url: asset.browser_download_url,
+                    signature: await sigResponse.text()
+                  };
+                }
+              }
+              // Linux AppImage
+              else if (name.includes('amd64.AppImage.tar.gz')) {
+                const sigAsset = assets.find(a => a.name === name + '.sig');
+                if (sigAsset) {
+                  const sigResponse = await github.request(sigAsset.browser_download_url);
+                  platforms['linux-x86_64'] = {
+                    url: asset.browser_download_url,
+                    signature: await sigResponse.text()
+                  };
+                }
+              }
+            }
+            
+            // 生成 latest.json
+            const updateInfo = {
+              version: 'v' + process.env.PACKAGE_VERSION,
+              notes: release.body || 'See release notes on GitHub',
+              pub_date: new Date().toISOString(),
+              platforms: {}
+            };
+            
+            for (const [platform, data] of Object.entries(platforms)) {
+              if (data) {
+                updateInfo.platforms[platform] = {
+                  signature: data.signature.trim(),
+                  url: data.url
+                };
+              }
+            }
+            
+            fs.writeFileSync('latest.json', JSON.stringify(updateInfo, null, 2));
+            console.log('Generated latest.json:');
+            console.log(JSON.stringify(updateInfo, null, 2));
+
+      - name: Upload latest.json to release
+        uses: actions/github-script@v7
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            const fs = require('fs');
+            
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              name: 'latest.json',
+              data: fs.readFileSync('latest.json')
+            });

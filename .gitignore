@@ -25,3 +25,9 @@ Cargo.lock
 *.sln
 *.sw?
 target/
+
+# Local updater json (generated for testing)
+/latest.json
+
+# Temporary Wox clone
+/Wox-temp/
