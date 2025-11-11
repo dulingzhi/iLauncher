@@ -60,7 +60,6 @@ impl PluginManager {
         manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
-        manager.register(Box::new(settings::ClipboardHistoryPlugin::new()));
         
         let clipboard = clipboard::ClipboardPlugin::new();
         clipboard.init().await;
@@ -84,7 +83,6 @@ impl PluginManager {
         manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
-        manager.register(Box::new(settings::ClipboardHistoryPlugin::new()));
         
         let clipboard = clipboard::ClipboardPlugin::new();
         clipboard.init().await;

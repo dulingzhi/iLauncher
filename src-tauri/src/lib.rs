@@ -14,7 +14,7 @@ mod utils;
 pub mod mft_scanner;
 
 use tauri::Manager;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt::time::OffsetTime};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,15 +27,19 @@ pub fn run() {
     let file_appender = rolling::never(&log_dir, "ilauncher.log");
     
     // 初始化日志（同时输出到控制台和文件）
+    let local_timer = OffsetTime::local_rfc_3339().expect("Failed to get local offset");
+    
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "ilauncher=debug,tauri=info".into()),
         )
-        .with(tracing_subscriber::fmt::layer()) // 控制台输出
-        .with(tracing_subscriber::fmt::layer() // 文件输出（无颜色）
+        .with(tracing_subscriber::fmt::layer()
+            .with_timer(local_timer.clone())) // 控制台输出（本地时区）
+        .with(tracing_subscriber::fmt::layer() // 文件输出（无颜色，本地时区）
             .with_writer(file_appender)
-            .with_ansi(false))
+            .with_ansi(false)
+            .with_timer(local_timer))
         .init();
 
     tracing::info!("========== iLauncher Started at {} ==========", 
@@ -364,12 +368,17 @@ pub fn run_mft_service(args: &[String]) {
     let file_appender = rolling::never(&log_dir, "mft_service.log");
     
     // 初始化日志（同时输出到文件）
+    let local_timer = OffsetTime::local_rfc_3339().expect("Failed to get local offset");
+    
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "ilauncher=info,mft=info".into()),
         )
-        .with(fmt::layer().with_writer(file_appender).with_ansi(false))
+        .with(fmt::layer()
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .with_timer(local_timer))
         .init();
     
     info!("╔════════════════════════════════════════════════════════════╗");
@@ -465,6 +474,19 @@ pub fn run_mft_service(args: &[String]) {
         }
     }
     
+    // 启动 UI 进程监控线程
+    let running = Arc::new(AtomicBool::new(true));
+    if let Some(pid) = ui_pid {
+        info!("🔍 UI process PID: {}, will auto-exit when UI closes", pid);
+        
+        let running_for_monitor = running.clone();
+        std::thread::spawn(move || {
+            monitor_ui_process(pid, running_for_monitor);
+        });
+    } else {
+        warn!("⚠️  No UI PID provided, service will run until manually stopped");
+    }
+    
     // ============ 阶段 1: 全量扫描 (使用新的 prompt.txt 方案) ============
     info!("");
     info!("╔═══════════════════════════════════════════╗");
@@ -526,20 +548,7 @@ pub fn run_mft_service(args: &[String]) {
     info!("");
     
     // 为每个成功扫描的驱动器启动监控线程
-    let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    
-    // 启动 UI 进程监控线程
-    if let Some(pid) = ui_pid {
-        info!("🔍 UI process PID: {}, will auto-exit when UI closes", pid);
-        
-        let running_for_monitor = running.clone();
-        std::thread::spawn(move || {
-            monitor_ui_process(pid, running_for_monitor);
-        });
-    } else {
-        warn!("⚠️  No UI PID provided, service will run until manually stopped");
-    }
     
     // 设置 Ctrl+C 处理器
     if let Err(e) = ctrlc::set_handler(move || {
@@ -666,8 +675,8 @@ fn monitor_ui_process(ui_pid: u32, running: std::sync::Arc<std::sync::atomic::At
 /// 检查 Windows 进程是否存在
 #[cfg(target_os = "windows")]
 fn check_process_exists(pid: u32) -> bool {
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows::Win32::System::Threading::{OpenProcess, GetExitCodeProcess, PROCESS_QUERY_LIMITED_INFORMATION};
     use tracing::debug;
     
     unsafe {
@@ -681,12 +690,27 @@ fn check_process_exists(pid: u32) -> bool {
                     return false;
                 }
                 
-                // 成功打开说明进程存在，关闭句柄
-                let _ = CloseHandle(h);
-                true
+                // 检查进程退出码
+                let mut exit_code: u32 = 0;
+                match GetExitCodeProcess(h, &mut exit_code) {
+                    Ok(_) => {
+                        let _ = CloseHandle(h);
+                        // STILL_ACTIVE (259) 表示进程仍在运行
+                        let is_running = exit_code == STILL_ACTIVE.0 as u32;
+                        if !is_running {
+                            debug!("✓ PID {} has exited with code {}", pid, exit_code);
+                        }
+                        is_running
+                    }
+                    Err(e) => {
+                        let _ = CloseHandle(h);
+                        debug!("❌ Failed to get exit code for PID {}: {:?}", pid, e);
+                        false
+                    }
+                }
             }
             Err(e) => {
-                // 无法打开说明进程不存在
+                // 无法打开说明进程不存在或无权限访问
                 debug!("❌ Failed to open PID {}: {:?}", pid, e);
                 false
             }

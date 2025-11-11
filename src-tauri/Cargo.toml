@@ -38,7 +38,7 @@ arboard = "3"
 
 # 日志
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local-time"] }
 tracing-appender = "0.2"
 
 # 全局热键
