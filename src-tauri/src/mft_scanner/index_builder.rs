@@ -38,8 +38,15 @@ impl IndexBuilder {
         let mut path_id: u32 = 0;
         let mut len_buf = [0u8; 4];
         
+        // 🔥 同时构建 offset index（避免后续重复扫描）
+        let mut offset_index = Vec::new();
+        let mut current_offset = 0usize;
+        
         // 流式读取路径并构建 3-gram
         while reader.read_exact(&mut len_buf).is_ok() {
+            // 记录当前文件的起始偏移
+            offset_index.push(current_offset);
+            
             let path_len = u32::from_le_bytes(len_buf) as usize;
             
             let mut path_bytes = vec![0u8; path_len];
@@ -54,6 +61,8 @@ impl IndexBuilder {
             // 生成 3-gram
             self.add_3grams(&filename_lower, path_id);
             
+            // 更新偏移量
+            current_offset += 4 + path_len;
             path_id += 1;
             
             if path_id % 100_000 == 0 {
@@ -63,6 +72,19 @@ impl IndexBuilder {
         
         self.total_grams = self.gram_index.len();
         info!("✓ Index built: {} files, {} unique 3-grams", path_id, self.total_grams);
+        
+        // 🔥 保存 offset index 到文件
+        let offset_file = format!("{}\\{}_offsets.dat", output_dir, self.drive_letter);
+        let mut offset_writer = BufWriter::new(File::create(offset_file)?);
+        
+        // 写入文件数量
+        offset_writer.write_all(&(offset_index.len() as u32).to_le_bytes())?;
+        
+        // 写入所有偏移量
+        for offset in &offset_index {
+            offset_writer.write_all(&(*offset as u64).to_le_bytes())?;
+        }
+        offset_writer.flush()?;
         
         Ok(())
     }
@@ -150,6 +172,7 @@ impl IndexBuilder {
 
 /// 索引查询器（零拷贝，内存映射）
 pub struct IndexQuery {
+    #[allow(dead_code)]
     drive_letter: char,
     fst_map: Map<memmap2::Mmap>,
     bitmap_mmap: memmap2::Mmap,
@@ -235,7 +258,8 @@ impl IndexQuery {
                 .or_insert(bitmap);
         }
         
-        tracing::info!("✓ Loaded delta index: {} unique grams", gram_bitmaps.len());
+        // 🔥 降低日志级别，避免每次查询都输出（仅在首次加载时输出）
+        tracing::debug!("✓ Loaded delta index: {} unique grams", gram_bitmaps.len());
         
         Ok(DeltaIndex { gram_bitmaps })
     }
@@ -339,64 +363,121 @@ impl IndexQuery {
 
 /// 路径读取器（从 .dat 文件读取路径）
 pub struct PathReader {
+    #[allow(dead_code)]
     drive_letter: char,
     paths_mmap: memmap2::Mmap,
+    offset_index: Vec<usize>,  // 🔥 新增: 文件ID -> 偏移量索引
 }
 
 impl PathReader {
     pub fn open(drive_letter: char, output_dir: &str) -> Result<Self> {
         let paths_file = format!("{}\\{}_paths.dat", output_dir, drive_letter);
+        let offset_file = format!("{}\\{}_offsets.dat", output_dir, drive_letter);
         
         let paths_mmap = unsafe {
             memmap2::MmapOptions::new()
-                .map(&File::open(paths_file)?)?
+                .map(&File::open(&paths_file)?)?
         };
+        
+        // 🔥 从文件加载偏移量索引（避免重复扫描）
+        let start = std::time::Instant::now();
+        
+        let offset_index = if std::path::Path::new(&offset_file).exists() {
+            // 优先从文件加载
+            Self::load_offset_index(&offset_file)?
+        } else {
+            // 降级：现场构建（向后兼容）
+            tracing::warn!("⚠️  Offset file not found, building on-the-fly (slower)");
+            Self::build_offset_index(&paths_mmap)?
+        };
+        
+        let elapsed = start.elapsed();
+        tracing::debug!(
+            "✓ Loaded offset index for drive {}: {} entries in {:.2}ms",
+            drive_letter,
+            offset_index.len(),
+            elapsed.as_secs_f64() * 1000.0
+        );
         
         Ok(Self {
             drive_letter,
             paths_mmap,
+            offset_index,
         })
     }
     
-    /// 根据文件ID读取路径
-    pub fn get_path(&self, file_id: u32) -> Result<String> {
-        let mut offset = 0usize;
-        let mut current_id = 0u32;
+    /// 从文件加载偏移量索引
+    fn load_offset_index(offset_file: &str) -> Result<Vec<usize>> {
+        let mut reader = BufReader::new(File::open(offset_file)?);
         
-        // 🔥 优化：如果有索引文件，可以直接跳转
-        // 这里简化实现，顺序查找
-        while offset < self.paths_mmap.len() {
-            if offset + 4 > self.paths_mmap.len() {
-                break;
-            }
-            
-            // 读取路径长度
-            let len_bytes: [u8; 4] = self.paths_mmap[offset..offset + 4].try_into()?;
-            let path_len = u32::from_le_bytes(len_bytes) as usize;
-            
-            offset += 4;
-            
-            if current_id == file_id {
-                // 找到目标路径
-                if offset + path_len > self.paths_mmap.len() {
-                    break;
-                }
-                
-                let path_bytes = &self.paths_mmap[offset..offset + path_len];
-                return Ok(String::from_utf8_lossy(path_bytes).to_string());
-            }
-            
-            offset += path_len;
-            current_id += 1;
+        // 读取文件数量
+        let mut count_buf = [0u8; 4];
+        reader.read_exact(&mut count_buf)?;
+        let count = u32::from_le_bytes(count_buf) as usize;
+        
+        // 读取所有偏移量
+        let mut index = Vec::with_capacity(count);
+        let mut offset_buf = [0u8; 8];
+        
+        for _ in 0..count {
+            reader.read_exact(&mut offset_buf)?;
+            let offset = u64::from_le_bytes(offset_buf) as usize;
+            index.push(offset);
         }
         
-        Err(anyhow::anyhow!("File ID {} not found", file_id))
+        Ok(index)
+    }
+    
+    /// 构建偏移量索引
+    fn build_offset_index(mmap: &memmap2::Mmap) -> Result<Vec<usize>> {
+        let mut index = Vec::new();
+        let mut offset = 0usize;
+        
+        while offset + 4 <= mmap.len() {
+            // 记录当前文件的起始偏移
+            index.push(offset);
+            
+            // 读取路径长度
+            let len_bytes: [u8; 4] = mmap[offset..offset + 4].try_into()?;
+            let path_len = u32::from_le_bytes(len_bytes) as usize;
+            
+            // 跳到下一个文件
+            offset += 4 + path_len;
+        }
+        
+        Ok(index)
+    }
+    
+    /// 根据文件ID读取路径（O(1) 访问）
+    pub fn get_path(&self, file_id: u32) -> Result<String> {
+        let file_id = file_id as usize;
+        
+        if file_id >= self.offset_index.len() {
+            return Err(anyhow::anyhow!("File ID {} out of range", file_id));
+        }
+        
+        let offset = self.offset_index[file_id];
+        
+        if offset + 4 > self.paths_mmap.len() {
+            return Err(anyhow::anyhow!("Invalid offset"));
+        }
+        
+        // 读取路径长度
+        let len_bytes: [u8; 4] = self.paths_mmap[offset..offset + 4].try_into()?;
+        let path_len = u32::from_le_bytes(len_bytes) as usize;
+        
+        let data_offset = offset + 4;
+        if data_offset + path_len > self.paths_mmap.len() {
+            return Err(anyhow::anyhow!("Invalid path length"));
+        }
+        
+        // 读取路径
+        let path_bytes = &self.paths_mmap[data_offset..data_offset + path_len];
+        Ok(String::from_utf8_lossy(path_bytes).to_string())
     }
     
     /// 批量读取路径（性能优化）
     pub fn get_paths(&self, file_ids: &[u32]) -> Result<Vec<String>> {
-        // 🔥 TODO: 优化为跳表或索引查找
-        // 当前简化实现：顺序扫描
         let mut results = Vec::with_capacity(file_ids.len());
         
         for &id in file_ids {

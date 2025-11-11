@@ -1,17 +1,18 @@
 // 配置文件管理
 
-use crate::mft_scanner::types::ScanConfig;
+use crate::{mft_scanner::types::ScanConfig, utils::paths::get_app_data_dir};
 use anyhow::Result;
-use std::path::Path;
 
 const DEFAULT_CONFIG_PATH: &str = "scan_config.json";
 
 /// 加载扫描配置
 pub fn load_config() -> Result<ScanConfig> {
-    let config_path = Path::new(DEFAULT_CONFIG_PATH);
-    
+    let app_dir = get_app_data_dir()?;
+    let config_dir = app_dir.join("config");
+    let config_path = config_dir.join(DEFAULT_CONFIG_PATH);
+
     let mut config = if config_path.exists() {
-        ScanConfig::load_from_file(DEFAULT_CONFIG_PATH)?
+        ScanConfig::load_from_file(config_path.to_str().unwrap())?
     } else {
         ScanConfig::default()
     };
@@ -26,7 +27,7 @@ pub fn load_config() -> Result<ScanConfig> {
             tracing::info!("🔍 Auto-detected NTFS drives: {:?}", detected_drives);
             tracing::info!("📝 Updating config with new drives (old: {:?})", config.drives);
             config.drives = detected_drives;
-            config.save_to_file(DEFAULT_CONFIG_PATH)?;
+            config.save_to_file(config_path.to_str().unwrap())?;
         }
     }
     
@@ -35,5 +36,8 @@ pub fn load_config() -> Result<ScanConfig> {
 
 /// 保存扫描配置
 pub fn save_config(config: &ScanConfig) -> Result<()> {
-    config.save_to_file(DEFAULT_CONFIG_PATH)
+    let app_dir = get_app_data_dir()?;
+    let config_dir = app_dir.join("config");
+    let config_path = config_dir.join(DEFAULT_CONFIG_PATH);
+    config.save_to_file(config_path.to_str().unwrap())
 }

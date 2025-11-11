@@ -15,8 +15,63 @@ use chrono::{DateTime, Utc};
 
 #[cfg(target_os = "windows")]
 use crate::mft_scanner::MftFileEntry;
-// TODO: 重新实现 Scanner 集成
-// use crate::mft_scanner::{ScannerLauncher, ScannerClient};
+
+#[cfg(target_os = "windows")]
+use crate::mft_scanner::{IndexQuery, PathReader};
+
+/// 检查 Windows 进程是否存在
+#[cfg(target_os = "windows")]
+fn is_process_running(pid: u32) -> bool {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    
+    unsafe {
+        match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(handle) => {
+                if handle.is_invalid() {
+                    return false;
+                }
+                let _ = CloseHandle(handle);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+}
+
+/// 验证 .ready 文件是否有效（文件存在 + PID 进程运行中）
+#[cfg(target_os = "windows")]
+fn is_ready_file_valid(ready_file_path: &str) -> bool {
+    let path = std::path::Path::new(ready_file_path);
+    
+    // 1. 检查文件是否存在
+    if !path.exists() {
+        return false;
+    }
+    
+    // 2. 读取文件内容（PID）
+    let pid_str = match std::fs::read_to_string(path) {
+        Ok(content) => content.trim().to_string(),
+        Err(_) => return false,
+    };
+    
+    // 3. 解析 PID
+    let pid: u32 = match pid_str.parse() {
+        Ok(p) => p,
+        Err(_) => {
+            tracing::warn!("⚠️  Invalid PID in ready file: {}", ready_file_path);
+            return false;
+        }
+    };
+    
+    // 4. 检查进程是否运行
+    if !is_process_running(pid) {
+        tracing::warn!("⚠️  Ready file exists but MFT Service (PID {}) is not running: {}", pid, ready_file_path);
+        return false;
+    }
+    
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSearchConfig {
@@ -37,6 +92,13 @@ struct FileItem {
     size: u64,
     #[serde(default)]
     modified: i64,
+}
+
+/// MFT 索引缓存（避免重复打开）
+#[cfg(target_os = "windows")]
+struct MftIndexCache {
+    query: IndexQuery,
+    path_reader: PathReader,
 }
 
 #[cfg(target_os = "windows")]
@@ -68,6 +130,9 @@ pub struct FileSearchPlugin {
     matcher: SkimMatcherV2,
     search_paths: Vec<PathBuf>,
     config: Arc<RwLock<FileSearchConfig>>,
+    // 🔥 新增: MFT 索引缓存（按驱动器字母）
+    #[cfg(target_os = "windows")]
+    mft_cache: Arc<RwLock<HashMap<char, MftIndexCache>>>,
 }
 
 impl FileSearchPlugin {
@@ -149,6 +214,8 @@ impl FileSearchPlugin {
             config: Arc::new(RwLock::new(FileSearchConfig {
                 use_mft,
             })),
+            #[cfg(target_os = "windows")]
+            mft_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
     
@@ -160,6 +227,122 @@ impl FileSearchPlugin {
         let name_index = self.name_index.clone();
         let paths = self.search_paths.clone();
         let config = self.config.clone();
+        
+        // 🔥 如果是 MFT 模式，提前初始化缓存
+        #[cfg(target_os = "windows")]
+        {
+            let use_mft = config.read().await.use_mft;
+            if use_mft {
+                tracing::info!("🚀 MFT mode - pre-loading index cache...");
+                let mft_cache = self.mft_cache.clone();
+                
+                tokio::spawn(async move {
+                    use crate::utils::paths;
+                    
+                    let output_dir = match paths::get_mft_database_dir() {
+                        Ok(dir) => dir.to_string_lossy().to_string(),
+                        Err(e) => {
+                            tracing::error!("Failed to get MFT database dir: {}", e);
+                            return;
+                        }
+                    };
+                    
+                    let drives = Self::get_fixed_drives();
+                    let mut cache = mft_cache.write().await;
+                    
+                    for drive in drives {
+                        let fst_file = format!("{}\\{}_index.fst", output_dir, drive);
+                        if !std::path::Path::new(&fst_file).exists() {
+                            continue;
+                        }
+                        
+                        // 🔥 检查 .ready 标记文件是否有效（存在 + PID 进程运行）
+                        let ready_file = format!("{}\\{}.ready", output_dir, drive);
+                        if !is_ready_file_valid(&ready_file) {
+                            tracing::warn!("⏳ Drive {} index found but not ready yet (MFT Service not running or old ready file)", drive);
+                            continue;
+                        }
+                        
+                        // 🔥 预加载索引和路径读取器
+                        match (IndexQuery::open(drive, &output_dir), PathReader::open(drive, &output_dir)) {
+                            (Ok(query), Ok(path_reader)) => {
+                                tracing::info!("✓ Pre-loaded MFT index cache for drive {} (ready)", drive);
+                                cache.insert(drive, MftIndexCache { query, path_reader });
+                            }
+                            (Err(e), _) | (_, Err(e)) => {
+                                tracing::error!("Failed to pre-load cache for drive {}: {:#}", drive, e);
+                            }
+                        }
+                    }
+                    
+                    tracing::info!("✅ MFT index cache pre-loading completed ({} drives)", cache.len());
+                    
+                    // 🔥 如果没有任何驱动器就绪，启动定时重试任务
+                    if cache.is_empty() {
+                        tracing::info!("⏳ No drives ready yet, will retry every 2 seconds (max 10 minutes)...");
+                        
+                        let mft_cache_retry = mft_cache.clone();
+                        let output_dir_retry = output_dir.clone();
+                        
+                        tokio::spawn(async move {
+                            let mut retry_count = 0;
+                            const MAX_RETRIES: u32 = 300; // 最多重试 300 次（600秒 = 10分钟）
+                            
+                            loop {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                                retry_count += 1;
+                                
+                                if retry_count > MAX_RETRIES {
+                                    tracing::warn!("⚠️  Stopped retrying after {} attempts (10 minutes)", MAX_RETRIES);
+                                    break;
+                                }
+                                
+                                let drives = Self::get_fixed_drives();
+                                let mut cache = mft_cache_retry.write().await;
+                                let mut loaded_any = false;
+                                
+                                for drive in drives {
+                                    // 跳过已加载的驱动器
+                                    if cache.contains_key(&drive) {
+                                        continue;
+                                    }
+                                    
+                                    let ready_file = format!("{}\\{}.ready", output_dir_retry, drive);
+                                    if !is_ready_file_valid(&ready_file) {
+                                        continue;
+                                    }
+                                    
+                                    // 驱动器已就绪，加载索引
+                                    match (IndexQuery::open(drive, &output_dir_retry), PathReader::open(drive, &output_dir_retry)) {
+                                        (Ok(query), Ok(path_reader)) => {
+                                            tracing::info!("✓ Loaded MFT index cache for drive {} (retry #{})", drive, retry_count);
+                                            cache.insert(drive, MftIndexCache { query, path_reader });
+                                            loaded_any = true;
+                                        }
+                                        (Err(e), _) | (_, Err(e)) => {
+                                            tracing::error!("Failed to load cache for drive {}: {:#}", drive, e);
+                                        }
+                                    }
+                                }
+                                
+                                if loaded_any {
+                                    tracing::info!("✅ Successfully loaded new drives (total: {} drives ready)", cache.len());
+                                }
+                                
+                                // 如果所有驱动器都已加载，停止重试
+                                let all_ready = Self::get_fixed_drives().iter().all(|d| cache.contains_key(d));
+                                if all_ready {
+                                    tracing::info!("🎉 All drives are now ready!");
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                });
+                
+                return;
+            }
+        }
         
         tokio::spawn(async move {
             let use_mft = config.read().await.use_mft;
@@ -472,8 +655,13 @@ impl FileSearchPlugin {
         tokio::task::spawn_blocking(move || {
             #[cfg(target_os = "windows")]
             {
+                // 🔥 使用 CREATE_NO_WINDOW 标志隐藏控制台窗口
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                
                 std::process::Command::new("cmd")
                     .args(["/C", "start", "", &path])
+                    .creation_flags(CREATE_NO_WINDOW)
                     .spawn()?;
             }
             
@@ -510,7 +698,6 @@ impl FileSearchPlugin {
     #[cfg(target_os = "windows")]
     async fn query_from_mft_database(&self, search: &str, _ctx: &QueryContext) -> Result<Vec<QueryResult>> {
         let query_start = std::time::Instant::now();
-        use crate::mft_scanner::{IndexQuery, PathReader};
         use crate::utils::paths;
         
         // 使用统一的数据目录
@@ -543,106 +730,127 @@ impl FileSearchPlugin {
         let drives = Self::get_fixed_drives();
         let mut all_results = Vec::new();
         
+        // 🔥 检查是否有任何驱动器就绪（验证 PID）
+        let mut any_drive_ready = false;
+        for drive in &drives {
+            let ready_file = format!("{}\\{}.ready", output_dir, drive);
+            if is_ready_file_valid(&ready_file) {
+                any_drive_ready = true;
+                break;
+            }
+        }
+        
+        // 🔥 如果没有任何驱动器就绪，返回等待提示
+        if !any_drive_ready {
+            tracing::info!("⏳ No drives ready yet, MFT Service is still indexing");
+            return Ok(vec![QueryResult {
+                id: "mft_indexing".to_string(),
+                title: "⚡ MFT Service is indexing...".to_string(),
+                subtitle: "Please wait a moment for the initial scan to complete".to_string(),
+                icon: WoxImage::emoji("⏳"),
+                preview: None,
+                score: 100,
+                context_data: serde_json::Value::Null,
+                group: None,
+                plugin_id: self.metadata.id.clone(),
+                refreshable: false,
+                actions: vec![],
+            }]);
+        }
+        
+        // 🔥 使用缓存的索引查询（缓存已在 init 时预加载）
+        let cache = self.mft_cache.read().await;
+        
+        // 🔥 限制总结果数，避免评分耗时过长
+        const MAX_TOTAL_RESULTS: usize = 50;
+        const MAX_PER_DRIVE: usize = 20;
+        
         for drive in drives {
-            // 检查该驱动器的索引文件是否存在
-            let fst_file = format!("{}\\{}_index.fst", output_dir, drive);
-            if !std::path::Path::new(&fst_file).exists() {
-                continue;
+            if all_results.len() >= MAX_TOTAL_RESULTS {
+                break; // 已经收集足够的结果
             }
             
-            // 打开索引查询器
-            let query = match IndexQuery::open(drive, &output_dir) {
-                Ok(q) => q,
-                Err(e) => {
-                    tracing::error!("Failed to open index for drive {}: {:#}", drive, e);
-                    continue;
-                }
-            };
-            
-            // 打开路径读取器
-            let path_reader = match PathReader::open(drive, &output_dir) {
-                Ok(pr) => pr,
-                Err(e) => {
-                    tracing::error!("Failed to open path reader for drive {}: {:#}", drive, e);
-                    continue;
-                }
-            };
-            
-            // 执行查询（限制 50 条结果）
-            let file_ids = match query.search(search, 50) {
-                Ok(ids) => ids,
-                Err(e) => {
-                    tracing::error!("FST search failed for drive {}: {:#}", drive, e);
-                    continue;
-                }
-            };
-            
-            // 读取路径并构建结果
-            for file_id in file_ids {
-                if let Ok(path) = path_reader.get_path(file_id) {
-                    // 判断是否为目录（简单检查）
-                    let is_dir = std::path::Path::new(&path).is_dir();
-                    let name = std::path::Path::new(&path)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(&path)
-                        .to_string();
-                    
-                    let icon = if is_dir {
-                        WoxImage::emoji("📁")
-                    } else {
-                        WoxImage::emoji("📄")
-                    };
-                    
-                    all_results.push(QueryResult {
-                        id: path.clone(),
-                        title: name.clone(),
-                        subtitle: path.clone(),
-                        icon,
-                        preview: Some(Preview::Text(format!(
-                            "Path: {}\nType: {}",
-                            path,
-                            if is_dir { "Directory" } else { "File" }
-                        ))),
-                        score: 70,  // 默认分数
-                        context_data: serde_json::json!({
-                            "path": path,
-                            "is_dir": is_dir,
-                        }),
-                        group: None,
-                        plugin_id: self.metadata.id.clone(),
-                        refreshable: false,
-                        actions: vec![
-                            Action {
-                                id: "open".to_string(),
-                                name: if is_dir {
-                                    "Open Folder".to_string()
-                                } else {
-                                    "Open File".to_string()
+            if let Some(cached) = cache.get(&drive) {
+                // 执行查询（每个驱动器限制 20 条，总共最多 50 条）
+                let remaining = MAX_TOTAL_RESULTS - all_results.len();
+                let limit = remaining.min(MAX_PER_DRIVE);
+                
+                let file_ids = match cached.query.search(search, limit) {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        tracing::error!("FST search failed for drive {}: {:#}", drive, e);
+                        continue;
+                    }
+                };
+                
+                // 🔥 优化3: 批量读取路径（如果实现了批量接口）
+                // 当前使用单个读取
+                for file_id in file_ids {
+                    if let Ok(path) = cached.path_reader.get_path(file_id) {
+                        // 判断是否为目录（简单检查）
+                        let is_dir = std::path::Path::new(&path).is_dir();
+                        let name = std::path::Path::new(&path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&path)
+                            .to_string();
+                        
+                        let icon = if is_dir {
+                            WoxImage::emoji("📁")
+                        } else {
+                            WoxImage::emoji("📄")
+                        };
+                        
+                        all_results.push(QueryResult {
+                            id: path.clone(),
+                            title: name.clone(),
+                            subtitle: path.clone(),
+                            icon,
+                            preview: Some(Preview::Text(format!(
+                                "Path: {}\nType: {}",
+                                path,
+                                if is_dir { "Directory" } else { "File" }
+                            ))),
+                            score: 70,  // 默认分数
+                            context_data: serde_json::json!({
+                                "path": path,
+                                "is_dir": is_dir,
+                            }),
+                            group: None,
+                            plugin_id: self.metadata.id.clone(),
+                            refreshable: false,
+                            actions: vec![
+                                Action {
+                                    id: "open".to_string(),
+                                    name: if is_dir {
+                                        "Open Folder".to_string()
+                                    } else {
+                                        "Open File".to_string()
+                                    },
+                                    icon: Some(WoxImage::emoji("📂")),
+                                    is_default: true,
+                                    prevent_hide: false,
+                                    hotkey: None,
                                 },
-                                icon: Some(WoxImage::emoji("📂")),
-                                is_default: true,
-                                prevent_hide: false,
-                                hotkey: None,
-                            },
-                            Action {
-                                id: "open_folder".to_string(),
-                                name: "Open Containing Folder".to_string(),
-                                icon: Some(WoxImage::emoji("📁")),
-                                is_default: false,
-                                prevent_hide: false,
-                                hotkey: None,
-                            },
-                            Action {
-                                id: "copy_path".to_string(),
-                                name: "Copy Path".to_string(),
-                                icon: Some(WoxImage::emoji("📋")),
-                                is_default: false,
-                                prevent_hide: false,
-                                hotkey: None,
-                            },
-                        ],
-                    });
+                                Action {
+                                    id: "open_folder".to_string(),
+                                    name: "Open Containing Folder".to_string(),
+                                    icon: Some(WoxImage::emoji("📁")),
+                                    is_default: false,
+                                    prevent_hide: false,
+                                    hotkey: None,
+                                },
+                                Action {
+                                    id: "copy_path".to_string(),
+                                    name: "Copy Path".to_string(),
+                                    icon: Some(WoxImage::emoji("📋")),
+                                    is_default: false,
+                                    prevent_hide: false,
+                                    hotkey: None,
+                                },
+                            ],
+                        });
+                    }
                 }
             }
         }

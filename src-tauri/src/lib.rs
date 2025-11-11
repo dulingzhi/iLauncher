@@ -117,8 +117,13 @@ pub fn run() {
                         ui_pid
                     );
                     
+                    // 🔥 使用 CREATE_NO_WINDOW 标志隐藏控制台窗口
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    
                     match std::process::Command::new("powershell.exe")
                         .args(["-WindowStyle", "Hidden", "-Command", &ps_command])
+                        .creation_flags(CREATE_NO_WINDOW)
                         .spawn()
                     {
                         Ok(child) => {
@@ -174,14 +179,9 @@ pub fn run() {
             let app_handle = app.handle().clone();
             hotkey::HotkeyManager::start_listener(app_handle);
             
-            // 预渲染窗口：在后台触发 React 初始化，不抢夺焦点
-            // WebView 会在后台加载，窗口保持不可见状态
-            std::thread::spawn(move || {
-                // 等待前端完全加载
-                std::thread::sleep(std::time::Duration::from_millis(800));
-                
-                tracing::info!("Window pre-rendering completed (background load)");
-            });
+            // 🔥 移除预渲染逻辑，避免启动时窗口闪现
+            // WebView 会在首次调用 show_app 时自动加载
+            // 配置中的 "visible": false 确保窗口启动时完全隐藏
             
             tracing::info!("iLauncher setup completed");
             Ok(())
@@ -446,6 +446,22 @@ pub fn run_mft_service(args: &[String]) {
     
     info!("✓ Drives to process: {:?}", drives);
     
+    // 🔥 获取当前 MFT Service 进程 PID
+    let process_id = std::process::id();
+    info!("✓ MFT Service PID: {}", process_id);
+    
+    // 🔥 清理旧的 .ready 标记文件
+    for drive in &drives {
+        let ready_file = format!("{}\\{}.ready", output_dir, drive);
+        if std::path::Path::new(&ready_file).exists() {
+            if let Err(e) = std::fs::remove_file(&ready_file) {
+                warn!("Failed to remove old ready file {}: {}", ready_file, e);
+            } else {
+                info!("✓ Cleaned up old ready file: {}.ready", drive);
+            }
+        }
+    }
+    
     // ============ 阶段 1: 全量扫描 (使用新的 prompt.txt 方案) ============
     info!("");
     info!("╔═══════════════════════════════════════════╗");
@@ -482,6 +498,16 @@ pub fn run_mft_service(args: &[String]) {
     info!("⏱️  Total scan time: {:.2}s", scan_elapsed.as_secs_f32());
     info!("✓ Successfully scanned drives: {:?}", scanned_drives);
     info!("");
+    
+    // 🔥 为每个成功扫描的驱动器创建 .ready 标记文件（包含 PID）
+    for drive in &scanned_drives {
+        let ready_file = format!("{}\\{}.ready", output_dir, drive);
+        if let Err(e) = std::fs::write(&ready_file, format!("{}", process_id)) {
+            error!("❌ Failed to create ready file {}: {}", ready_file, e);
+        } else {
+            info!("✓ Created ready file: {}.ready (PID: {})", drive, process_id);
+        }
+    }
     
     // 如果只需要扫描，则退出
     if scan_only {

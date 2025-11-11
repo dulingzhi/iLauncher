@@ -173,6 +173,8 @@ pub async fn save_plugin_config(
 /// 显示应用
 #[tauri::command]
 pub async fn show_app(window: tauri::Window) -> Result<(), String> {
+    // 🔥 显示前先居中窗口
+    window.center().map_err(|e| e.to_string())?;
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
@@ -191,6 +193,8 @@ pub async fn toggle_app(window: tauri::Window) -> Result<(), String> {
     if window.is_visible().map_err(|e| e.to_string())? {
         window.hide().map_err(|e| e.to_string())?;
     } else {
+        // 🔥 显示前先居中窗口
+        window.center().map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
     }
@@ -253,8 +257,13 @@ pub async fn toggle_mft(
             exe_path.display()
         );
         
+        // 🔥 使用 CREATE_NO_WINDOW 标志隐藏控制台窗口
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        
         Command::new("powershell.exe")
             .args(["-WindowStyle", "Hidden", "-Command", &ps_command])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("Failed to start MFT service: {}", e))?;
         
@@ -266,12 +275,18 @@ pub async fn toggle_mft(
         // 强制终止所有 MFT Service 进程
         #[cfg(target_os = "windows")]
         {
+            // 🔥 使用 CREATE_NO_WINDOW 标志隐藏控制台窗口
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            
             // 查找并终止带有 --mft-service 参数的进程
             let _ = Command::new("powershell.exe")
                 .args([
+                    "-WindowStyle", "Hidden",
                     "-Command",
                     "Get-Process ilauncher | Where-Object { $_.CommandLine -like '*--mft-service*' } | Stop-Process -Force"
                 ])
+                .creation_flags(CREATE_NO_WINDOW)
                 .output();
         }
         

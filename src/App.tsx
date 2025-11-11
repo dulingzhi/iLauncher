@@ -51,14 +51,9 @@ function App() {
     const initialize = async () => {
       await loadConfig();
       
-      // 初始化时确保窗口居中
-      const appWindow = getCurrentWindow();
-      try {
-        await appWindow.center();
-        console.log('App initialized and ready');
-      } catch (error) {
-        console.error('Failed to center window:', error);
-      }
+      // 🔥 移除初始化时的居中逻辑，避免窗口闪现
+      // 窗口会在首次通过热键显示时自动居中
+      console.log('App initialized and ready');
     };
     
     initialize();

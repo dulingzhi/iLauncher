@@ -102,8 +102,13 @@ impl WebSearchPlugin {
         tokio::task::spawn_blocking(move || {
             #[cfg(target_os = "windows")]
             {
+                // 🔥 使用 CREATE_NO_WINDOW 标志隐藏控制台窗口
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                
                 std::process::Command::new("cmd")
                     .args(["/C", "start", "", &url])
+                    .creation_flags(CREATE_NO_WINDOW)
                     .spawn()?;
             }
             

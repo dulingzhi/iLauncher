@@ -56,10 +56,11 @@ export function useQuery() {
   
   const debouncedQuery = useCallback((input: string) => {
     clearTimeout(debounceTimer);
-    // 🔥 优化：减少 debounce 延迟到 50ms（MFT 查询很快）
+    // 🔥 优化：增加 debounce 延迟到 100ms，减少连续输入时的查询次数
+    // 虽然 MFT 查询很快，但频繁查询仍会造成卡顿（评分、渲染等）
     debounceTimer = setTimeout(() => {
       performQuery(input);
-    }, 50);
+    }, 100);
   }, [performQuery]);
   
   return { results, loading, debouncedQuery };
