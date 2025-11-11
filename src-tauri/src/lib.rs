@@ -179,6 +179,9 @@ pub fn run() {
             let app_handle = app.handle().clone();
             hotkey::HotkeyManager::start_listener(app_handle);
             
+            // TODO: 🔥 创建系统托盘图标和菜单（Tauri 2.x API 待完善）
+            // setup_tray_icon(app)?;
+            
             // 🔥 移除预渲染逻辑，避免启动时窗口闪现
             // WebView 会在首次调用 show_app 时自动加载
             // 配置中的 "visible": false 确保窗口启动时完全隐藏
@@ -690,4 +693,29 @@ fn check_process_exists(pid: u32) -> bool {
         }
     }
 }
+
+/*
+/// 设置系统托盘图标和菜单（Tauri 2.x - 待实现）
+fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    tracing::info!("🎨 Setting up system tray icon...");
+    
+    // 托盘图标已在 tauri.conf.json 中配置
+    // 监听托盘图标点击事件
+    let handle = app.handle().clone();
+    
+    app.handle().tray().on_tray_event(move |event| {
+        // 点击托盘图标切换窗口显示
+        tracing::info!("🖱️  Tray icon event: {:?}", event);
+        let app_handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = commands::toggle_app(app_handle).await {
+                tracing::error!("Failed to toggle app from tray: {}", e);
+            }
+        });
+    });
+    
+    tracing::info!("✓ System tray icon event handler registered");
+    Ok(())
+}
+*/
 
