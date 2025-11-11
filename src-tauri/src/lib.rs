@@ -719,7 +719,8 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
             match event.id.as_ref() {
                 "show" => {
                     tracing::info!("📋 Tray menu: Show window");
-                    if let Some(window) = app.get_webview_window("main") {
+                    if let Some(webview_window) = app.get_webview_window("main") {
+                        let window: tauri::Window = webview_window.as_ref().window();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = commands::show_app(window).await {
                                 tracing::error!("Failed to show app from tray: {}", e);
@@ -745,7 +746,8 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
                 } => {
                     tracing::info!("🖱️  Tray icon left clicked");
                     let app = tray.app_handle();
-                    if let Some(window) = app.get_webview_window("main") {
+                    if let Some(webview_window) = app.get_webview_window("main") {
+                        let window: tauri::Window = webview_window.as_ref().window();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = commands::toggle_app(window).await {
                                 tracing::error!("Failed to toggle app from tray click: {}", e);
@@ -759,7 +761,8 @@ fn setup_tray_icon(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error
                 } => {
                     tracing::info!("🖱️  Tray icon double clicked");
                     let app = tray.app_handle();
-                    if let Some(window) = app.get_webview_window("main") {
+                    if let Some(webview_window) = app.get_webview_window("main") {
+                        let window: tauri::Window = webview_window.as_ref().window();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = commands::show_app(window).await {
                                 tracing::error!("Failed to show app from tray double click: {}", e);
