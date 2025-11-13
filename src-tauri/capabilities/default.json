@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "updater:default",
+    "updater:allow-check",
     "core:window:allow-center",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
