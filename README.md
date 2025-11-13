@@ -19,7 +19,7 @@
 </p>
 
 <p>
-  <strong>中文</strong> | <a href="README_EN.md">English</a>
+  <strong>中文</strong> | <a href="docs/README_EN.md">English</a>
 </p>
 
 </div>
