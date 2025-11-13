@@ -20,6 +20,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
+  const lastNavigationTime = useRef<number>(0);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -152,12 +153,22 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
         
       case 'ArrowDown':
         e.preventDefault();
-        selectNext();
+        // 节流处理：限制导航频率为每 50ms 一次
+        const now = Date.now();
+        if (now - lastNavigationTime.current >= 50) {
+          selectNext();
+          lastNavigationTime.current = now;
+        }
         break;
         
       case 'ArrowUp':
         e.preventDefault();
-        selectPrev();
+        // 节流处理：限制导航频率为每 50ms 一次
+        const upNow = Date.now();
+        if (upNow - lastNavigationTime.current >= 50) {
+          selectPrev();
+          lastNavigationTime.current = upNow;
+        }
         break;
         
       case 'Escape':

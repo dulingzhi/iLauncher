@@ -18,9 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["unstable", "tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-updater = "2"
+tauri = { version = "2.9.2", features = ["unstable", "tray-icon"] }
+tauri-plugin-opener = "2.5.2"
+tauri-plugin-updater = "2.9.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -43,7 +43,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local
 tracing-appender = "0.2"
 
 # 全局热键
-global-hotkey = "0.6"
+global-hotkey = "0.7"
 
 # 搜索和匹配
 fuzzy-matcher = "0.3"
@@ -53,7 +53,7 @@ rayon = "1.10"    # 并行计算
 
 # 🔥 prompt.txt 技术栈：压缩索引
 bumpalo = { version = "3.14", features = ["collections"] }  # Arena 分配器
-roaring = "0.10"  # RoaringBitmap 压缩位图
+roaring = "0.11"  # RoaringBitmap 压缩位图
 fst = "0.4"  # FST 有限状态转换器
 memmap2 = "0.9"  # 内存映射
 smartstring = "1"  # 内联小字符串优化（<23 bytes 无堆分配）
@@ -87,8 +87,8 @@ windows = { version = "0.58", features = [
 interprocess = { version = "2.2.1", features = ["tokio"] }
 
 # 系统信息
-directories = "5"
-dirs = "5"
+directories = "6"
+dirs = "6"
 sysinfo = "0.31"
 
 # 开机自启
