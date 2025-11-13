@@ -7,176 +7,72 @@ on:
   workflow_dispatch:
 
 jobs:
-  create-release:
+  release:
     permissions:
       contents: write
-    runs-on: ubuntu-22.04
-    outputs:
-      release_id: ${{ steps.create-release.outputs.result }}
-      version: ${{ steps.version.outputs.version }}
-
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest]
+        # 如果需要多平台支持，取消注释：
+        # platform: [windows-latest, macos-latest, ubuntu-latest]
+    
+    runs-on: ${{ matrix.platform }}
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Get version from tag
-        id: version
-        run: |
-          # Extract version from tag (e.g., v0.1.0 -> 0.1.0)
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Version: ${VERSION}"
-
-      - name: Create release
-        id: create-release
-        uses: actions/github-script@v7
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        with:
-          script: |
-            const { data } = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: `v${process.env.VERSION}`,
-              name: `iLauncher v${process.env.VERSION}`,
-              body: 'Take a look at the assets to download and install this app.',
-              draft: true,
-              prerelease: false
-            })
-            return data.id
-
-  build-tauri:
-    needs: create-release
-    permissions:
-      contents: write
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
       - name: Install frontend dependencies
         run: bun install
 
-      - name: Build Tauri App
+      - name: Update version from tag
+        run: |
+          # 从 git tag 提取版本号 (去掉 v 前缀)
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          
+          # 更新 package.json
+          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+          mv package.json.tmp package.json
+          
+          # 更新 tauri.conf.json
+          cat src-tauri/tauri.conf.json | jq --arg version "$VERSION" '.version = $version' > src-tauri/tauri.conf.json.tmp
+          mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+          
+          # 更新 Cargo.toml
+          sed -i "s/^version = .*/version = \"$VERSION\"/" src-tauri/Cargo.toml
+        shell: bash
+
+      - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-
-  publish-release:
-    permissions:
-      contents: write
-    runs-on: ubuntu-22.04
-    needs: [create-release, build-tauri]
-
-    steps:
-      - name: Publish release
-        id: publish-release
-        uses: actions/github-script@v7
-        env:
-          release_id: ${{ needs.create-release.outputs.release_id }}
-        with:
-          script: |
-            github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: process.env.release_id,
-              draft: false,
-              prerelease: false
-            })
-
-  generate-updater-json:
-    permissions:
-      contents: write
-    runs-on: ubuntu-22.04
-    needs: [create-release, build-tauri]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download release assets
-        uses: actions/github-script@v7
-        env:
-          release_id: ${{ needs.create-release.outputs.release_id }}
-          VERSION: ${{ needs.create-release.outputs.version }}
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            
-            const { data: release } = await github.rest.repos.getRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: process.env.release_id
-            });
-            
-            const assets = release.assets;
-            const platforms = {
-              'windows-x86_64': null
-            };
-            
-            // 查找 Windows 平台的安装包和签名文件
-            for (const asset of assets) {
-              const name = asset.name;
-              
-              // Windows NSIS installer
-              if (name.includes('x64-setup.nsis.zip')) {
-                const sigAsset = assets.find(a => a.name === name + '.sig');
-                if (sigAsset) {
-                  const sigResponse = await github.request(sigAsset.browser_download_url);
-                  platforms['windows-x86_64'] = {
-                    url: asset.browser_download_url,
-                    signature: await sigResponse.text()
-                  };
-                }
-              }
-            }
-            
-            // 生成 latest.json
-            const updateInfo = {
-              version: 'v' + process.env.VERSION,
-              notes: release.body || 'See release notes on GitHub',
-              pub_date: new Date().toISOString(),
-              platforms: {}
-            };
-            
-            for (const [platform, data] of Object.entries(platforms)) {
-              if (data) {
-                updateInfo.platforms[platform] = {
-                  signature: data.signature.trim(),
-                  url: data.url
-                };
-              }
-            }
-            
-            fs.writeFileSync('latest.json', JSON.stringify(updateInfo, null, 2));
-            console.log('Generated latest.json:');
-            console.log(JSON.stringify(updateInfo, null, 2));
-
-      - name: Upload latest.json to release
-        uses: actions/github-script@v7
-        env:
-          release_id: ${{ needs.create-release.outputs.release_id }}
-        with:
-          script: |
-            const fs = require('fs');
-            
-            await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: process.env.release_id,
-              name: 'latest.json',
-              data: fs.readFileSync('latest.json')
-            });
+          tagName: ${{ github.ref_name }}
+          releaseName: '${{ github.ref_name }}'
+          releaseBody: 'Take a look at the assets to download and install this app.'
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
