@@ -41,6 +41,8 @@ export function ActionPanel({
               {action.icon && (
                 action.icon.type === 'emoji' ? (
                   <span className="text-base">{action.icon.data}</span>
+                ) : action.icon.type === 'base64' ? (
+                  <img src={action.icon.data} alt="" className="w-4 h-4 object-contain" />
                 ) : action.icon.type === 'file' ? (
                   <img src={convertFileSrc(action.icon.data)} alt="" className="w-4 h-4 object-contain" />
                 ) : (

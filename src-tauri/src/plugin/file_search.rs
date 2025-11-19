@@ -708,10 +708,10 @@ impl FileSearchPlugin {
         
         tracing::debug!("🎨 Getting icon for: {} (is_dir: {})", path, is_dir);
         
-        match icon_cache::get_file_icon(path, is_dir) {
-            Ok(icon_path) => {
-                tracing::debug!("✓ Icon extracted: {}", icon_path);
-                WoxImage::file(icon_path)
+        match icon_cache::get_file_icon_base64(path, is_dir) {
+            Ok(base64_data) => {
+                tracing::debug!("✓ Icon extracted as base64 ({}bytes)", base64_data.len());
+                WoxImage::Base64(base64_data)
             }
             Err(e) => {
                 tracing::warn!("⚠️ Icon extraction failed: {:#}, falling back to emoji", e);

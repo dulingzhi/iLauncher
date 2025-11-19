@@ -112,7 +112,7 @@ impl Action {
 
 /// 图标类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum WoxImage {
     Svg(String),
     File(String),

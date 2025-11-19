@@ -358,11 +358,33 @@ impl StatisticsManager {
         let is_dir = path.is_dir();
         let is_file = path.is_file();
         
-        // 创建图标
-        let icon = if is_dir {
-            WoxImage::emoji("📁")
-        } else if is_file {
-            WoxImage::emoji("📄")
+        // 🔥 创建真实的文件图标（而不是 emoji）
+        let icon = if is_file || is_dir {
+            #[cfg(target_os = "windows")]
+            {
+                use crate::utils::icon_cache;
+                match icon_cache::get_file_icon_base64(&mru.result_id, is_dir) {
+                    Ok(base64_data) => {
+                        WoxImage::Base64(base64_data)
+                    }
+                    Err(_) => {
+                        // 降级到 emoji
+                        if is_dir {
+                            WoxImage::emoji("📁")
+                        } else {
+                            WoxImage::emoji("📄")
+                        }
+                    }
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                if is_dir {
+                    WoxImage::emoji("📁")
+                } else {
+                    WoxImage::emoji("📄")
+                }
+            }
         } else {
             // 文件不存在，使用历史记录图标
             WoxImage::emoji("⭐")

@@ -13,6 +13,11 @@
     "core:window:allow-set-position",
     "core:window:allow-set-resizable",
     "core:window:allow-outer-position",
-    "core:window:allow-outer-size"
+    "core:window:allow-outer-size",
+    "core:path:default",
+    "core:image:default",
+    "core:app:default",
+    "core:app:allow-app-hide",
+    "core:app:allow-app-show"
   ]
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { cn } from '../utils/cn';
 import type { Action } from '../types';
 
@@ -84,6 +85,8 @@ export function ContextMenu({
               <span className="text-base flex-shrink-0">
                 {action.icon.type === 'emoji' ? (
                   action.icon.data
+                ) : action.icon.type === 'base64' ? (
+                  <img src={action.icon.data} alt="" className="w-4 h-4 object-contain" />
                 ) : action.icon.type === 'file' ? (
                   <img src={convertFileSrc(action.icon.data)} alt="" className="w-4 h-4 object-contain" />
                 ) : (

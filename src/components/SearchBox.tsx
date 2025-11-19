@@ -416,22 +416,59 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
         <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg text-2xl" style={{
           backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)'
         }}>
-          {result.icon.type === 'emoji' ? (
-            result.icon.data
-          ) : result.icon.type === 'file' ? (
-            <img 
-              src={convertFileSrc(result.icon.data)} 
-              alt="icon" 
-              className="w-8 h-8 object-contain"
-              onError={(e) => {
-                // 图标加载失败时显示默认 emoji
-                e.currentTarget.style.display = 'none';
-                e.currentTarget.parentElement!.textContent = '📄';
-              }}
-            />
-          ) : (
-            '📄'
-          )}
+          {(() => {
+            // 🔥 添加调试日志
+            if (result.icon.type === 'base64' || result.icon.type === 'file') {
+              console.log('🎨 Rendering icon:', {
+                type: result.icon.type,
+                dataLength: result.icon.data?.length || 0
+              });
+            }
+            
+            if (result.icon.type === 'emoji') {
+              return result.icon.data;
+            } else if (result.icon.type === 'base64') {
+              // 🔥 Base64 图标可以直接使用
+              return (
+                <img 
+                  src={result.icon.data}
+                  alt="icon" 
+                  className="w-8 h-8 object-contain"
+                  onError={(e) => {
+                    console.error('❌ Base64 icon load failed');
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.parentElement!.textContent = '📄';
+                  }}
+                  onLoad={() => {
+                    console.log('✅ Base64 icon loaded successfully');
+                  }}
+                />
+              );
+            } else if (result.icon.type === 'file') {
+              // 文件路径需要转换
+              const iconSrc = convertFileSrc(result.icon.data);
+              return (
+                <img 
+                  src={iconSrc}
+                  alt="icon" 
+                  className="w-8 h-8 object-contain"
+                  onError={(e) => {
+                    console.error('❌ File icon load failed:', {
+                      originalPath: result.icon.data,
+                      convertedSrc: iconSrc
+                    });
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.parentElement!.textContent = '📄';
+                  }}
+                  onLoad={() => {
+                    console.log('✅ File icon loaded successfully');
+                  }}
+                />
+              );
+            } else {
+              return '📄';
+            }
+          })()}
         </div>
         
         {/* 文本内容 */}
