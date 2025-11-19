@@ -83,7 +83,9 @@ windows = { version = "0.58", features = [
     "Win32_UI_Shell",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",  # 图标提取需要
 ] }
+image = "0.25"  # 图标转换为 PNG
 interprocess = { version = "2.2.1", features = ["tokio"] }
 
 # 系统信息

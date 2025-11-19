@@ -223,6 +223,13 @@ impl FileSearchPlugin {
     pub async fn init(&self) {
         tracing::info!("Starting file index initialization...");
         
+        // 🔥 预热图标缓存
+        #[cfg(target_os = "windows")]
+        {
+            use crate::utils::icon_cache;
+            icon_cache::warmup_icon_cache();
+        }
+        
         let files = self.files.clone();
         let name_index = self.name_index.clone();
         let paths = self.search_paths.clone();
@@ -694,6 +701,34 @@ impl FileSearchPlugin {
         Self::open_file(&folder).await
     }
     
+    /// 获取文件图标
+    #[cfg(target_os = "windows")]
+    fn get_file_icon(path: &str, is_dir: bool) -> WoxImage {
+        use crate::utils::icon_cache;
+        
+        match icon_cache::get_file_icon(path, is_dir) {
+            Ok(icon_path) => WoxImage::file(icon_path),
+            Err(_) => {
+                // 降级到 emoji
+                if is_dir {
+                    WoxImage::emoji("📁")
+                } else {
+                    WoxImage::emoji("📄")
+                }
+            }
+        }
+    }
+    
+    /// 获取文件图标（非 Windows 平台）
+    #[cfg(not(target_os = "windows"))]
+    fn get_file_icon(_path: &str, is_dir: bool) -> WoxImage {
+        if is_dir {
+            WoxImage::emoji("📁")
+        } else {
+            WoxImage::emoji("📄")
+        }
+    }
+    
         /// 从 MFT 索引查询文件（基于 FST+RoaringBitmap）
     #[cfg(target_os = "windows")]
     async fn query_from_mft_database(&self, search: &str, _ctx: &QueryContext) -> Result<Vec<QueryResult>> {
@@ -804,11 +839,8 @@ impl FileSearchPlugin {
                             .unwrap_or(&path)
                             .to_string();
                         
-                        let icon = if is_dir {
-                            WoxImage::emoji("📁")
-                        } else {
-                            WoxImage::emoji("📄")
-                        };
+                        // 🔥 获取真实文件图标
+                        let icon = Self::get_file_icon(&path, is_dir);
                         
                         all_results.push(QueryResult {
                             id: path.clone(),
