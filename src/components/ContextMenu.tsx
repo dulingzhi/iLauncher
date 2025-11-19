@@ -82,7 +82,13 @@ export function ContextMenu({
             {/* 图标 */}
             {action.icon && (
               <span className="text-base flex-shrink-0">
-                {action.icon.type === 'emoji' ? action.icon.data : '⚡'}
+                {action.icon.type === 'emoji' ? (
+                  action.icon.data
+                ) : action.icon.type === 'file' ? (
+                  <img src={convertFileSrc(action.icon.data)} alt="" className="w-4 h-4 object-contain" />
+                ) : (
+                  '⚡'
+                )}
               </span>
             )}
             

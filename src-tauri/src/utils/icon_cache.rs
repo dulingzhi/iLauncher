@@ -29,6 +29,8 @@ static ICON_CACHE: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::ne
 /// 获取文件图标路径（带缓存，快速返回）
 #[cfg(target_os = "windows")]
 pub fn get_file_icon(file_path: &str, is_dir: bool) -> Result<String> {
+    tracing::debug!("📦 icon_cache::get_file_icon called: {} (is_dir: {})", file_path, is_dir);
+    
     // 1. 对于目录，使用统一的文件夹图标
     if is_dir {
         let cache_key = "__folder__".to_string();
@@ -36,11 +38,13 @@ pub fn get_file_icon(file_path: &str, is_dir: bool) -> Result<String> {
         if let Ok(cache) = ICON_CACHE.lock() {
             if let Some(cached_path) = cache.get(&cache_key) {
                 if Path::new(cached_path).exists() {
+                    tracing::debug!("✓ Using cached folder icon: {}", cached_path);
                     return Ok(cached_path.clone());
                 }
             }
         }
         
+        tracing::debug!("⚡ Extracting folder icon...");
         // 提取文件夹图标（使用通用路径）
         let icon_path = extract_icon_to_temp("C:\\", true)?;
         
@@ -48,6 +52,7 @@ pub fn get_file_icon(file_path: &str, is_dir: bool) -> Result<String> {
             cache.insert(cache_key, icon_path.clone());
         }
         
+        tracing::debug!("✓ Folder icon extracted: {}", icon_path);
         return Ok(icon_path);
     }
     
@@ -245,4 +250,31 @@ pub fn warmup_icon_cache() {
         
         tracing::info!("✓ Icon cache warmed up");
     });
+}
+
+#[cfg(test)]
+#[cfg(target_os = "windows")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_icon_extraction() {
+        // 测试文件夹图标
+        let folder_icon = get_file_icon("C:\\", true);
+        println!("Folder icon result: {:?}", folder_icon);
+        assert!(folder_icon.is_ok(), "Failed to extract folder icon: {:?}", folder_icon.err());
+        
+        let icon_path = folder_icon.unwrap();
+        println!("Folder icon path: {}", icon_path);
+        assert!(std::path::Path::new(&icon_path).exists(), "Icon file doesn't exist");
+        
+        // 测试文件图标  
+        let file_icon = get_file_icon("C:\\Windows\\notepad.exe", false);
+        println!("File icon result: {:?}", file_icon);
+        assert!(file_icon.is_ok(), "Failed to extract file icon: {:?}", file_icon.err());
+        
+        let icon_path = file_icon.unwrap();
+        println!("File icon path: {}", icon_path);
+        assert!(std::path::Path::new(&icon_path).exists(), "Icon file doesn't exist");
+    }
 }

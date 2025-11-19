@@ -706,9 +706,15 @@ impl FileSearchPlugin {
     fn get_file_icon(path: &str, is_dir: bool) -> WoxImage {
         use crate::utils::icon_cache;
         
+        tracing::debug!("🎨 Getting icon for: {} (is_dir: {})", path, is_dir);
+        
         match icon_cache::get_file_icon(path, is_dir) {
-            Ok(icon_path) => WoxImage::file(icon_path),
-            Err(_) => {
+            Ok(icon_path) => {
+                tracing::debug!("✓ Icon extracted: {}", icon_path);
+                WoxImage::file(icon_path)
+            }
+            Err(e) => {
+                tracing::warn!("⚠️ Icon extraction failed: {:#}, falling back to emoji", e);
                 // 降级到 emoji
                 if is_dir {
                     WoxImage::emoji("📁")

@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '../i18n';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { useAppStore } from '../store/useAppStore';
 import { useConfigStore } from '../store/useConfigStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
@@ -415,7 +416,22 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
         <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg text-2xl" style={{
           backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)'
         }}>
-          {result.icon.type === 'emoji' ? result.icon.data : '📄'}
+          {result.icon.type === 'emoji' ? (
+            result.icon.data
+          ) : result.icon.type === 'file' ? (
+            <img 
+              src={convertFileSrc(result.icon.data)} 
+              alt="icon" 
+              className="w-8 h-8 object-contain"
+              onError={(e) => {
+                // 图标加载失败时显示默认 emoji
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.parentElement!.textContent = '📄';
+              }}
+            />
+          ) : (
+            '📄'
+          )}
         </div>
         
         {/* 文本内容 */}

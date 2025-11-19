@@ -38,7 +38,13 @@ export function ActionPanel({
               )}
             >
               {action.icon && (
-                <span className="text-base">{action.icon.type === 'emoji' ? action.icon.data : '⚡'}</span>
+                action.icon.type === 'emoji' ? (
+                  <span className="text-base">{action.icon.data}</span>
+                ) : action.icon.type === 'file' ? (
+                  <img src={convertFileSrc(action.icon.data)} alt="" className="w-4 h-4 object-contain" />
+                ) : (
+                  <span className="text-base">⚡</span>
+                )
               )}
               <span className="font-medium">{action.name}</span>
               {action.hotkey && (
