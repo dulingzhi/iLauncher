@@ -759,7 +759,7 @@ impl FileSearchPlugin {
         }
         
         // 🔥 使用缓存的索引查询（缓存已在 init 时预加载）
-        let cache = self.mft_cache.read().await;
+        let mut cache = self.mft_cache.write().await;
         
         // 🔥 限制总结果数，避免评分耗时过长
         const MAX_TOTAL_RESULTS: usize = 50;
@@ -770,7 +770,16 @@ impl FileSearchPlugin {
                 break; // 已经收集足够的结果
             }
             
-            if let Some(cached) = cache.get(&drive) {
+            if let Some(cached) = cache.get_mut(&drive) {
+                // 🔥 检查索引版本是否需要重新加载
+                if cached.query.needs_reload() {
+                    tracing::info!("🔄 Detected index version change for drive {}, reloading...", drive);
+                    if let Err(e) = cached.query.reload() {
+                        tracing::error!("❌ Failed to reload index for drive {}: {:#}", drive, e);
+                        continue;
+                    }
+                }
+                
                 // 执行查询（每个驱动器限制 20 条，总共最多 50 条）
                 let remaining = MAX_TOTAL_RESULTS - all_results.len();
                 let limit = remaining.min(MAX_PER_DRIVE);

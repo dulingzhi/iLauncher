@@ -57,11 +57,14 @@ impl DeltaMerger {
                 .or_insert(delta_bitmap);
         }
         
-        // 4. 重建 FST + Bitmap 文件
+        // 4. 重建 FST + Bitmap 文件（使用临时文件避免文件锁）
         self.rebuild_index(&main_index)?;
         
         // 5. 删除 delta 文件
         self.cleanup_delta()?;
+        
+        // 6. 更新版本号（通知 UI 重新加载）
+        self.increment_version()?;
         
         let elapsed = start.elapsed();
         info!("✓ Delta merge completed in {:.2}s", elapsed.as_secs_f64());
@@ -174,10 +177,15 @@ impl DeltaMerger {
         Ok(delta_index)
     }
     
-    /// 重建索引文件
+    /// 重建索引文件（直接覆盖，Windows 允许 rename 覆盖被 mmap 的文件）
     fn rebuild_index(&self, index: &HashMap<String, RoaringBitmap>) -> Result<()> {
         info!("📝 Rebuilding index files...");
         
+        // 使用 .new 后缀的临时文件
+        let fst_file_new = format!("{}\\{}_index.fst.new", self.output_dir, self.drive_letter);
+        let bitmap_file_new = format!("{}\\{}_bitmaps.dat.new", self.output_dir, self.drive_letter);
+        
+        // 最终目标文件
         let fst_file = format!("{}\\{}_index.fst", self.output_dir, self.drive_letter);
         let bitmap_file = format!("{}\\{}_bitmaps.dat", self.output_dir, self.drive_letter);
         
@@ -185,24 +193,19 @@ impl DeltaMerger {
         let mut sorted_grams: Vec<_> = index.iter().collect();
         sorted_grams.sort_by(|a, b| a.0.cmp(b.0));
         
-        // 构建 FST
-        let mut fst_builder = MapBuilder::new(BufWriter::new(File::create(&fst_file)?))?;
-        let mut bitmap_writer = BufWriter::new(File::create(&bitmap_file)?);
+        // 构建 FST 到临时文件
+        let mut fst_builder = MapBuilder::new(BufWriter::new(File::create(&fst_file_new)?))?;
+        let mut bitmap_writer = BufWriter::new(File::create(&bitmap_file_new)?);
         
         let mut current_offset: u64 = 0;
         
         for (gram, bitmap) in sorted_grams {
-            // 写入 FST 映射
             fst_builder.insert(gram.as_bytes(), current_offset)?;
             
-            // 序列化 bitmap
             let mut bitmap_bytes = Vec::new();
             bitmap.serialize_into(&mut bitmap_bytes)?;
             
-            // 写入长度前缀
             bitmap_writer.write_all(&(bitmap_bytes.len() as u32).to_le_bytes())?;
-            
-            // 写入 bitmap 数据
             bitmap_writer.write_all(&bitmap_bytes)?;
             
             current_offset += 4 + bitmap_bytes.len() as u64;
@@ -210,8 +213,16 @@ impl DeltaMerger {
         
         fst_builder.finish()?;
         bitmap_writer.flush()?;
+        drop(bitmap_writer);
         
-        info!("✓ Index files rebuilt");
+        info!("✓ New index files written");
+        
+        // 🔥 Windows 特性：rename 可以覆盖被 mmap 的文件
+        // UI 进程的 mmap 不会失效，但下次 reload 会看到新内容
+        std::fs::rename(&fst_file_new, &fst_file)?;
+        std::fs::rename(&bitmap_file_new, &bitmap_file)?;
+        
+        info!("✓ Index files replaced via rename");
         
         Ok(())
     }
@@ -224,6 +235,29 @@ impl DeltaMerger {
             std::fs::remove_file(&delta_file)?;
             info!("✓ Delta file removed");
         }
+        
+        Ok(())
+    }
+    
+    /// 递增版本号（通知 UI 重新加载索引）
+    fn increment_version(&self) -> Result<()> {
+        let version_file = format!("{}\\{}_index.version", self.output_dir, self.drive_letter);
+        
+        // 读取当前版本号
+        let current_version = if Path::new(&version_file).exists() {
+            std::fs::read_to_string(&version_file)?
+                .trim()
+                .parse::<u64>()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        
+        // 递增并写入新版本号
+        let new_version = current_version + 1;
+        std::fs::write(&version_file, new_version.to_string())?;
+        
+        info!("✓ Index version updated: {} → {}", current_version, new_version);
         
         Ok(())
     }

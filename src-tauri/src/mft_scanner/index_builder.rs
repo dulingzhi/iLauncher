@@ -172,11 +172,12 @@ impl IndexBuilder {
 
 /// 索引查询器（零拷贝，内存映射）
 pub struct IndexQuery {
-    #[allow(dead_code)]
     drive_letter: char,
+    output_dir: String,
     fst_map: Map<memmap2::Mmap>,
     bitmap_mmap: memmap2::Mmap,
     delta_index: Option<DeltaIndex>,  // 增量索引
+    loaded_version: u64,  // 已加载的索引版本号
 }
 
 /// Delta 索引（内存中的增量更新）
@@ -206,12 +207,65 @@ impl IndexQuery {
         // 加载 delta 索引（如果存在）
         let delta_index = Self::load_delta_index(drive_letter, output_dir).ok();
         
+        // 读取当前版本号
+        let loaded_version = Self::read_version(drive_letter, output_dir);
+        
         Ok(Self {
             drive_letter,
+            output_dir: output_dir.to_string(),
             fst_map,
             bitmap_mmap,
             delta_index,
+            loaded_version,
         })
+    }
+    
+    /// 读取索引版本号
+    fn read_version(drive_letter: char, output_dir: &str) -> u64 {
+        let version_file = format!("{}\\{}_index.version", output_dir, drive_letter);
+        
+        if let Ok(content) = std::fs::read_to_string(&version_file) {
+            content.trim().parse::<u64>().unwrap_or(0)
+        } else {
+            0
+        }
+    }
+    
+    /// 检查索引是否需要重新加载（版本号已变化）
+    pub fn needs_reload(&self) -> bool {
+        let current_version = Self::read_version(self.drive_letter, &self.output_dir);
+        current_version > self.loaded_version
+    }
+    
+    /// 重新加载索引（热重载）
+    pub fn reload(&mut self) -> Result<()> {
+        tracing::info!("🔄 Reloading index for drive {} (version changed)...", self.drive_letter);
+        
+        let fst_file = format!("{}\\{}_index.fst", self.output_dir, self.drive_letter);
+        let bitmap_file = format!("{}\\{}_bitmaps.dat", self.output_dir, self.drive_letter);
+        
+        // 重新映射 FST
+        let fst_mmap = unsafe {
+            memmap2::MmapOptions::new()
+                .map(&File::open(fst_file)?)?
+        };
+        self.fst_map = Map::new(fst_mmap)?;
+        
+        // 重新映射 Bitmap
+        self.bitmap_mmap = unsafe {
+            memmap2::MmapOptions::new()
+                .map(&File::open(bitmap_file)?)?
+        };
+        
+        // 重新加载 delta 索引
+        self.delta_index = Self::load_delta_index(self.drive_letter, &self.output_dir).ok();
+        
+        // 更新版本号
+        self.loaded_version = Self::read_version(self.drive_letter, &self.output_dir);
+        
+        tracing::info!("✓ Index reloaded (version: {})", self.loaded_version);
+        
+        Ok(())
     }
     
     /// 加载 delta 索引文件
