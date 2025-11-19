@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
-import { useTranslation } from '../i18n';
+import { useTranslation } from 'react-i18next';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useAppStore } from '../store/useAppStore';
 import { useConfigStore } from '../store/useConfigStore';

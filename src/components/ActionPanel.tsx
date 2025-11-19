@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { cn } from '../utils/cn';
 import type { Action } from '../types';
 
