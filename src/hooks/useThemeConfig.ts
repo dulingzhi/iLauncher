@@ -7,7 +7,7 @@ import { applyTheme, getTheme, Theme } from '../theme';
  * 将theme、外观、字体配置整合到一起
  */
 export const useThemeConfig = () => {
-  const { config, updateConfig, saveConfig } = useConfigStore();
+  const { config, saveConfig } = useConfigStore();
 
   // 应用主题配置
   useEffect(() => {
@@ -76,7 +76,7 @@ export const useThemeConfig = () => {
   };
 
   // 更新字体配置
-  const updateFont = async (fontConfig: Partial<typeof config.font>) => {
+  const updateFont = async (fontConfig: Partial<NonNullable<typeof config>['font']>) => {
     if (!config) return;
 
     const newConfig = {
@@ -91,7 +91,7 @@ export const useThemeConfig = () => {
   };
 
   // 更新外观配置
-  const updateAppearance = async (appearanceConfig: Partial<typeof config.appearance>) => {
+  const updateAppearance = async (appearanceConfig: Partial<NonNullable<typeof config>['appearance']>) => {
     if (!config) return;
 
     const newConfig = {

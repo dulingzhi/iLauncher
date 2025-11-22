@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import { Theme, themes, getTheme } from '../theme';
-import { X, Eye, Save, Palette, Copy, Wand2, RefreshCw, Type, Layout, Sliders } from 'lucide-react';
+import { X, Eye, Save, Palette, Copy, Wand2, RefreshCw, Type, Layout } from 'lucide-react';
 
 interface ThemeEditorProps {
   initialTheme?: Theme;
