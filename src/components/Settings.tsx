@@ -525,7 +525,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             </div>
                           </div>
                         </div>
-                        <p className="mt-2 text-xs text-gray-500">Preview updates instantly when you select a theme</p>
+                        <p className="mt-2 text-xs text-gray-500">{t('updates.previewUpdates')}</p>
                       </div>
 
                       {/* 主题导入/导出 */}
@@ -659,7 +659,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.pluginSettings')}</h2>
                     
                     {plugins.length === 0 ? (
-                      <div className="text-sm text-gray-500">Loading plugins...</div>
+                      <div className="text-sm text-gray-500">{t('status.loadingPlugins')}</div>
                     ) : (
                       <div className="space-y-6">
                         {plugins.map((plugin) => (
@@ -789,7 +789,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                 })}
                               </div>
                             ) : (
-                              <div className="px-4 py-3 text-xs text-gray-500">No settings available</div>
+                              <div className="px-4 py-3 text-xs text-gray-500">{t('status.noSettingsAvailable')}</div>
                             )}
                           </div>
                         ))}
@@ -858,12 +858,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                   {/* 更新检查 */}
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">Updates</h2>
+                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('updates.title')}</h2>
                     <div className="px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42]">
                       <div className="flex items-center justify-between">
                         <div>
-                          <span className="text-sm font-medium text-gray-300">Check for Updates</span>
-                          <p className="text-xs text-gray-500 mt-0.5">Automatically check for updates on startup</p>
+                          <span className="text-sm font-medium text-gray-300">{t('updates.checkForUpdates')}</span>
+                          <p className="text-xs text-gray-500 mt-0.5">{t('updates.checkForUpdatesDesc')}</p>
                         </div>
                         <UpdateChecker />
                       </div>

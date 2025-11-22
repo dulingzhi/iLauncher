@@ -221,5 +221,15 @@
     "copyFileName": "复制文件名",
     "delete": "删除",
     "properties": "属性"
+  },
+  "updates": {
+    "title": "更新",
+    "checkForUpdates": "检查更新",
+    "checkForUpdatesDesc": "启动时自动检查更新",
+    "previewUpdates": "选择主题时即时预览更新"
+  },
+  "status": {
+    "loadingPlugins": "加载插件中...",
+    "noSettingsAvailable": "无可用设置"
   }
 }

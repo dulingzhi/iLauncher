@@ -224,5 +224,15 @@
     "copyFileName": "Copy File Name",
     "delete": "Delete",
     "properties": "Properties"
+  },
+  "updates": {
+    "title": "Updates",
+    "checkForUpdates": "Check for Updates",
+    "checkForUpdatesDesc": "Automatically check for updates on startup",
+    "previewUpdates": "Preview updates instantly when you select a theme"
+  },
+  "status": {
+    "loadingPlugins": "Loading plugins...",
+    "noSettingsAvailable": "No settings available"
   }
 }
