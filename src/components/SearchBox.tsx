@@ -9,6 +9,7 @@ import { useConfigStore } from '../store/useConfigStore';
 import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { ContextMenu } from './ContextMenu';
 import { highlightMatch } from '../utils/pinyinSearch';
+import '../animations.css';
 
 interface SearchBoxProps {
   onOpenSettings: () => void;
@@ -295,7 +296,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
   
   return (
     <div className="w-full">
-      {/* 搜索输入框 - Windows 11 风格 */}
+      {/* 搜索输入框 - 添加动画效果 */}
       <div className="flex items-center gap-3 px-6 py-4 border-b" style={{ 
         backgroundColor: 'var(--color-surface)',
         borderBottomColor: 'rgba(255, 255, 255, 0.08)'
@@ -309,7 +310,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
           onKeyDown={handleKeyDown}
           placeholder={t('search.placeholder') || 'Type to search...'}
           autoFocus
-          className="flex-1 text-base bg-transparent outline-none placeholder:text-gray-500"
+          className="search-input flex-1 text-base bg-transparent outline-none placeholder:text-gray-500"
           style={{ 
             color: 'var(--color-text-primary)',
           }}
@@ -317,7 +318,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
         />
         {loading && (
           <div 
-            className="w-4 h-4 border-2 rounded-full animate-spin" 
+            className="loading-spinner w-4 h-4 border-2 rounded-full" 
             style={{ 
               borderColor: 'var(--color-text-muted)',
               borderTopColor: 'var(--color-primary)'
@@ -409,48 +410,41 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
     return (
       <div
         ref={ref}
-        className="flex items-center gap-4 px-6 py-3 cursor-pointer transition-all duration-150"
+        className={`result-item flex items-center gap-4 px-6 cursor-pointer ${
+          isSelected ? 'result-item-selected' : ''
+        }`}
         style={{
+          minHeight: 'var(--result-height, 60px)',
           backgroundColor: isSelected 
-            ? 'rgba(255, 255, 255, 0.08)' 
+            ? 'var(--color-primary-alpha)' 
             : 'transparent',
           borderLeft: isSelected ? '3px solid var(--color-primary)' : '3px solid transparent',
-        }}
-        onMouseEnter={(e) => {
-          if (!isSelected) {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isSelected) {
-            e.currentTarget.style.backgroundColor = 'transparent';
-          }
         }}
         onClick={onClick}
         onContextMenu={onContextMenu}
       >
-        {/* 图标 - 更大更现代 */}
-        <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg text-2xl" style={{
-          backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)'
-        }}>
+        {/* 图标 - 使用动画类 */}
+        <div 
+          className="result-icon flex-shrink-0 flex items-center justify-center rounded-lg text-2xl" 
+          style={{
+            width: 'var(--icon-size, 32px)',
+            height: 'var(--icon-size, 32px)',
+            backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.03)'
+          }}
+        >
           {(() => {
-            // 🔥 添加调试日志
-            if (result.icon.type === 'base64' || result.icon.type === 'file') {
-              console.log('🎨 Rendering icon:', {
-                type: result.icon.type,
-                dataLength: result.icon.data?.length || 0
-              });
-            }
-            
             if (result.icon.type === 'emoji') {
               return result.icon.data;
             } else if (result.icon.type === 'base64') {
-              // 🔥 Base64 图标可以直接使用
               return (
                 <img 
                   src={result.icon.data}
                   alt="icon" 
-                  className="w-8 h-8 object-contain"
+                  className="object-contain"
+                  style={{
+                    width: 'calc(var(--icon-size, 32px) * 0.75)',
+                    height: 'calc(var(--icon-size, 32px) * 0.75)',
+                  }}
                   onError={(e) => {
                     console.error('❌ Base64 icon load failed');
                     e.currentTarget.style.display = 'none';
@@ -488,20 +482,17 @@ const ResultItem = React.forwardRef<HTMLDivElement, ResultItemProps>(
           })()}
         </div>
         
-        {/* 文本内容 */}
+        {/* 文本内容 - 使用动画类 */}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate mb-0.5" style={{ color: 'var(--color-text-primary)' }}>
+          <div className="result-title text-sm font-medium truncate mb-0.5" style={{ color: 'var(--color-text-primary)' }}>
             {highlightMatch(result.title, query)}
           </div>
           {result.subtitle && (
-            <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
+            <div className="result-subtitle text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
               {highlightMatch(result.subtitle, query)}
             </div>
           )}
         </div>
-        
-        {/* 分数（调试用） */}
-        {/* <div className="text-xs text-gray-400">{result.score}</div> */}
       </div>
     );
   }
