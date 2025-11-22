@@ -236,10 +236,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             )}
             
             <button
-              onClick={async () => {
-                await invoke('hide_app');
-                onClose();
-              }}
+              onClick={onClose}
               className="px-3 py-1.5 text-xs rounded-lg transition-all hover:scale-105"
               style={{ 
                 backgroundColor: 'var(--color-surface)',
