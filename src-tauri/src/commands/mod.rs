@@ -4,6 +4,7 @@ use crate::clipboard::ClipboardManager;
 use crate::core::types::*;
 use crate::plugin::PluginManager;
 use crate::preview;
+use crate::ranking::IntelligentRanker;
 use crate::storage::{AppConfig, StorageManager};
 use crate::statistics::StatisticsManager;
 use tauri::{State, Emitter};
@@ -23,108 +24,55 @@ pub async fn query(
         let _ = stats.record_query(&input).await;
     }
     
-    // 🔥 步骤 1: 获取 MRU 热门结果
-    let mru_start = std::time::Instant::now();
-    let mru_results = stats.get_top_results(20).await.unwrap_or_default();
-    let mru_elapsed = mru_start.elapsed();
-    
-    // 🔥 步骤 2: 执行插件查询
+    // 🔥 步骤 1: 执行插件查询
     let plugin_query_start = std::time::Instant::now();
     let mut plugin_results = manager.query(&input).await.map_err(|e| e.to_string())?;
     let plugin_elapsed = plugin_query_start.elapsed();
     
-    // 🔥 步骤 3: 注入 MRU 匹配项（直接创建结果，不依赖插件）
-    let inject_start = std::time::Instant::now();
-    let mut matched_mru = Vec::new();
-    let input_lower = input.to_lowercase();
+    // 🔥 步骤 2: 使用智能排序算法
+    let ranking_start = std::time::Instant::now();
     
-    tracing::debug!("📋 Checking {} MRU items against input: '{}'", mru_results.len(), input);
+    // 创建排序器
+    let ranker = IntelligentRanker::new();
     
-    for mru_item in mru_results {
-        // 检查 MRU 项是否匹配当前搜索
-        let title_lower = mru_item.title.to_lowercase();
-        let id_lower = mru_item.result_id.to_lowercase();
-        
-        // 判断 MRU 项是否与当前搜索相关
-        let is_match = title_lower.contains(&input_lower) || id_lower.contains(&input_lower);
-        
-        if !is_match {
-            continue;
-        }
-        
-        tracing::debug!("✅ MRU item matches search: '{}' (id: {}, plugin: {}, count: {})", 
-            mru_item.title, mru_item.result_id, mru_item.plugin_id, mru_item.count);
-        
-        // 🔥 方案 A: 先尝试从插件结果中找到并提升
-        let found_pos = plugin_results.iter().position(|r| {
-            if r.plugin_id != mru_item.plugin_id {
-                return false;
-            }
+    // 获取 MRU 结果列表
+    let mru_results = stats.get_top_results(50).await.unwrap_or_default();
+    let mru_ids: Vec<String> = mru_results.iter().map(|r| r.result_id.clone()).collect();
+    
+    // 构建使用统计数据 (id, count, last_used)
+    let mut usage_stats = Vec::new();
+    for result in &plugin_results {
+        if let Ok(count) = stats.get_result_score(&result.id, &result.plugin_id).await {
+            // 查找最后使用时间
+            let last_used = mru_results.iter()
+                .find(|mru| mru.result_id == result.id)
+                .map(|mru| mru.last_used);
             
-            let r_id_normalized = r.id.to_lowercase().replace("/", "\\");
-            let mru_id_normalized = mru_item.result_id.to_lowercase().replace("/", "\\");
-            
-            r_id_normalized == mru_id_normalized || 
-            r.title.to_lowercase() == title_lower ||
-            r_id_normalized.contains(&mru_id_normalized) ||
-            mru_id_normalized.contains(&r_id_normalized)
-        });
-        
-        if let Some(pos) = found_pos {
-            // 插件返回了这个结果，提升分数
-            let mut result = plugin_results.remove(pos);
-            result.score = 1000 + mru_item.count * 10;
-            tracing::info!("🎯 MRU boosted (from plugin): '{}' → score {}", result.title, result.score);
-            matched_mru.push(result);
-        } else {
-            // 🔥 方案 B: 插件没有返回，直接注入 MRU 结果
-            tracing::info!("💉 MRU injected (not in plugin results): '{}' (id: {})", 
-                mru_item.title, mru_item.result_id);
-            
-            // 🔥 直接创建 QueryResult（复用 MRU 的元数据）
-            let injected_result = stats.create_result_from_mru(&mru_item).await
-                .map_err(|e| format!("Failed to create MRU result: {}", e))?;
-            
-            matched_mru.push(injected_result);
+            usage_stats.push((result.id.clone(), count as u32, last_used));
         }
     }
-    let inject_elapsed = inject_start.elapsed();
     
-    // 🔥 步骤 4: 为剩余插件结果调整分数
-    let score_adjust_start = std::time::Instant::now();
-    for result in &mut plugin_results {
-        if let Ok(usage_count) = stats.get_result_score(&result.id, &result.plugin_id).await {
-            // 给常用结果加分（每次使用加10分）
-            result.score += usage_count * 10;
-        }
-    }
-    let score_elapsed = score_adjust_start.elapsed();
+    // 执行智能排序
+    ranker.rank_results(
+        &mut plugin_results,
+        &input,
+        &usage_stats,
+        &mru_ids,
+    );
     
-    // 🔥 步骤 5: 合并结果（MRU 在前，其他在后）
-    let sort_start = std::time::Instant::now();
-    matched_mru.sort_by(|a, b| b.score.cmp(&a.score));
-    plugin_results.sort_by(|a, b| b.score.cmp(&a.score));
-    
-    let mru_count = matched_mru.len();  // 先记录长度
-    let mut final_results = matched_mru;
-    final_results.extend(plugin_results);
-    let sort_elapsed = sort_start.elapsed();
+    let ranking_elapsed = ranking_start.elapsed();
     
     let total_elapsed = query_start.elapsed();
     tracing::info!(
-        "✅ Query completed: '{}' → {} results ({} MRU) in {:.2}ms (mru: {:.2}ms, plugin: {:.2}ms, inject: {:.2}ms, score: {:.2}ms, sort: {:.2}ms)",
+        "✅ Query completed: '{}' → {} results in {:.2}ms (plugin: {:.2}ms, ranking: {:.2}ms)",
         input,
-        final_results.len(),
-        mru_count,
+        plugin_results.len(),
         total_elapsed.as_secs_f64() * 1000.0,
-        mru_elapsed.as_secs_f64() * 1000.0,
         plugin_elapsed.as_secs_f64() * 1000.0,
-        inject_elapsed.as_secs_f64() * 1000.0,
-        score_elapsed.as_secs_f64() * 1000.0,
-        sort_elapsed.as_secs_f64() * 1000.0
+        ranking_elapsed.as_secs_f64() * 1000.0
     );
     
-    Ok(final_results)
+    Ok(plugin_results)
 }
 
 /// 执行操作

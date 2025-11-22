@@ -5,6 +5,7 @@ mod core;
 mod hotkey;
 mod plugin;
 mod preview;
+mod ranking;
 mod storage;
 mod statistics;
 mod utils;
