@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../stores/themeStore';
@@ -549,18 +549,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <div className="space-y-5">
                   {/* 外观微调 */}
                   <div>
-                    <h2 className="text-base font-semibold mb-4 text-gray-100">窗口外观微调</h2>
+                    <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>窗口外观微调</h2>
                     <AppearanceSettings />
                   </div>
                   
                   {/* 字体设置 */}
-                  <div className="border-t border-gray-700 pt-5">
-                    <h2 className="text-base font-semibold mb-4 text-gray-100">字体设置</h2>
+                  <div className="border-t pt-5" style={{ borderTopColor: 'var(--color-border)' }}>
+                    <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>字体设置</h2>
                     <FontSettings />
                   </div>
                   
-                  <div className="border-t border-gray-700 pt-5">
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.appearanceSettings')}</h2>
+                  <div className="border-t pt-5" style={{ borderTopColor: 'var(--color-border)' }}>
+                    <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>{t('settings.appearanceSettings')}</h2>
                     
                     <div className="space-y-3">
                       <div>
@@ -570,7 +570,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                         
                         {/* 基础主题 */}
                         <div className="mb-3">
-                          <p className="text-xs text-gray-500 mb-2">{t('settings.basicThemes')}</p>
+                          <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>{t('settings.basicThemes')}</p>
                           <div className="flex flex-wrap gap-2">
                             {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
                               <button
@@ -582,11 +582,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                     appearance: { ...config.appearance, theme: themeName }
                                   });
                                 }}
-                                className={`px-4 py-2 rounded border text-sm transition-colors ${
-                                  config.appearance.theme === themeName
-                                    ? 'border-[#007acc] bg-[#007acc]/20 text-white'
-                                    : 'border-[#555] bg-[#3c3c3c] text-gray-400 hover:border-[#666] hover:text-gray-200'
-                                }`}
+                                className="px-4 py-2 rounded border text-sm transition-colors"
+                                style={{
+                                  borderColor: config.appearance.theme === themeName ? 'var(--color-primary)' : 'var(--color-border)',
+                                  backgroundColor: config.appearance.theme === themeName ? 'var(--color-primary-alpha)' : 'var(--color-surface)',
+                                  color: config.appearance.theme === themeName ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'
+                                }}
                               >
                                 {themeName === 'dark' && '🌙 Dark'}
                                 {themeName === 'light' && '☀️ Light'}
@@ -600,7 +601,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                         {/* 流行主题 */}
                         <div>
-                          <p className="text-xs text-gray-500 mb-2">{t('settings.popularThemes')}</p>
+                          <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>{t('settings.popularThemes')}</p>
                           <div className="flex flex-wrap gap-2">
                             {[
                               { name: 'dracula', label: '🧛 Dracula' },
@@ -620,11 +621,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                     appearance: { ...config.appearance, theme: name }
                                   });
                                 }}
-                                className={`px-4 py-2 rounded border text-sm transition-colors ${
-                                  config.appearance.theme === name
-                                    ? 'border-[#007acc] bg-[#007acc]/20 text-white'
-                                    : 'border-[#555] bg-[#3c3c3c] text-gray-400 hover:border-[#666] hover:text-gray-200'
-                                }`}
+                                className="px-4 py-2 rounded border text-sm transition-colors"
+                                style={{
+                                  borderColor: config.appearance.theme === name ? 'var(--color-primary)' : 'var(--color-border)',
+                                  backgroundColor: config.appearance.theme === name ? 'var(--color-primary-alpha)' : 'var(--color-surface)',
+                                  color: config.appearance.theme === name ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'
+                                }}
                               >
                                 {label}
                               </button>
@@ -632,7 +634,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           </div>
                         </div>
                         
-                        <p className="mt-3 text-xs text-gray-500">{t('settings.themePreferredDesc')}</p>
+                        <p className="mt-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('settings.themePreferredDesc')}</p>
                       </div>
 
                       {/* 自定义主题编辑器 */}
@@ -652,7 +654,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                         >
                           🎨 {t('settings.createCustomTheme')}
                         </button>
-                        <p className="mt-2 text-xs text-gray-500">{t('settings.themeCustomDesc')}</p>
+                        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('settings.themeCustomDesc')}</p>
                       </div>
 
                       {/* 主题导入导出 */}
@@ -735,7 +737,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             </div>
                           </div>
                         </div>
-                        <p className="mt-2 text-xs text-gray-500">{t('updates.previewUpdates')}</p>
+                        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('updates.previewUpdates')}</p>
                       </div>
 
                       {/* 主题导入/导出 */}
@@ -817,7 +819,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             ...config,
                             appearance: { ...config.appearance, language: e.target.value }
                           })}
-                          className="w-full max-w-md px-3 py-2 text-sm bg-[#3c3c3c] text-gray-200 rounded border border-[#555] focus:border-[#007acc] focus:outline-none transition-colors"
+                          className="w-full max-w-md px-3 py-2 text-sm rounded border focus:outline-none transition-colors"
+                          style={{
+                            backgroundColor: 'var(--color-surface)',
+                            color: 'var(--color-text-primary)',
+                            borderColor: 'var(--color-border)'
+                          }}
                         >
                           <option value="zh-CN">中文</option>
                           <option value="en">English</option>
@@ -866,20 +873,23 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {activeTab === 'plugins' && (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.pluginSettings')}</h2>
+                    <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>{t('settings.pluginSettings')}</h2>
                     
                     {plugins.length === 0 ? (
-                      <div className="text-sm text-gray-500">{t('status.loadingPlugins')}</div>
+                      <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{t('status.loadingPlugins')}</div>
                     ) : (
                       <div className="space-y-6">
                         {plugins.map((plugin) => (
-                          <div key={plugin.id} className="bg-[#2d2d30] rounded-lg border border-[#3e3e42] overflow-hidden">
+                          <div key={plugin.id} className="rounded-lg border overflow-hidden" style={{
+                            backgroundColor: 'var(--color-surface)',
+                            borderColor: 'var(--color-border)'
+                          }}>
                             {/* 插件头部 */}
-                            <div className="px-4 py-3 border-b border-[#3e3e42]">
+                            <div className="px-4 py-3 border-b" style={{ borderBottomColor: 'var(--color-border)' }}>
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <h3 className="text-sm font-medium text-gray-200">{plugin.name}</h3>
-                                  <p className="text-xs text-gray-500 mt-0.5">{plugin.id} v{plugin.version}</p>
+                                  <h3 className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{plugin.name}</h3>
+                                  <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{plugin.id} v{plugin.version}</p>
                                 </div>
                               </div>
                             </div>
@@ -893,9 +903,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                   return (
                                     <div key={idx}>
                                       {setting.type === 'checkbox' && (
-                                        <label className="flex items-center justify-between px-4 py-3 bg-[#252526] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#2a2d2e] transition-colors">
+                                        <label className="flex items-center justify-between px-4 py-3 rounded border cursor-pointer transition-colors hover:opacity-80" style={{
+                                          backgroundColor: 'var(--color-background)',
+                                          borderColor: 'var(--color-border)'
+                                        }}>
                                           <div>
-                                            <span className="text-sm font-medium text-gray-300">{setting.label || setting.key}</span>
+                                            <span className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>{setting.label || setting.key}</span>
                                           </div>
                                           <input
                                             type="checkbox"
@@ -999,7 +1012,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                 })}
                               </div>
                             ) : (
-                              <div className="px-4 py-3 text-xs text-gray-500">{t('status.noSettingsAvailable')}</div>
+                              <div className="px-4 py-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('status.noSettingsAvailable')}</div>
                             )}
                           </div>
                         ))}
@@ -1013,13 +1026,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {activeTab === 'advanced' && (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.advancedSettings')}</h2>
+                    <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>{t('settings.advancedSettings')}</h2>
                     
                     <div className="space-y-3">
                       <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
                         <div>
-                          <span className="text-sm font-medium text-gray-300">{t('settings.startOnBoot')}</span>
-                          <p className="text-xs text-gray-500 mt-0.5">{t('settings.startOnBootDesc')}</p>
+                          <span className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>{t('settings.startOnBoot')}</span>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{t('settings.startOnBootDesc')}</p>
                         </div>
                         <input
                           type="checkbox"
@@ -1068,8 +1081,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
                   {/* 更新检查 */}
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('updates.title')}</h2>
-                    <div className="px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42]">
+                    <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>{t('updates.title')}</h2>
+                    <div className="px-4 py-3 rounded border" style={{
+                      backgroundColor: 'var(--color-surface)',
+                      borderColor: 'var(--color-border)'
+                    }}>
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="text-sm font-medium text-gray-300">{t('updates.checkForUpdates')}</span>
