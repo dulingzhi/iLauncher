@@ -188,5 +188,41 @@
     "ok": "OK",
     "loading": "Loading...",
     "delete": "Delete"
+  },
+  "systemCommands": {
+    "name": "System Commands",
+    "description": "Quickly execute system operations",
+    "shutdown": "Shutdown",
+    "shutdownDesc": "Shut down the computer immediately",
+    "restart": "Restart",
+    "restartDesc": "Restart the computer",
+    "sleep": "Sleep",
+    "sleepDesc": "Put the computer to sleep",
+    "hibernate": "Hibernate",
+    "hibernateDesc": "Hibernate the computer",
+    "lock": "Lock",
+    "lockDesc": "Lock the computer screen",
+    "signout": "Sign Out",
+    "signoutDesc": "Sign out the current user",
+    "emptyRecycleBin": "Empty Recycle Bin",
+    "emptyRecycleBinDesc": "Permanently delete all files in the recycle bin"
+  },
+  "gitProjects": {
+    "name": "Git Projects",
+    "description": "Quickly search and open Git projects",
+    "openInVscode": "Open in VSCode",
+    "openInExplorer": "Open in File Explorer",
+    "openInTerminal": "Open in Terminal"
+  },
+  "fileActions": {
+    "openFile": "Open File",
+    "openFolder": "Open Folder",
+    "openContainingFolder": "Open Containing Folder",
+    "openLocation": "Open Location",
+    "copyPath": "Copy Path",
+    "copyFile": "Copy File",
+    "copyFileName": "Copy File Name",
+    "delete": "Delete",
+    "properties": "Properties"
   }
 }

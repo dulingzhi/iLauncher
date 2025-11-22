@@ -185,5 +185,41 @@
     "ok": "确定",
     "loading": "加载中...",
     "delete": "删除"
+  },
+  "systemCommands": {
+    "name": "系统命令",
+    "description": "快速执行系统操作",
+    "shutdown": "关机",
+    "shutdownDesc": "立即关闭计算机",
+    "restart": "重启",
+    "restartDesc": "重新启动计算机",
+    "sleep": "睡眠",
+    "sleepDesc": "使计算机进入睡眠模式",
+    "hibernate": "休眠",
+    "hibernateDesc": "使计算机进入休眠状态",
+    "lock": "锁定",
+    "lockDesc": "锁定计算机屏幕",
+    "signout": "注销",
+    "signoutDesc": "注销当前用户",
+    "emptyRecycleBin": "清空回收站",
+    "emptyRecycleBinDesc": "永久删除回收站中的所有文件"
+  },
+  "gitProjects": {
+    "name": "Git 项目",
+    "description": "快速搜索和打开 Git 项目",
+    "openInVscode": "在 VSCode 中打开",
+    "openInExplorer": "在文件管理器中打开",
+    "openInTerminal": "在终端中打开"
+  },
+  "fileActions": {
+    "openFile": "打开文件",
+    "openFolder": "打开文件夹",
+    "openContainingFolder": "打开所在文件夹",
+    "openLocation": "打开所在位置",
+    "copyPath": "复制路径",
+    "copyFile": "复制文件",
+    "copyFileName": "复制文件名",
+    "delete": "删除",
+    "properties": "属性"
   }
 }
