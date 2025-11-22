@@ -142,7 +142,13 @@ pub fn run() {
                         use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
                         
                         let exe_path_str = exe_path.to_string_lossy().to_string();
-                        let parameters = format!("--mft-service --ui-pid {}", ui_pid);
+                        
+                        // 🆕 Debug 模式下添加 --skip-scan 参数
+                        let parameters = if cfg!(debug_assertions) {
+                            format!("--mft-service --skip-scan --ui-pid {}", ui_pid)
+                        } else {
+                            format!("--mft-service --ui-pid {}", ui_pid)
+                        };
                         
                         tracing::debug!("ShellExecuteW: exe={}, params={}", exe_path_str, parameters);
                         
@@ -284,6 +290,7 @@ pub fn run_mft_service(args: &[String]) {
     let mut drives_str: Option<String> = None;
     let mut scan_only = false;
     let mut ui_pid: Option<u32> = None;
+    let mut skip_scan = false;  // 🆕 debug 模式：跳过扫描，直接使用已有索引
     
     let mut i = 0;
     while i < args.len() {
@@ -302,6 +309,9 @@ pub fn run_mft_service(args: &[String]) {
             }
             "--scan-only" => {
                 scan_only = true;
+            }
+            "--skip-scan" => {
+                skip_scan = true;
             }
             "--ui-pid" => {
                 if i + 1 < args.len() {
@@ -379,49 +389,93 @@ pub fn run_mft_service(args: &[String]) {
     }
     
     // ============ 阶段 1: 全量扫描 (使用新的 prompt.txt 方案) ============
-    info!("");
-    info!("╔═══════════════════════════════════════════╗");
-    info!("║    Phase 1: Full Disk Scan                ║");
-    info!("║    (StreamingBuilder + 3-gram Index)      ║");
-    info!("╚═══════════════════════════════════════════╝");
-    info!("");
-    
-    let scan_start = std::time::Instant::now();
-    
-    // 🔥 使用新的 MultiDriveScanner（基于 prompt.txt）
-    let mut scan_config = config.clone();
-    scan_config.drives = drives.clone();
-    scan_config.output_dir = output_dir.clone();
-    
-    let scanner = mft_scanner::MultiDriveScanner::new(&scan_config);
-    
-    let scanned_drives = match scanner.scan_all() {
-        Ok(_) => {
-            info!("✅ All drives scanned successfully");
-            drives.clone()
+    let scanned_drives = if skip_scan {
+        info!("");
+        info!("╔═══════════════════════════════════════════╗");
+        info!("║    Phase 1: Skipping Scan (--skip-scan)  ║");
+        info!("║    Using Existing Index Files             ║");
+        info!("╚═══════════════════════════════════════════╝");
+        info!("");
+        info!("⏭️  Skipping MFT scan, using existing index files...");
+        
+        // 检查哪些驱动器有有效的索引文件
+        let mut existing_drives = Vec::new();
+        for drive in &drives {
+            let fst_file = format!("{}\\{}_index.fst", output_dir, drive);
+            let dat_file = format!("{}\\{}_bitmaps.dat", output_dir, drive);
+            let paths_file = format!("{}\\{}_paths.bin", output_dir, drive);
+            
+            if std::path::Path::new(&fst_file).exists() 
+                && std::path::Path::new(&dat_file).exists()
+                && std::path::Path::new(&paths_file).exists() {
+                info!("✓ Drive {}: Found existing index files", drive);
+                existing_drives.push(*drive);
+                
+                // 创建 .ready 标记文件
+                let ready_file = format!("{}\\{}.ready", output_dir, drive);
+                if let Err(e) = std::fs::write(&ready_file, format!("{}", process_id)) {
+                    warn!("Failed to create ready file {}: {}", ready_file, e);
+                } else {
+                    info!("✓ Created ready marker: {}.ready", drive);
+                }
+            } else {
+                warn!("⚠️  Drive {}: Missing index files, skipping", drive);
+            }
         }
-        Err(e) => {
-            error!("❌ Scan failed: {:#}", e);
-            Vec::new()
+        
+        if existing_drives.is_empty() {
+            error!("❌ No valid index files found! Please run without --skip-scan first.");
+            std::process::exit(1);
         }
+        
+        info!("✅ Using existing indexes for drives: {:?}", existing_drives);
+        existing_drives
+    } else {
+        info!("");
+        info!("╔═══════════════════════════════════════════╗");
+        info!("║    Phase 1: Full Disk Scan                ║");
+        info!("║    (StreamingBuilder + 3-gram Index)      ║");
+        info!("╚═══════════════════════════════════════════╝");
+        info!("");
+        
+        let scan_start = std::time::Instant::now();
+        
+        // 🔥 使用新的 MultiDriveScanner（基于 prompt.txt）
+        let mut scan_config = config.clone();
+        scan_config.drives = drives.clone();
+        scan_config.output_dir = output_dir.clone();
+        
+        let scanner = mft_scanner::MultiDriveScanner::new(&scan_config);
+        
+        match scanner.scan_all() {
+            Ok(_) => {
+                info!("✅ All drives scanned successfully");
+            }
+            Err(e) => {
+                error!("❌ Scan failed: {:#}", e);
+                std::process::exit(1);
+            }
+        }
+        
+        drives.clone()
     };
     
-    let scan_elapsed = scan_start.elapsed();
     info!("");
     info!("╔═══════════════════════════════════════════╗");
     info!("║    Scan Phase Complete                    ║");
     info!("╚═══════════════════════════════════════════╝");
-    info!("⏱️  Total scan time: {:.2}s", scan_elapsed.as_secs_f32());
     info!("✓ Successfully scanned drives: {:?}", scanned_drives);
     info!("");
     
-    // 🔥 为每个成功扫描的驱动器创建 .ready 标记文件（包含 PID）
-    for drive in &scanned_drives {
-        let ready_file = format!("{}\\{}.ready", output_dir, drive);
-        if let Err(e) = std::fs::write(&ready_file, format!("{}", process_id)) {
-            error!("❌ Failed to create ready file {}: {}", ready_file, e);
-        } else {
-            info!("✓ Created ready file: {}.ready (PID: {})", drive, process_id);
+    // 🔥 为每个成功扫描的驱动器创建 .ready 标记文件（如果还没创建的话）
+    if !skip_scan {
+        for drive in &scanned_drives {
+            let ready_file = format!("{}\\{}.ready", output_dir, drive);
+            if let Err(e) = std::fs::write(&ready_file, format!("{}", process_id)) {
+                error!("❌ Failed to create ready file {}: {}", ready_file, e);
+            } else {
+                info!("✓ Created ready file: {}.ready (PID: {})", drive, process_id);
+            }
         }
     }
     
