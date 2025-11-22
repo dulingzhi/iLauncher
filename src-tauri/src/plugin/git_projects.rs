@@ -9,9 +9,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-#[cfg(target_os = "windows")]
-use crate::mft_scanner::index_builder::{IndexQuery, PathReader};
-
 #[derive(Debug, Clone)]
 struct GitProject {
     name: String,
@@ -20,7 +17,8 @@ struct GitProject {
 
 pub struct GitProjectsPlugin {
     metadata: PluginMetadata,
-    projects: Arc<RwLock<Vec<GitProject>>>,
+    // 缓存最近查询的项目，避免重复扫描
+    cache: Arc<RwLock<Option<Vec<GitProject>>>>,
 }
 
 impl GitProjectsPlugin {
@@ -29,7 +27,7 @@ impl GitProjectsPlugin {
             metadata: PluginMetadata {
                 id: "git".to_string(),
                 name: "Git 项目".to_string(),
-                description: "搜索和打开本地 Git 项目".to_string(),
+                description: "搜索和打开本地 Git 项目（动态查询 MFT 索引）".to_string(),
                 icon: WoxImage::Emoji("📦".to_string()),
                 version: "1.0.0".to_string(),
                 author: "iLauncher".to_string(),
@@ -39,169 +37,93 @@ impl GitProjectsPlugin {
                 supported_os: vec!["windows".to_string(), "linux".to_string(), "macos".to_string()],
                 plugin_type: PluginType::Native,
             },
-            projects: Arc::new(RwLock::new(Vec::new())),
+            cache: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn init(&self) {
-        tracing::info!("Initializing Git projects plugin...");
-        
-        if let Err(e) = self.scan_projects().await {
-            tracing::warn!("Failed to scan Git projects: {}", e);
-        }
-        
-        let count = self.projects.read().await.len();
-        tracing::info!("Found {} Git projects", count);
+        tracing::info!("Git projects plugin initialized (lazy loading mode)");
     }
 
-    async fn scan_projects(&self) -> Result<()> {
-        let projects;
-        
-        // 尝试使用 MFT 索引进行快速扫描
+    /// 动态查询 Git 项目（从 file_search 插件的 MFT 索引）
+    async fn query_git_projects_dynamic(&self) -> Result<Vec<GitProject>> {
         #[cfg(target_os = "windows")]
         {
-            match self.scan_projects_with_mft().await {
-                Ok(mft_projects) => {
-                    tracing::info!("✓ MFT scan found {} Git projects", mft_projects.len());
-                    projects = mft_projects;
+            use crate::utils::paths;
+            use crate::mft_scanner::index_builder::{IndexQuery, PathReader};
+            
+            let output_dir = paths::get_mft_database_dir()?;
+            let output_dir_str = output_dir.to_string_lossy().to_string();
+            
+            let mut all_projects = Vec::new();
+            
+            // 扫描所有驱动器
+            for drive in b'C'..=b'Z' {
+                let drive_char = drive as char;
+                let drive_path = format!("{}:\\", drive_char);
+                
+                if !std::path::Path::new(&drive_path).exists() {
+                    continue;
                 }
-                Err(e) => {
-                    tracing::warn!("MFT scan failed ({}), falling back to walkdir", e);
-                    projects = self.scan_projects_fallback().await?;
+                
+                // 检查索引文件是否存在
+                let fst_file = format!("{}\\{}_index.fst", output_dir_str, drive_char);
+                if !std::path::Path::new(&fst_file).exists() {
+                    tracing::debug!("No MFT index for drive {}, skipping", drive_char);
+                    continue;
                 }
-            }
-        }
-        
-        #[cfg(not(target_os = "windows"))]
-        {
-            projects = self.scan_projects_fallback().await?;
-        }
-
-        // 去重（可能有符号链接导致重复）
-        let mut projects = projects;
-        projects.sort_by(|a, b| a.path.cmp(&b.path));
-        projects.dedup_by(|a, b| a.path == b.path);
-
-        *self.projects.write().await = projects;
-        Ok(())
-    }
-
-    /// 使用 MFT 索引快速扫描 Git 项目（Windows）
-    #[cfg(target_os = "windows")]
-    async fn scan_projects_with_mft(&self) -> Result<Vec<GitProject>> {
-        use crate::utils::paths;
-        
-        let output_dir = paths::get_mft_database_dir()?;
-        let output_dir_str = output_dir.to_string_lossy().to_string();
-        
-        let mut all_projects = Vec::new();
-        
-        // 扫描所有驱动器
-        for drive in b'C'..=b'Z' {
-            let drive_char = drive as char;
-            let drive_path = format!("{}:\\", drive_char);
-            
-            if !std::path::Path::new(&drive_path).exists() {
-                continue;
-            }
-            
-            // 检查索引文件是否存在
-            let fst_file = format!("{}\\{}_index.fst", output_dir_str, drive_char);
-            if !std::path::Path::new(&fst_file).exists() {
-                tracing::debug!("No MFT index for drive {}, skipping", drive_char);
-                continue;
-            }
-            
-            tracing::info!("🔍 Scanning drive {} with MFT index...", drive_char);
-            
-            // 打开索引
-            let query = IndexQuery::open(drive_char, &output_dir_str)?;
-            let path_reader = PathReader::open(drive_char, &output_dir_str)?;
-            
-            // 搜索 ".git" 目录
-            let file_ids = query.search(".git", 10000)?; // 限制最多 10000 个结果
-            
-            for file_id in file_ids {
-                if let Ok(path_str) = path_reader.get_path(file_id) {
-                    // 检查是否是目录（MFT 中目录路径以 \ 结尾）
-                    if !path_str.ends_with("\\") {
-                        continue;
-                    }
-                    
-                    // 检查是否是 .git 目录（路径以 \.git\ 结尾）
-                    if path_str.to_lowercase().ends_with("\\.git\\") {
-                        // 获取项目路径（.git 的父目录）
-                        let git_path = PathBuf::from(&path_str);
-                        if let Some(project_path) = git_path.parent() {
-                            let project_name = project_path
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("Unknown")
-                                .to_string();
-                            
-                            all_projects.push(GitProject {
-                                name: project_name,
-                                path: project_path.to_path_buf(),
-                            });
-                            
-                            tracing::debug!("Found Git project: {}", project_path.display());
+                
+                tracing::debug!("🔍 Querying MFT index for .git folders on drive {}", drive_char);
+                
+                // 打开索引
+                let query = IndexQuery::open(drive_char, &output_dir_str)?;
+                let path_reader = PathReader::open(drive_char, &output_dir_str)?;
+                
+                // 搜索 ".git" 目录
+                let file_ids = query.search(".git", 10000)?;
+                
+                for file_id in file_ids {
+                    if let Ok(path_str) = path_reader.get_path(file_id) {
+                        // 检查是否是目录（MFT 中目录路径以 \ 结尾）
+                        if !path_str.ends_with("\\") {
+                            continue;
+                        }
+                        
+                        // 检查是否是 .git 目录（路径以 \.git\ 结尾）
+                        if path_str.to_lowercase().ends_with("\\.git\\") {
+                            // 获取项目路径（.git 的父目录）
+                            let git_path = PathBuf::from(&path_str);
+                            if let Some(project_path) = git_path.parent() {
+                                let project_name = project_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("Unknown")
+                                    .to_string();
+                                
+                                all_projects.push(GitProject {
+                                    name: project_name,
+                                    path: project_path.to_path_buf(),
+                                });
+                            }
                         }
                     }
                 }
             }
             
-            tracing::info!("✓ Drive {} scan complete", drive_char);
-        }
-        
-        Ok(all_projects)
-    }
-
-    /// 回退方案：使用 walkdir 递归扫描（跨平台）
-    async fn scan_projects_fallback(&self) -> Result<Vec<GitProject>> {
-        use walkdir::WalkDir;
-        
-        let mut projects = Vec::new();
-        
-        // 扫描常用目录
-        let scan_dirs = self.get_scan_directories();
-        
-        for base_dir in scan_dirs {
-            if !base_dir.exists() {
-                continue;
-            }
-
-            tracing::info!("Scanning for Git projects in: {:?}", base_dir);
+            tracing::info!("✓ MFT dynamic query found {} Git projects", all_projects.len());
             
-            // 使用 WalkDir 递归扫描，但限制深度避免扫描太深
-            for entry in WalkDir::new(&base_dir)
-                .max_depth(4)  // 限制深度
-                .follow_links(false)
-                .into_iter()
-                .filter_map(|e| e.ok())
-            {
-                let path = entry.path();
-                
-                // 检查是否是 .git 目录
-                if path.is_dir() && path.file_name().and_then(|n| n.to_str()) == Some(".git") {
-                    if let Some(project_path) = path.parent() {
-                        let project_name = project_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Unknown")
-                            .to_string();
-                        
-                        projects.push(GitProject {
-                            name: project_name,
-                            path: project_path.to_path_buf(),
-                        });
-                        
-                        tracing::debug!("Found Git project: {}", project_path.display());
-                    }
-                }
-            }
+            // 去重
+            all_projects.sort_by(|a, b| a.path.cmp(&b.path));
+            all_projects.dedup_by(|a, b| a.path == b.path);
+            
+            Ok(all_projects)
         }
-
-        Ok(projects)
+        
+        #[cfg(not(target_os = "windows"))]
+        {
+            // 非 Windows 平台暂不支持动态查询
+            Err(anyhow::anyhow!("Dynamic query not supported on non-Windows platforms"))
+        }
     }
 
     fn get_scan_directories(&self) -> Vec<PathBuf> {
@@ -281,9 +203,32 @@ impl crate::plugin::Plugin for GitProjectsPlugin {
 
         tracing::debug!("Git projects plugin queried with search_term: '{}'", search_term);
 
+        // 动态查询或使用缓存
+        let projects = {
+            let cache = self.cache.read().await;
+            if cache.is_none() {
+                drop(cache); // 释放读锁
+                
+                // 首次查询，扫描项目并缓存
+                tracing::info!("First query, scanning Git projects...");
+                match self.query_git_projects_dynamic().await {
+                    Ok(scanned) => {
+                        *self.cache.write().await = Some(scanned.clone());
+                        scanned
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to query Git projects: {}", e);
+                        return Ok(Vec::new());
+                    }
+                }
+            } else {
+                cache.as_ref().unwrap().clone()
+            }
+        };
+
         if search_term.is_empty() {
             // 显示所有项目（按字母排序）
-            let projects = self.projects.read().await;
+            let projects = projects;
             let mut results: Vec<QueryResult> = projects
                 .iter()
                 .take(20)
@@ -338,7 +283,6 @@ impl crate::plugin::Plugin for GitProjectsPlugin {
 
         // 模糊搜索
         let matcher = SkimMatcherV2::default();
-        let projects = self.projects.read().await;
         let mut results: Vec<(i64, GitProject)> = Vec::new();
 
         tracing::debug!("Git projects search: searching '{}' in {} projects", search_term, projects.len());
