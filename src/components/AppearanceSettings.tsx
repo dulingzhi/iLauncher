@@ -34,12 +34,37 @@ export const AppearanceSettings: React.FC = () => {
 
   const loadConfig = async () => {
     try {
+      // 从后端配置加载
+      const backendConfig = await invoke<any>('get_config');
+      if (backendConfig?.ui) {
+        const uiConfig: AppearanceConfig = {
+          opacity: backendConfig.ui.opacity || 95,
+          blur: backendConfig.ui.blur || 10,
+          borderRadius: backendConfig.ui.border_radius || 12,
+          shadowSize: backendConfig.ui.shadow_size || 20,
+          resultHeight: backendConfig.ui.result_height || 60,
+          maxResults: backendConfig.ui.max_results || 8,
+          animationSpeed: backendConfig.ui.animation_speed || 200,
+          iconSize: backendConfig.ui.icon_size || 32,
+        };
+        setConfig(uiConfig);
+        applyConfig(uiConfig);
+      } else {
+        // 回退到localStorage
+        const saved = localStorage.getItem('appearance_config');
+        if (saved) {
+          const loaded = JSON.parse(saved);
+          setConfig(loaded);
+          applyConfig(loaded);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load appearance config:', error);
+      // 回退到localStorage
       const saved = localStorage.getItem('appearance_config');
       if (saved) {
         setConfig(JSON.parse(saved));
       }
-    } catch (error) {
-      console.error('Failed to load appearance config:', error);
     }
   };
 
@@ -86,9 +111,28 @@ export const AppearanceSettings: React.FC = () => {
 
   const saveConfig = async (newConfig: AppearanceConfig) => {
     try {
+      // 同时保存到localStorage和后端配置
       localStorage.setItem('appearance_config', JSON.stringify(newConfig));
       setConfig(newConfig);
       applyConfig(newConfig);
+      
+      // 保存到后端配置文件
+      try {
+        const backendConfig = await invoke<any>('get_config');
+        backendConfig.ui = {
+          opacity: newConfig.opacity,
+          blur: newConfig.blur,
+          border_radius: newConfig.borderRadius,
+          shadow_size: newConfig.shadowSize,
+          result_height: newConfig.resultHeight,
+          max_results: newConfig.maxResults,
+          animation_speed: newConfig.animationSpeed,
+          icon_size: newConfig.iconSize,
+        };
+        await invoke('save_config', { config: backendConfig });
+      } catch (err) {
+        console.warn('Failed to save to backend config:', err);
+      }
     } catch (error) {
       console.error('Failed to save appearance config:', error);
     }

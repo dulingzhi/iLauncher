@@ -14,6 +14,10 @@ pub struct AppConfig {
     pub appearance: AppearanceConfig,
     pub plugins: PluginsConfig,
     pub advanced: AdvancedConfig,
+    #[serde(default)]
+    pub ui: UIConfig,
+    #[serde(default)]
+    pub font: FontConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +47,92 @@ pub struct AppearanceConfig {
     #[serde(default = "default_true")]
     pub show_preview: bool,
 }
+
+// UI外观微调配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UIConfig {
+    #[serde(default = "default_opacity")]
+    pub opacity: u8,              // 窗口透明度 60-100
+    #[serde(default = "default_blur")]
+    pub blur: u8,                 // 背景模糊 0-50
+    #[serde(default = "default_border_radius")]
+    pub border_radius: u8,        // 圆角大小 0-30
+    #[serde(default = "default_shadow_size")]
+    pub shadow_size: u8,          // 阴影大小 0-50
+    #[serde(default = "default_result_height")]
+    pub result_height: u8,        // 结果项高度 40-80
+    #[serde(default = "default_max_results")]
+    pub max_results: u8,          // 最大结果数 5-20
+    #[serde(default = "default_animation_speed")]
+    pub animation_speed: u16,     // 动画速度 0-500ms
+    #[serde(default = "default_icon_size")]
+    pub icon_size: u8,            // 图标大小 16-48
+}
+
+// 字体配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FontConfig {
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
+    #[serde(default = "default_font_size")]
+    pub font_size: u8,            // 12-24
+    #[serde(default = "default_line_height")]
+    pub line_height: f32,         // 1.0-2.0
+    #[serde(default)]
+    pub letter_spacing: f32,      // -0.05 - 0.2
+    #[serde(default = "default_font_weight")]
+    pub font_weight: u16,         // 300-700
+    #[serde(default = "default_title_size")]
+    pub title_size: u8,           // 12-20
+    #[serde(default = "default_subtitle_size")]
+    pub subtitle_size: u8,        // 10-16
+}
+
+impl Default for UIConfig {
+    fn default() -> Self {
+        Self {
+            opacity: 95,
+            blur: 10,
+            border_radius: 12,
+            shadow_size: 20,
+            result_height: 60,
+            max_results: 8,
+            animation_speed: 200,
+            icon_size: 32,
+        }
+    }
+}
+
+impl Default for FontConfig {
+    fn default() -> Self {
+        Self {
+            font_family: "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif".to_string(),
+            font_size: 14,
+            line_height: 1.5,
+            letter_spacing: 0.0,
+            font_weight: 400,
+            title_size: 14,
+            subtitle_size: 12,
+        }
+    }
+}
+
+fn default_opacity() -> u8 { 95 }
+fn default_blur() -> u8 { 10 }
+fn default_border_radius() -> u8 { 12 }
+fn default_shadow_size() -> u8 { 20 }
+fn default_result_height() -> u8 { 60 }
+fn default_max_results() -> u8 { 8 }
+fn default_animation_speed() -> u16 { 200 }
+fn default_icon_size() -> u8 { 32 }
+fn default_font_family() -> String {
+    "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif".to_string()
+}
+fn default_font_size() -> u8 { 14 }
+fn default_line_height() -> f32 { 1.5 }
+fn default_font_weight() -> u16 { 400 }
+fn default_title_size() -> u8 { 14 }
+fn default_subtitle_size() -> u8 { 12 }
 
 fn default_language() -> String {
     "en".to_string()
@@ -102,6 +192,8 @@ impl Default for AppConfig {
                 enable_analytics: false,
                 cache_enabled: true,
             },
+            ui: UIConfig::default(),
+            font: FontConfig::default(),
         }
     }
 }
