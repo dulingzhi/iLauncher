@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Type, AlignLeft, Minus, Plus } from 'lucide-react';
 
 interface FontConfig {
@@ -41,18 +42,39 @@ export const FontSettings: React.FC = () => {
     loadConfig();
   }, []);
 
-  const loadConfig = () => {
+  const loadConfig = async () => {
     try {
-      const saved = localStorage.getItem('font_config');
-      if (saved) {
-        const loaded = JSON.parse(saved);
-        setConfig(loaded);
-        applyConfig(loaded);
+      // 从后端配置加载
+      const backendConfig = await invoke<any>('get_config');
+      if (backendConfig?.font) {
+        const fontConfig: FontConfig = {
+          fontFamily: backendConfig.font.font_family || DEFAULT_FONT_CONFIG.fontFamily,
+          fontSize: backendConfig.font.font_size || 14,
+          lineHeight: backendConfig.font.line_height || 1.5,
+          letterSpacing: backendConfig.font.letter_spacing || 0,
+          fontWeight: backendConfig.font.font_weight || 400,
+          titleSize: backendConfig.font.title_size || 14,
+          subtitleSize: backendConfig.font.subtitle_size || 12,
+        };
+        setConfig(fontConfig);
+        applyConfig(fontConfig);
       } else {
-        applyConfig(DEFAULT_FONT_CONFIG);
+        // 回退到localStorage
+        const saved = localStorage.getItem('font_config');
+        if (saved) {
+          const loaded = JSON.parse(saved);
+          setConfig(loaded);
+          applyConfig(loaded);
+        } else {
+          applyConfig(DEFAULT_FONT_CONFIG);
+        }
       }
     } catch (error) {
       console.error('Failed to load font config:', error);
+      const saved = localStorage.getItem('font_config');
+      if (saved) {
+        setConfig(JSON.parse(saved));
+      }
     }
   };
 
@@ -68,11 +90,29 @@ export const FontSettings: React.FC = () => {
     root.style.setProperty('--subtitle-size', `${cfg.subtitleSize}px`);
   };
 
-  const saveConfig = (newConfig: FontConfig) => {
+  const saveConfig = async (newConfig: FontConfig) => {
     try {
+      // 同时保存到localStorage和后端配置
       localStorage.setItem('font_config', JSON.stringify(newConfig));
       setConfig(newConfig);
       applyConfig(newConfig);
+      
+      // 保存到后端配置文件
+      try {
+        const backendConfig = await invoke<any>('get_config');
+        backendConfig.font = {
+          font_family: newConfig.fontFamily,
+          font_size: newConfig.fontSize,
+          line_height: newConfig.lineHeight,
+          letter_spacing: newConfig.letterSpacing,
+          font_weight: newConfig.fontWeight,
+          title_size: newConfig.titleSize,
+          subtitle_size: newConfig.subtitleSize,
+        };
+        await invoke('save_config', { config: backendConfig });
+      } catch (err) {
+        console.warn('Failed to save to backend config:', err);
+      }
     } catch (error) {
       console.error('Failed to save font config:', error);
     }

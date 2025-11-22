@@ -62,6 +62,7 @@ pub fn run() {
             commands::hide_app,
             commands::toggle_app,
             commands::load_config,
+            commands::get_config,
             commands::save_config,
             commands::toggle_mft,
             commands::get_mft_status,

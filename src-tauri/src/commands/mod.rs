@@ -184,6 +184,12 @@ pub async fn load_config(storage: State<'_, StorageManager>) -> Result<AppConfig
     storage.load_config().await.map_err(|e| e.to_string())
 }
 
+/// 获取配置（load_config 的别名）
+#[tauri::command]
+pub async fn get_config(storage: State<'_, StorageManager>) -> Result<AppConfig, String> {
+    storage.load_config().await.map_err(|e| e.to_string())
+}
+
 /// 保存配置
 #[tauri::command]
 pub async fn save_config(
