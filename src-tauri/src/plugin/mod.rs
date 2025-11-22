@@ -13,6 +13,7 @@ pub mod translator;
 pub mod devtools;
 pub mod git_projects;
 pub mod system_commands;
+pub mod execution_history;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -48,7 +49,9 @@ impl PluginManager {
             Ok(s) => s,
             Err(_) => {
                 tracing::warn!("Failed to create storage manager for plugin config");
-                let mut manager = Self { plugins: Vec::new() };
+                let mut manager = Self { 
+                    plugins: Vec::new(),
+                };
                 Self::register_default_plugins(&mut manager).await;
                 return manager;
             }
@@ -81,6 +84,15 @@ impl PluginManager {
         manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
+        manager.register(Box::new(system_commands::SystemCommandPlugin::new()));
+        
+        // 创建运行历史插件
+        let data_dir = crate::utils::paths::get_data_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let exec_history_path = data_dir.join("execution_history.json");
+        manager.register(Box::new(execution_history::ExecutionHistoryPlugin::new(
+            exec_history_path.to_string_lossy().to_string()
+        )));
         
         let clipboard = clipboard::ClipboardPlugin::new();
         clipboard.init().await;
@@ -117,6 +129,14 @@ impl PluginManager {
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
         manager.register(Box::new(system_commands::SystemCommandPlugin::new()));
+        
+        // 创建运行历史插件
+        let data_dir = crate::utils::paths::get_data_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let exec_history_path = data_dir.join("execution_history.json");
+        manager.register(Box::new(execution_history::ExecutionHistoryPlugin::new(
+            exec_history_path.to_string_lossy().to_string()
+        )));
         
         let clipboard = clipboard::ClipboardPlugin::new();
         clipboard.init().await;
@@ -206,5 +226,17 @@ impl PluginManager {
     /// 获取所有插件元数据
     pub fn get_plugins(&self) -> Vec<PluginMetadata> {
         self.plugins.iter().map(|p| p.metadata().clone()).collect()
+    }
+    
+    /// 获取运行历史插件
+    pub fn get_execution_history_plugin(&self) -> Option<&execution_history::ExecutionHistoryPlugin> {
+        for plugin in &self.plugins {
+            if plugin.metadata().id == "execution-history" {
+                // 使用unsafe downcast - 我们知道这是ExecutionHistoryPlugin
+                let ptr = plugin.as_ref() as *const dyn Plugin as *const execution_history::ExecutionHistoryPlugin;
+                return unsafe { Some(&*ptr) };
+            }
+        }
+        None
     }
 }
