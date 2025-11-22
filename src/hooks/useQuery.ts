@@ -67,10 +67,17 @@ export function useQuery() {
 }
 
 export function useExecuteAction() {
-  return useCallback(async (resultId: string, actionId: string, pluginId: string, title: string) => {
+  return useCallback(async (
+    resultId: string, 
+    actionId: string, 
+    pluginId: string, 
+    title: string,
+    subtitle: string,
+    icon: any // WoxImage type
+  ) => {
     console.log('[useExecuteAction] Called with:', { resultId, actionId, pluginId, title });
     try {
-      await invoke('execute_action', { resultId, actionId, pluginId, title });
+      await invoke('execute_action', { resultId, actionId, pluginId, title, subtitle, icon });
     } catch (error) {
       console.error('Execute action failed:', error);
     }

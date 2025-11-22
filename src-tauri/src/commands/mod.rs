@@ -88,6 +88,8 @@ pub async fn execute_action(
     action_id: String,
     plugin_id: String,
     title: String,
+    subtitle: String,
+    icon: WoxImage,
     manager: State<'_, PluginManager>,
     stats: State<'_, StatisticsManager>,
 ) -> Result<(), String> {
@@ -96,7 +98,26 @@ pub async fn execute_action(
     let _ = stats.record_plugin_usage(&plugin_id).await;
     
     // 执行操作
-    manager.execute(&result_id, &action_id, &plugin_id).await.map_err(|e| e.to_string())
+    let result = manager.execute(&result_id, &action_id, &plugin_id).await.map_err(|e| e.to_string());
+    
+    // 如果执行成功，记录到运行历史（排除一些特殊插件）
+    if result.is_ok() && !matches!(plugin_id.as_str(), 
+        "execution-history" | "settings" | "clipboard" | "plugin-manager"
+    ) {
+        if let Some(exec_history) = manager.get_execution_history_plugin() {
+            let _ = exec_history.record_execution(
+                result_id.clone(),
+                title.clone(),
+                subtitle.clone(),
+                icon.clone(),
+                plugin_id.clone(),
+                action_id.clone(),
+            ).await;
+            tracing::info!("Recorded to execution history: {}", title);
+        }
+    }
+    
+    result
 }
 
 /// 获取插件列表

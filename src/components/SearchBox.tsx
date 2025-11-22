@@ -223,7 +223,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
     
     if (!action) return;
     
-    await executeAction(result.id, actionId, result.plugin_id, result.title);
+    await executeAction(result.id, actionId, result.plugin_id, result.title, result.subtitle, result.icon);
     
     if (!action.prevent_hide) {
       await handleHide();
@@ -246,7 +246,16 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
       title: contextMenu.resultTitle
     });
     
-    await executeAction(contextMenu.resultId, actionId, contextMenu.pluginId, contextMenu.resultTitle);
+    // 从results中找到对应的结果获取subtitle和icon
+    const result = results.find(r => r.id === contextMenu.resultId);
+    await executeAction(
+      contextMenu.resultId, 
+      actionId, 
+      contextMenu.pluginId, 
+      contextMenu.resultTitle,
+      result?.subtitle || '',
+      result?.icon || { type: 'emoji', data: '📋' }
+    );
     
     if (!action.prevent_hide) {
       await handleHide();
@@ -357,7 +366,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
                     
                     const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
                     if (defaultAction) {
-                      await executeAction(result.id, defaultAction.id, result.plugin_id, result.title);
+                      await executeAction(result.id, defaultAction.id, result.plugin_id, result.title, result.subtitle, result.icon);
                       if (!defaultAction.prevent_hide) {
                         await handleHide();
                       }
