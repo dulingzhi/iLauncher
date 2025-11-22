@@ -131,14 +131,19 @@ export const FontSettings: React.FC = () => {
     <div className="space-y-6">
       {/* 字体族选择 */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+        <label className="block text-sm font-medium mb-3 flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
           <Type className="w-4 h-4" />
           字体族
         </label>
         <select
           value={config.fontFamily}
           onChange={(e) => handleChange('fontFamily', e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-blue-500"
+          className="w-full px-3 py-2 rounded border transition-all focus:outline-none"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-text-primary)'
+          }}
         >
           {FONT_FAMILIES.map((font) => (
             <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
@@ -146,7 +151,7 @@ export const FontSettings: React.FC = () => {
             </option>
           ))}
         </select>
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
           选择应用程序使用的字体
         </p>
       </div>
@@ -154,23 +159,29 @@ export const FontSettings: React.FC = () => {
       {/* 字体大小 */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+          <label className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
             <AlignLeft className="w-4 h-4" />
             基础字号
           </label>
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleChange('fontSize', Math.max(12, config.fontSize - 1))}
-              className="p-1 hover:bg-gray-700 rounded"
+              className="p-1 rounded transition-colors"
+              style={{ color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Minus className="w-4 h-4" />
             </button>
-            <span className="text-sm text-gray-400 font-mono w-12 text-center">
+            <span className="text-sm font-mono w-12 text-center" style={{ color: 'var(--color-text-secondary)' }}>
               {config.fontSize}px
             </span>
             <button
               onClick={() => handleChange('fontSize', Math.min(24, config.fontSize + 1))}
-              className="p-1 hover:bg-gray-700 rounded"
+              className="p-1 rounded transition-colors"
+              style={{ color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -182,17 +193,18 @@ export const FontSettings: React.FC = () => {
           max={24}
           value={config.fontSize}
           onChange={(e) => handleChange('fontSize', Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{ accentColor: 'var(--color-primary)' }}
         />
       </div>
 
       {/* 标题字号 */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-300">
+          <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
             标题字号
           </label>
-          <span className="text-sm text-gray-400 font-mono">
+          <span className="text-sm font-mono" style={{ color: 'var(--color-text-secondary)' }}>
             {config.titleSize}px
           </span>
         </div>
@@ -202,17 +214,18 @@ export const FontSettings: React.FC = () => {
           max={20}
           value={config.titleSize}
           onChange={(e) => handleChange('titleSize', Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{ accentColor: 'var(--color-primary)' }}
         />
       </div>
 
       {/* 副标题字号 */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-300">
+          <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
             副标题字号
           </label>
-          <span className="text-sm text-gray-400 font-mono">
+          <span className="text-sm font-mono" style={{ color: 'var(--color-text-secondary)' }}>
             {config.subtitleSize}px
           </span>
         </div>
@@ -222,17 +235,18 @@ export const FontSettings: React.FC = () => {
           max={16}
           value={config.subtitleSize}
           onChange={(e) => handleChange('subtitleSize', Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{ accentColor: 'var(--color-primary)' }}
         />
       </div>
 
       {/* 行高 */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-300">
+          <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
             行高
           </label>
-          <span className="text-sm text-gray-400 font-mono">
+          <span className="text-sm font-mono" style={{ color: 'var(--color-text-secondary)' }}>
             {config.lineHeight.toFixed(2)}
           </span>
         </div>
@@ -243,17 +257,18 @@ export const FontSettings: React.FC = () => {
           step={0.1}
           value={config.lineHeight}
           onChange={(e) => handleChange('lineHeight', Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{ accentColor: 'var(--color-primary)' }}
         />
       </div>
 
       {/* 字间距 */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-300">
+          <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
             字间距
           </label>
-          <span className="text-sm text-gray-400 font-mono">
+          <span className="text-sm font-mono" style={{ color: 'var(--color-text-secondary)' }}>
             {config.letterSpacing.toFixed(2)}em
           </span>
         </div>
@@ -264,17 +279,18 @@ export const FontSettings: React.FC = () => {
           step={0.01}
           value={config.letterSpacing}
           onChange={(e) => handleChange('letterSpacing', Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{ accentColor: 'var(--color-primary)' }}
         />
       </div>
 
       {/* 字重 */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-gray-300">
+          <label className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
             字重
           </label>
-          <span className="text-sm text-gray-400 font-mono">
+          <span className="text-sm font-mono" style={{ color: 'var(--color-text-secondary)' }}>
             {config.fontWeight}
           </span>
         </div>
@@ -283,12 +299,13 @@ export const FontSettings: React.FC = () => {
             <button
               key={weight}
               onClick={() => handleChange('fontWeight', weight)}
-              className={`flex-1 px-3 py-2 rounded border transition-colors ${
-                config.fontWeight === weight
-                  ? 'border-blue-500 bg-blue-500 bg-opacity-20 text-white'
-                  : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
-              }`}
-              style={{ fontWeight: weight }}
+              className="flex-1 px-3 py-2 rounded border transition-colors"
+              style={{
+                fontWeight: weight,
+                borderColor: config.fontWeight === weight ? 'var(--color-primary)' : 'var(--color-border)',
+                backgroundColor: config.fontWeight === weight ? 'var(--color-primary-alpha)' : 'var(--color-surface)',
+                color: config.fontWeight === weight ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'
+              }}
             >
               {weight}
             </button>
@@ -297,8 +314,8 @@ export const FontSettings: React.FC = () => {
       </div>
 
       {/* 预览 */}
-      <div className="p-4 bg-gray-800 bg-opacity-50 rounded-lg space-y-3">
-        <h3 className="text-sm font-semibold text-gray-200 mb-3">预览</h3>
+      <div className="p-4 rounded-lg space-y-3" style={{ backgroundColor: 'var(--color-background)' }}>
+        <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>预览</h3>
         <div
           className="space-y-2"
           style={{
@@ -307,12 +324,13 @@ export const FontSettings: React.FC = () => {
             lineHeight: config.lineHeight,
             letterSpacing: `${config.letterSpacing}em`,
             fontWeight: config.fontWeight,
+            color: 'var(--color-text-primary)'
           }}
         >
           <div style={{ fontSize: `${config.titleSize}px`, fontWeight: 600 }}>
             这是标题文本 This is Title Text
           </div>
-          <div style={{ fontSize: `${config.subtitleSize}px`, opacity: 0.7 }}>
+          <div style={{ fontSize: `${config.subtitleSize}px`, color: 'var(--color-text-muted)' }}>
             这是副标题文本 This is subtitle text
           </div>
           <div>
@@ -325,7 +343,13 @@ export const FontSettings: React.FC = () => {
       {/* 重置按钮 */}
       <button
         onClick={resetToDefault}
-        className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors text-gray-300"
+        className="w-full px-4 py-2 rounded transition-colors"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          color: 'var(--color-text-secondary)'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-surface)'}
       >
         恢复默认字体设置
       </button>
