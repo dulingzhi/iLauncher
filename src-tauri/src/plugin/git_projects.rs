@@ -6,8 +6,6 @@ use async_trait::async_trait;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
 struct GitProject {
@@ -17,8 +15,6 @@ struct GitProject {
 
 pub struct GitProjectsPlugin {
     metadata: PluginMetadata,
-    // 缓存最近查询的项目，避免重复扫描
-    cache: Arc<RwLock<Option<Vec<GitProject>>>>,
 }
 
 impl GitProjectsPlugin {
@@ -37,12 +33,11 @@ impl GitProjectsPlugin {
                 supported_os: vec!["windows".to_string(), "linux".to_string(), "macos".to_string()],
                 plugin_type: PluginType::Native,
             },
-            cache: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn init(&self) {
-        tracing::info!("Git projects plugin initialized (lazy loading mode)");
+        tracing::info!("Git projects plugin initialized (dynamic query mode - no cache)");
     }
 
     /// 动态查询 Git 项目（从 file_search 插件的 MFT 索引）
@@ -79,8 +74,10 @@ impl GitProjectsPlugin {
                 let query = IndexQuery::open(drive_char, &output_dir_str)?;
                 let path_reader = PathReader::open(drive_char, &output_dir_str)?;
                 
-                // 搜索 ".git" 目录
+                // 搜索包含 ".git" 的路径（MFT 3-gram 会匹配路径中的任何片段）
                 let file_ids = query.search(".git", 10000)?;
+                
+                tracing::debug!("Found {} potential .git entries", file_ids.len());
                 
                 for file_id in file_ids {
                     if let Ok(path_str) = path_reader.get_path(file_id) {
@@ -203,26 +200,15 @@ impl crate::plugin::Plugin for GitProjectsPlugin {
 
         tracing::debug!("Git projects plugin queried with search_term: '{}'", search_term);
 
-        // 动态查询或使用缓存
-        let projects = {
-            let cache = self.cache.read().await;
-            if cache.is_none() {
-                drop(cache); // 释放读锁
-                
-                // 首次查询，扫描项目并缓存
-                tracing::info!("First query, scanning Git projects...");
-                match self.query_git_projects_dynamic().await {
-                    Ok(scanned) => {
-                        *self.cache.write().await = Some(scanned.clone());
-                        scanned
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to query Git projects: {}", e);
-                        return Ok(Vec::new());
-                    }
-                }
-            } else {
-                cache.as_ref().unwrap().clone()
+        // 每次动态查询 MFT 索引
+        let projects = match self.query_git_projects_dynamic().await {
+            Ok(scanned) => {
+                tracing::debug!("Found {} Git projects from MFT", scanned.len());
+                scanned
+            }
+            Err(e) => {
+                tracing::error!("Failed to query Git projects: {}", e);
+                return Ok(Vec::new());
             }
         };
 
