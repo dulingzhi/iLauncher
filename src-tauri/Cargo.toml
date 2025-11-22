@@ -52,6 +52,9 @@ urlencoding = "2"
 rustc-hash = "2"  # 高性能哈希
 rayon = "1.10"    # 并行计算
 
+# HTTP客户端
+reqwest = { version = "0.12", features = ["json"] }
+
 # 🔥 prompt.txt 技术栈：压缩索引
 bumpalo = { version = "3.14", features = ["collections"] }  # Arena 分配器
 roaring = "0.11"  # RoaringBitmap 压缩位图
