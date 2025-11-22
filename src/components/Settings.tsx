@@ -8,6 +8,7 @@ import { applyTheme, Theme, themes } from '../theme';
 import { ThemeEditor } from './ThemeEditor';
 import { HotkeyRecorder } from './HotkeyRecorder';
 import { UpdateChecker } from './UpdateChecker';
+import { AppearanceSettings } from './AppearanceSettings';
 
 interface AppConfig {
   general: {
@@ -349,7 +350,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {/* Appearance 设置 */}
               {activeTab === 'appearance' && (
                 <div className="space-y-5">
+                  {/* 外观微调 */}
                   <div>
+                    <h2 className="text-base font-semibold mb-4 text-gray-100">窗口外观微调</h2>
+                    <AppearanceSettings />
+                  </div>
+                  
+                  <div className="border-t border-gray-700 pt-5">
                     <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.appearanceSettings')}</h2>
                     
                     <div className="space-y-3">
