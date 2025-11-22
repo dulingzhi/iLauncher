@@ -279,6 +279,8 @@ impl crate::plugin::Plugin for GitProjectsPlugin {
             return Ok(Vec::new());
         };
 
+        tracing::debug!("Git projects plugin queried with search_term: '{}'", search_term);
+
         if search_term.is_empty() {
             // 显示所有项目（按字母排序）
             let projects = self.projects.read().await;
@@ -339,15 +341,40 @@ impl crate::plugin::Plugin for GitProjectsPlugin {
         let projects = self.projects.read().await;
         let mut results: Vec<(i64, GitProject)> = Vec::new();
 
-        for project in projects.iter() {
-            let name_score = matcher.fuzzy_match(&project.name, search_term).unwrap_or(0);
-            let path_score = matcher.fuzzy_match(&project.path.display().to_string(), search_term).unwrap_or(0);
-            let score = name_score.max(path_score);
+        tracing::debug!("Git projects search: searching '{}' in {} projects", search_term, projects.len());
 
-            if score > 20 {
+        for project in projects.iter() {
+            let name_lower = project.name.to_lowercase();
+            let search_lower = search_term.to_lowercase();
+            
+            // 优先使用子串匹配，其次使用模糊匹配
+            let score = if name_lower.contains(&search_lower) {
+                // 子串匹配：根据匹配位置给分
+                let pos = name_lower.find(&search_lower).unwrap();
+                let s = if pos == 0 {
+                    100 // 开头匹配得分最高
+                } else {
+                    80 - (pos as i64) // 位置越靠前分数越高
+                };
+                tracing::debug!("  - '{}' substring match at pos {}, score: {}", project.name, pos, s);
+                s
+            } else {
+                // 模糊匹配
+                let name_score = matcher.fuzzy_match(&project.name, search_term).unwrap_or(0);
+                let path_score = matcher.fuzzy_match(&project.path.display().to_string(), search_term).unwrap_or(0);
+                let s = name_score.max(path_score);
+                if s > 0 {
+                    tracing::debug!("  - '{}' fuzzy match, score: {}", project.name, s);
+                }
+                s
+            };
+
+            if score > 0 {
                 results.push((score, project.clone()));
             }
         }
+
+        tracing::info!("Git projects search '{}': found {} matches", search_term, results.len());
 
         // 按分数排序
         results.sort_by(|a, b| b.0.cmp(&a.0));
