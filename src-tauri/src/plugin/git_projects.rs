@@ -45,7 +45,7 @@ impl GitProjectsPlugin {
         #[cfg(target_os = "windows")]
         {
             use crate::utils::paths;
-            use crate::mft_scanner::index_builder::{IndexQuery, PathReader};
+            use crate::mft_scanner::QUERY_CACHE;
             
             let output_dir = paths::get_mft_database_dir()?;
             let output_dir_str = output_dir.to_string_lossy().to_string();
@@ -70,9 +70,8 @@ impl GitProjectsPlugin {
                 
                 tracing::debug!("🔍 Querying MFT index for .git folders on drive {}", drive_char);
                 
-                // 打开索引
-                let query = IndexQuery::open(drive_char, &output_dir_str)?;
-                let path_reader = PathReader::open(drive_char, &output_dir_str)?;
+                // 🔥 使用缓存获取查询器和路径读取器(避免重复加载60-70ms)
+                let (query, path_reader) = QUERY_CACHE.get_both(drive_char)?;
                 
                 // 搜索包含 ".git" 的路径（MFT 3-gram 会匹配路径中的任何片段）
                 let file_ids = query.search(".git", 10000)?;
