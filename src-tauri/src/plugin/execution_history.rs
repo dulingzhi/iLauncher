@@ -46,15 +46,32 @@ impl ExecutionHistoryPlugin {
                 plugin_type: PluginType::Native,
             },
             history: Arc::new(RwLock::new(Vec::new())),
-            storage_path,
+            storage_path: storage_path.clone(),
         };
         
-        // 加载历史记录
-        if let Err(e) = plugin.load_blocking() {
-            tracing::warn!("Failed to load execution history: {}", e);
-        }
+        // 异步加载历史记录
+        let history_clone = plugin.history.clone();
+        tokio::spawn(async move {
+            if let Err(e) = Self::load_async(&storage_path, history_clone).await {
+                tracing::warn!("Failed to load execution history: {}", e);
+            }
+        });
         
         plugin
+    }
+    
+    /// 异步加载历史记录
+    async fn load_async(storage_path: &str, history: Arc<RwLock<Vec<ExecutionRecord>>>) -> Result<()> {
+        if !std::path::Path::new(storage_path).exists() {
+            return Ok(());
+        }
+        
+        let content = tokio::fs::read_to_string(storage_path).await?;
+        let records: Vec<ExecutionRecord> = serde_json::from_str(&content)?;
+        
+        *history.write().await = records;
+        
+        Ok(())
     }
     
     /// 记录执行
@@ -137,25 +154,6 @@ impl ExecutionHistoryPlugin {
             Ok::<(), anyhow::Error>(())
         })
         .await??;
-        
-        Ok(())
-    }
-    
-    /// 加载历史（同步版本）
-    fn load_blocking(&self) -> Result<()> {
-        if !std::path::Path::new(&self.storage_path).exists() {
-            return Ok(());
-        }
-        
-        let content = std::fs::read_to_string(&self.storage_path)?;
-        let history: Vec<ExecutionRecord> = serde_json::from_str(&content)?;
-        
-        let rt = tokio::runtime::Handle::try_current();
-        if let Ok(handle) = rt {
-            handle.block_on(async {
-                *self.history.write().await = history;
-            });
-        }
         
         Ok(())
     }
