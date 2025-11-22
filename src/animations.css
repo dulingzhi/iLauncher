@@ -95,10 +95,17 @@
 
 /* 文字动画 */
 .result-title {
+  font-size: var(--title-size, 14px) !important;
+  line-height: var(--line-height, 1.5);
+  letter-spacing: var(--letter-spacing, 0em);
   transition: color var(--animation-duration, 200ms) ease;
 }
 
 .result-subtitle {
+  font-size: var(--subtitle-size, 12px) !important;
+  line-height: var(--line-height, 1.5);
+  letter-spacing: var(--letter-spacing, 0em);
+  opacity: 0.7;
   transition: opacity var(--animation-duration, 200ms) ease;
 }
 

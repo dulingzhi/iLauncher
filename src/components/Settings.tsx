@@ -9,6 +9,7 @@ import { ThemeEditor } from './ThemeEditor';
 import { HotkeyRecorder } from './HotkeyRecorder';
 import { UpdateChecker } from './UpdateChecker';
 import { AppearanceSettings } from './AppearanceSettings';
+import { FontSettings } from './FontSettings';
 
 interface AppConfig {
   general: {
@@ -354,6 +355,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <div>
                     <h2 className="text-base font-semibold mb-4 text-gray-100">窗口外观微调</h2>
                     <AppearanceSettings />
+                  </div>
+                  
+                  {/* 字体设置 */}
+                  <div className="border-t border-gray-700 pt-5">
+                    <h2 className="text-base font-semibold mb-4 text-gray-100">字体设置</h2>
+                    <FontSettings />
                   </div>
                   
                   <div className="border-t border-gray-700 pt-5">
