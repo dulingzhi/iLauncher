@@ -245,13 +245,14 @@ impl crate::plugin::Plugin for BrowserPlugin {
         let matcher = SkimMatcherV2::default();
         let mut results = Vec::new();
 
-        // 检查是否有触发词
+        // 检查是否有触发词（必须有前缀才激活）
         let (search_bookmarks, search_history, search_term) = if query.starts_with("bm ") {
             (true, false, &query[3..])
         } else if query.starts_with("his ") {
             (false, true, &query[4..])
         } else {
-            (true, true, query)
+            // 没有触发词，不激活插件
+            return Ok(Vec::new());
         };
 
         // 搜索书签

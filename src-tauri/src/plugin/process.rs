@@ -44,13 +44,14 @@ impl crate::plugin::Plugin for ProcessPlugin {
             return Ok(Vec::new());
         }
 
-        // 检查触发词
+        // 检查触发词（必须有前缀才激活）
         let (search_term, is_kill_mode) = if query.starts_with("kill ") {
             (&query[5..], true)
         } else if query.starts_with("ps ") {
             (&query[3..], false)
         } else {
-            (query, false)
+            // 没有触发词，不激活插件
+            return Ok(Vec::new());
         };
 
         if search_term.is_empty() {
