@@ -215,7 +215,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         <div 
           className="flex items-center justify-between px-6 py-3 border-b backdrop-blur-sm"
           style={{ 
-            backgroundColor: 'rgba(30, 41, 59, 0.8)',
+            backgroundColor: 'var(--settings-sidebar-bg)',
             borderBottomColor: 'var(--color-border)'
           }}
         >
@@ -1104,7 +1104,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           <div 
             className="flex items-center justify-between px-8 py-4 border-t backdrop-blur-sm"
             style={{
-              backgroundColor: 'rgba(30, 41, 59, 0.9)',
+              backgroundColor: 'var(--settings-sidebar-bg)',
               borderTopColor: 'var(--color-border)'
             }}
           >
