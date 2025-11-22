@@ -196,8 +196,8 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#1e1e1e] rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-6">
+      <div className="bg-[#1e1e1e] rounded-lg shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
         {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 bg-[#2d2d30] border-b border-[#3e3e42]">
           <div className="flex items-center gap-3">
@@ -213,7 +213,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
         </div>
 
         {/* 主题名称 */}
-        <div className="px-6 py-4 border-b border-[#3e3e42] space-y-4">
+        <div className="px-8 py-5 border-b border-[#3e3e42] space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Theme Name
@@ -310,10 +310,10 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
         {/* 内容区域 */}
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* 标签页导航 */}
-          <div className="flex border-b border-[#3e3e42] px-6">
+          <div className="flex border-b border-[#3e3e42] px-8">
             <button
               onClick={() => setActiveTab('colors')}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              className={`px-5 py-3.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
                 activeTab === 'colors'
                   ? 'border-[#007acc] text-[#007acc]'
                   : 'border-transparent text-gray-400 hover:text-gray-300'
@@ -347,10 +347,10 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
           </div>
 
           {/* 标签页内容 */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-8">
             {/* 颜色配置 */}
             {activeTab === 'colors' && (
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-8">
                 {/* 左侧：颜色编辑器 */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold text-gray-100 mb-3">Colors</h3>
@@ -500,7 +500,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
 
             {/* 外观配置 */}
             {activeTab === 'appearance' && (
-              <div className="max-w-2xl mx-auto space-y-6">
+              <div className="max-w-3xl mx-auto space-y-6">
                 <h3 className="text-base font-semibold text-gray-100 mb-4">Window Appearance</h3>
                 
                 {/* 窗口宽度 */}
@@ -605,7 +605,7 @@ export const ThemeEditor: React.FC<ThemeEditorProps> = ({ initialTheme, onSave, 
 
             {/* 字体配置 */}
             {activeTab === 'font' && (
-              <div className="max-w-2xl mx-auto space-y-6">
+              <div className="max-w-3xl mx-auto space-y-6">
                 <h3 className="text-base font-semibold text-gray-100 mb-4">Font Settings</h3>
                 
                 {/* 字体族 */}
