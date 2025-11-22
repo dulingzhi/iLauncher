@@ -1,20 +1,8 @@
 // MFT 扫描器模块 - Windows NTFS 加速
-// 🔥 基于 prompt.txt 完整技术方案重构
+// 🔥 基于 prompt.txt 完整技术方案
 
 #[cfg(target_os = "windows")]
 pub mod types;
-
-#[cfg(target_os = "windows")]
-pub mod scanner;
-
-#[cfg(target_os = "windows")]
-pub mod monitor;
-
-#[cfg(target_os = "windows")]
-pub mod database;
-
-#[cfg(target_os = "windows")]
-pub mod db_pool;
 
 #[cfg(target_os = "windows")]
 pub mod config;
@@ -40,18 +28,9 @@ pub mod delta_merger;
 pub use types::{MftFileEntry, ScanConfig, FrnMap, ParentInfo};
 
 #[cfg(target_os = "windows")]
-pub use scanner::UsnScanner;
-
-#[cfg(target_os = "windows")]
-pub use monitor::UsnMonitor;
-
-#[cfg(target_os = "windows")]
-pub use database::Database;
-
-#[cfg(target_os = "windows")]
 pub use config::load_config;
 
-// 🔥 新导出：流式构建和索引
+// 🔥 导出：流式构建和索引
 #[cfg(target_os = "windows")]
 pub use streaming_builder::StreamingBuilder;
 
