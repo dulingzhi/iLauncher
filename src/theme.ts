@@ -272,6 +272,42 @@ export const tokyoNightTheme: Theme = {
   },
 };
 
+// 极简风格主题 - 灵感来自 Windows 11 文件资源管理器
+export const minimalTheme: Theme = {
+  name: 'minimal',
+  colors: {
+    primary: '#0067c0',       // 更深的蓝色
+    secondary: '#005a9e',     // 深蓝
+    background: '#fafafa',    // 非常浅的灰色背景
+    surface: '#ffffff',       // 纯白表面
+    text: {
+      primary: '#1c1c1c',     // 接近黑色的文字
+      secondary: '#616161',   // 深灰文字
+      muted: '#9e9e9e',       // 中灰文字
+    },
+    border: '#f0f0f0',        // 极浅边框
+    hover: '#f5f5f5',         // 悬停背景
+    accent: '#0067c0',
+    primaryAlpha: 'rgba(0, 103, 192, 0.06)', // 极淡蓝色选中背景
+  },
+  appearance: {
+    window_width: 680,
+    window_height: 560,
+    transparency: 100,        // 完全不透明
+    border_radius: 12,        // 更大的圆角
+    blur_strength: 0,         // 无模糊
+  },
+  font: {
+    font_family: '-apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+    font_size: 13,
+    line_height: 1.6,
+    letter_spacing: 0.01,
+    font_weight: 400,
+    title_size: 13,
+    subtitle_size: 11,
+  },
+};
+
 export const themes: Record<string, Theme> = {
   dark: darkTheme,
   light: lightTheme,
@@ -285,6 +321,7 @@ export const themes: Record<string, Theme> = {
   'one-dark': oneDarkTheme,
   catppuccin: catppuccinTheme,
   'tokyo-night': tokyoNightTheme,
+  minimal: minimalTheme,
 };
 
 export const getTheme = (name: string): Theme => {

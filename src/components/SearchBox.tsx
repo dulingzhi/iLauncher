@@ -336,7 +336,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
             color: 'var(--color-text-muted)',
             backgroundColor: 'var(--color-surface)'
           }}>
-            Search Results
+            {t('search.searchResults')}
           </div>
           
           {/* 结果列表 */}

@@ -3,7 +3,8 @@
     "placeholder": "Type to search...",
     "loading": "Loading...",
     "noResults": "No results",
-    "rightClickForActions": "Right-click for more actions"
+    "rightClickForActions": "Right-click for more actions",
+    "searchResults": "Search Results"
   },
   "actions": {
     "open": "Open",
@@ -24,6 +25,7 @@
     "plugins": "Plugins",
     "advanced": "Advanced",
     "generalSettings": "General Settings",
+    "generalSettingsDesc": "Configure core settings and behavior",
     "appearanceSettings": "Appearance Settings",
     "pluginSettings": "Plugin Settings",
     "advancedSettings": "Advanced Settings",
@@ -54,6 +56,7 @@
     "basicThemes": "Basic Themes",
     "popularThemes": "Popular Themes",
     "customTheme": "Custom Theme",
+    "createTheme": "Create Theme",
     "themes": {
       "dark": "Dark",
       "light": "Light",
@@ -109,6 +112,12 @@
     "enableCacheDesc": "Cache search results for better performance",
     "save": "Save",
     "saving": "Saving...",
+    "reset": "Reset",
+    "subtitle": "Customize your iLauncher experience",
+    "searchSettings": "Search settings...",
+    "quickActions": "Quick Actions",
+    "changesEffectNote": "Changes will take effect immediately after saving",
+    "resetSuccess": "Settings reset to last saved state",
     "saveSettings": "Save Settings",
     "saveSuccess": "Settings saved successfully",
     "saveFailed": "Failed to save settings",
