@@ -310,9 +310,11 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
           onKeyDown={handleKeyDown}
           placeholder={t('search.placeholder') || 'Type to search...'}
           autoFocus
-          className="search-input flex-1 text-base bg-transparent outline-none placeholder:text-gray-500"
+          className="search-input flex-1 text-base bg-transparent border-0 focus:outline-none focus:ring-0 focus:border-0 placeholder:text-gray-500"
           style={{ 
             color: 'var(--color-text-primary)',
+            outline: 'none',
+            boxShadow: 'none',
           }}
           tabIndex={0}
         />

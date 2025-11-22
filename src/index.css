@@ -101,10 +101,16 @@
   background: hsl(var(--muted-foreground) / 0.5);
 }
 
-/* 移除输入框聚焦时的外边框 */
+/* 移除输入框聚焦时的外边框和所有焦点样式 */
 input:focus,
-textarea:focus {
-  outline: none;
+textarea:focus,
+input:focus-visible,
+textarea:focus-visible {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
 }
 
 /* Placeholder 颜色跟随主题 */
