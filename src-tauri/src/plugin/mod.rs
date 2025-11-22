@@ -12,6 +12,7 @@ pub mod process;
 pub mod translator;
 pub mod devtools;
 pub mod git_projects;
+pub mod system_commands;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -115,6 +116,7 @@ impl PluginManager {
         manager.register(Box::new(unit_converter::UnitConverterPlugin::new()));
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
+        manager.register(Box::new(system_commands::SystemCommandPlugin::new()));
         
         let clipboard = clipboard::ClipboardPlugin::new();
         clipboard.init().await;
