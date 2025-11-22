@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod unit_converter;
 pub mod settings;
 pub mod browser;
+pub mod process;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -89,6 +90,8 @@ impl PluginManager {
         browser.init().await;
         manager.register(Box::new(browser));
         
+        manager.register(Box::new(process::ProcessPlugin::new()));
+        
         // 使用插件配置初始化文件搜索插件
         let file_search = file_search::FileSearchPlugin::new_with_config(use_mft);
         file_search.init().await;
@@ -115,6 +118,8 @@ impl PluginManager {
         let browser = browser::BrowserPlugin::new();
         browser.init().await;
         manager.register(Box::new(browser));
+        
+        manager.register(Box::new(process::ProcessPlugin::new()));
         
         let file_search = file_search::FileSearchPlugin::new();
         file_search.init().await;
