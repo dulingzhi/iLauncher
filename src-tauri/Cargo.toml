@@ -55,6 +55,10 @@ rayon = "1.10"    # 并行计算
 # HTTP客户端
 reqwest = { version = "0.12", features = ["json"] }
 
+# 哈希和加密
+md5 = "0.7"
+sha2 = "0.10"
+
 # 🔥 prompt.txt 技术栈：压缩索引
 bumpalo = { version = "3.14", features = ["collections"] }  # Arena 分配器
 roaring = "0.11"  # RoaringBitmap 压缩位图
