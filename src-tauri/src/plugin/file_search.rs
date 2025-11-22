@@ -870,9 +870,9 @@ impl FileSearchPlugin {
                                 Action {
                                     id: "open".to_string(),
                                     name: if is_dir {
-                                        "Open Folder".to_string()
+                                        "打开文件夹".to_string()
                                     } else {
-                                        "Open File".to_string()
+                                        "打开文件".to_string()
                                     },
                                     icon: Some(WoxImage::emoji("📂")),
                                     is_default: true,
@@ -881,7 +881,7 @@ impl FileSearchPlugin {
                                 },
                                 Action {
                                     id: "open_folder".to_string(),
-                                    name: "Open Containing Folder".to_string(),
+                                    name: "打开所在文件夹".to_string(),
                                     icon: Some(WoxImage::emoji("📁")),
                                     is_default: false,
                                     prevent_hide: false,
@@ -889,8 +889,32 @@ impl FileSearchPlugin {
                                 },
                                 Action {
                                     id: "copy_path".to_string(),
-                                    name: "Copy Path".to_string(),
+                                    name: "复制路径".to_string(),
                                     icon: Some(WoxImage::emoji("📋")),
+                                    is_default: false,
+                                    prevent_hide: false,
+                                    hotkey: None,
+                                },
+                                Action {
+                                    id: "copy_file".to_string(),
+                                    name: "复制文件".to_string(),
+                                    icon: Some(WoxImage::emoji("📄")),
+                                    is_default: false,
+                                    prevent_hide: false,
+                                    hotkey: None,
+                                },
+                                Action {
+                                    id: "delete".to_string(),
+                                    name: "删除".to_string(),
+                                    icon: Some(WoxImage::emoji("🗑️")),
+                                    is_default: false,
+                                    prevent_hide: false,
+                                    hotkey: None,
+                                },
+                                Action {
+                                    id: "properties".to_string(),
+                                    name: "属性".to_string(),
+                                    icon: Some(WoxImage::emoji("ℹ️")),
                                     is_default: false,
                                     prevent_hide: false,
                                     hotkey: None,
@@ -1017,6 +1041,120 @@ impl FileSearchPlugin {
             } else {
                 std::fs::remove_file(&path_buf)?;
                 tracing::info!("Deleted file: {}", path);
+            }
+            
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?
+    }
+
+    /// 复制文件到剪贴板
+    async fn copy_file_to_clipboard(result_id: &str) -> Result<()> {
+        let path = result_id.to_string();
+        
+        tokio::task::spawn_blocking(move || {
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::ffi::OsStrExt;
+                use std::ffi::OsStr;
+                use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, EmptyClipboard, SetClipboardData};
+                use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+                use windows::Win32::Foundation::HANDLE;
+                
+                unsafe {
+                    if OpenClipboard(None).is_ok() {
+                        EmptyClipboard().ok();
+                        
+                        // 构建 DROPFILES 结构
+                        let path_wide: Vec<u16> = OsStr::new(&path)
+                            .encode_wide()
+                            .chain(std::iter::once(0))
+                            .chain(std::iter::once(0)) // 双零结尾
+                            .collect();
+                        
+                        let dropfiles_size = 20; // DROPFILES 结构大小
+                        let total_size = dropfiles_size + path_wide.len() * 2;
+                        
+                        if let Ok(hglb) = GlobalAlloc(GMEM_MOVEABLE, total_size) {
+                            let ptr = GlobalLock(hglb) as *mut u8;
+                            
+                            // 填充 DROPFILES 结构
+                            std::ptr::write(ptr as *mut u32, dropfiles_size as u32); // pFiles offset
+                            std::ptr::write(ptr.add(4) as *mut i32, 0); // pt.x
+                            std::ptr::write(ptr.add(8) as *mut i32, 0); // pt.y
+                            std::ptr::write(ptr.add(12) as *mut i32, 0); // fNC
+                            std::ptr::write(ptr.add(16) as *mut i32, 1); // fWide (Unicode)
+                            
+                            // 复制路径
+                            std::ptr::copy_nonoverlapping(
+                                path_wide.as_ptr() as *const u8,
+                                ptr.add(dropfiles_size),
+                                path_wide.len() * 2,
+                            );
+                            
+                            GlobalUnlock(hglb).ok();
+                            
+                            SetClipboardData(15, HANDLE(hglb.0)).ok(); // CF_HDROP = 15
+                        }
+                        
+                        CloseClipboard().ok();
+                    }
+                }
+                tracing::info!("Copied file to clipboard: {}", path);
+            }
+            
+            #[cfg(not(target_os = "windows"))]
+            {
+                tracing::warn!("Copy file to clipboard not supported on this platform");
+            }
+            
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?
+    }
+
+    /// 显示文件属性
+    async fn show_properties(result_id: &str) -> Result<()> {
+        let path = result_id.to_string();
+        
+        tokio::task::spawn_blocking(move || {
+            #[cfg(target_os = "windows")]
+            {
+                use std::process::Command;
+                
+                // 使用 Windows Shell 命令显示属性对话框
+                Command::new("cmd")
+                    .args(["/c", "start", "", "shell:::{450D8FBA-AD25-11D0-98A8-0800361B1103}", &path])
+                    .spawn()?;
+                
+                tracing::info!("Opened properties for: {}", path);
+            }
+            
+            #[cfg(target_os = "macos")]
+            {
+                use std::process::Command;
+                
+                // macOS 使用 osascript 打开 Get Info
+                Command::new("osascript")
+                    .arg("-e")
+                    .arg(format!("tell application \"Finder\" to open information window of (POSIX file \"{}\" as alias)", path))
+                    .spawn()?;
+                
+                tracing::info!("Opened properties for: {}", path);
+            }
+            
+            #[cfg(target_os = "linux")]
+            {
+                use std::process::Command;
+                
+                // Linux 尝试使用常见的文件管理器
+                if Command::new("nautilus").args(["-s", &path]).spawn().is_ok() {
+                    tracing::info!("Opened properties with nautilus for: {}", path);
+                } else if Command::new("dolphin").args(["--select", &path]).spawn().is_ok() {
+                    tracing::info!("Opened properties with dolphin for: {}", path);
+                } else {
+                    tracing::warn!("No supported file manager found");
+                }
             }
             
             Ok::<(), anyhow::Error>(())
@@ -1197,16 +1335,24 @@ impl Plugin for FileSearchPlugin {
                 tracing::info!("Executing 'copy_path' action");
                 Self::copy_to_clipboard(result_id).await?;
             }
+            "copy_file" => {
+                tracing::info!("Executing 'copy_file' action");
+                Self::copy_file_to_clipboard(result_id).await?;
+            }
+            "delete" => {
+                tracing::info!("Executing 'delete' action");
+                Self::delete_file(result_id).await?;
+            }
+            "properties" => {
+                tracing::info!("Executing 'properties' action");
+                Self::show_properties(result_id).await?;
+            }
             "copy_name" => {
                 tracing::info!("Executing 'copy_name' action");
                 let path_buf = PathBuf::from(result_id);
                 if let Some(file_name) = path_buf.file_name() {
                     Self::copy_to_clipboard(&file_name.to_string_lossy()).await?;
                 }
-            }
-            "delete" => {
-                tracing::info!("Executing 'delete' action");
-                Self::delete_file(result_id).await?;
             }
             _ => {
                 tracing::warn!("Unknown action_id: {}", action_id);
