@@ -17,6 +17,24 @@ export interface Theme {
     accent: string;
     primaryAlpha: string; // 选中状态背景色
   };
+  // 窗口外观设置（可选）
+  appearance?: {
+    window_width: number;      // 窗口宽度 600-1200
+    window_height: number;     // 窗口高度 400-800
+    transparency: number;      // 透明度 50-100
+    border_radius: number;     // 圆角大小 0-20
+    blur_strength: number;     // 背景模糊强度 0-20
+  };
+  // 字体设置（可选）
+  font?: {
+    font_family: string;
+    font_size: number;         // 12-24px
+    line_height: number;       // 1.0-2.0
+    letter_spacing: number;    // -0.05 - 0.2em
+    font_weight: number;       // 300-700
+    title_size: number;        // 12-20px
+    subtitle_size: number;     // 10-16px
+  };
 }
 
 export const darkTheme: Theme = {
@@ -276,6 +294,7 @@ export const getTheme = (name: string): Theme => {
 export const applyTheme = (theme: Theme) => {
   const root = document.documentElement;
   
+  // 应用颜色配置
   root.style.setProperty('--color-primary', theme.colors.primary);
   root.style.setProperty('--color-secondary', theme.colors.secondary);
   root.style.setProperty('--color-background', theme.colors.background);
@@ -287,4 +306,24 @@ export const applyTheme = (theme: Theme) => {
   root.style.setProperty('--color-hover', theme.colors.hover);
   root.style.setProperty('--color-accent', theme.colors.accent);
   root.style.setProperty('--color-primary-alpha', theme.colors.primaryAlpha);
+
+  // 应用窗口外观配置（如果有）
+  if (theme.appearance) {
+    root.style.setProperty('--window-width', `${theme.appearance.window_width}px`);
+    root.style.setProperty('--window-height', `${theme.appearance.window_height}px`);
+    root.style.setProperty('--window-opacity', (theme.appearance.transparency / 100).toString());
+    root.style.setProperty('--border-radius', `${theme.appearance.border_radius}px`);
+    root.style.setProperty('--blur-strength', `${theme.appearance.blur_strength}px`);
+  }
+
+  // 应用字体配置（如果有）
+  if (theme.font) {
+    root.style.setProperty('--font-family', theme.font.font_family);
+    root.style.setProperty('--font-size', `${theme.font.font_size}px`);
+    root.style.setProperty('--line-height', theme.font.line_height.toString());
+    root.style.setProperty('--letter-spacing', `${theme.font.letter_spacing}em`);
+    root.style.setProperty('--font-weight', theme.font.font_weight.toString());
+    root.style.setProperty('--title-size', `${theme.font.title_size}px`);
+    root.style.setProperty('--subtitle-size', `${theme.font.subtitle_size}px`);
+  }
 };
