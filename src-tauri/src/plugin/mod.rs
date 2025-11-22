@@ -7,6 +7,7 @@ pub mod web_search;
 pub mod clipboard;
 pub mod unit_converter;
 pub mod settings;
+pub mod browser;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -84,6 +85,10 @@ impl PluginManager {
         app_search.init().await;
         manager.register(Box::new(app_search));
         
+        let browser = browser::BrowserPlugin::new();
+        browser.init().await;
+        manager.register(Box::new(browser));
+        
         // 使用插件配置初始化文件搜索插件
         let file_search = file_search::FileSearchPlugin::new_with_config(use_mft);
         file_search.init().await;
@@ -106,6 +111,10 @@ impl PluginManager {
         let app_search = app_search::AppSearchPlugin::new();
         app_search.init().await;
         manager.register(Box::new(app_search));
+        
+        let browser = browser::BrowserPlugin::new();
+        browser.init().await;
+        manager.register(Box::new(browser));
         
         let file_search = file_search::FileSearchPlugin::new();
         file_search.init().await;
