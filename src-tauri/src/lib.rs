@@ -101,7 +101,7 @@ pub fn run() {
             
             // 如果启用了 MFT，启动 MFT Service 子进程（需要管理员权限）
             #[cfg(target_os = "windows")]
-            {
+            let actual_use_mft = {
                 // 读取 file_search 插件配置
                 let storage_for_config = crate::storage::StorageManager::new()
                     .expect("Failed to create storage manager");
@@ -115,6 +115,8 @@ pub fn run() {
                     .and_then(|cfg| cfg.get("use_mft"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true); // 默认启用
+                
+                let mut mft_launch_success = false;
                 
                 if use_mft {
                     tracing::info!("🚀 MFT is enabled in file_search plugin, starting MFT service with admin rights...");
@@ -163,6 +165,7 @@ pub fn run() {
                                 tracing::info!("✓ MFT service launch requested with admin elevation via ShellExecuteW");
                                 tracing::info!("  UI PID: {}, Service will auto-exit when UI closes", ui_pid);
                                 tracing::info!("  User will see UAC prompt if not running as admin");
+                                mft_launch_success = true;
                             } else {
                                 tracing::error!("❌ ShellExecuteW failed with code: {:?}", result.0 as isize);
                                 tracing::warn!("  Falling back to BFS mode");
@@ -172,7 +175,13 @@ pub fn run() {
                 } else {
                     tracing::info!("⚡ MFT is disabled in file_search plugin, will use BFS scanning mode");
                 }
-            }
+                
+                // 🔥 返回实际是否使用 MFT (只有配置启用且启动成功才返回 true)
+                use_mft && mft_launch_success
+            };
+            
+            #[cfg(not(target_os = "windows"))]
+            let actual_use_mft = false;
             
             // 初始化统计管理器
             let statistics_manager = statistics::StatisticsManager::new()
@@ -188,8 +197,9 @@ pub fn run() {
             clipboard::ClipboardManager::start_monitoring(app_handle);
             
             // 初始化插件管理器（阻塞等待异步初始化）
+            // 🔥 传入实际的 MFT 状态（启动失败则强制为 false）
             let plugin_manager = tauri::async_runtime::block_on(async {
-                plugin::PluginManager::new().await
+                plugin::PluginManager::new_with_mft_override(Some(actual_use_mft)).await
             });
             app.manage(plugin_manager);
             
