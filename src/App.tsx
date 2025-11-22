@@ -7,6 +7,7 @@ import { PluginManager } from "./components/PluginManager";
 import ClipboardHistory from "./components/ClipboardHistory";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { Toast } from "./components/Toast";
+import { HotkeyGuide } from "./components/HotkeyGuide";
 import { useAppStore } from "./store/useAppStore";
 import { useConfigStore } from "./store/useConfigStore";
 import { useToast } from "./hooks/useToast";
@@ -25,6 +26,7 @@ const VIEW_CONFIGS = {
 function App() {
   const [currentView, setCurrentView] = useState<View>('search');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [showHotkeyGuide, setShowHotkeyGuide] = useState(false);
   const results = useAppStore((state) => state.results);
   const selectedIndex = useAppStore((state) => state.selectedIndex);
   const { config, loadConfig } = useConfigStore();
@@ -149,6 +151,11 @@ function App() {
         />
       )}
       
+      {/* 快捷键指南 */}
+      {showHotkeyGuide && (
+        <HotkeyGuide onClose={() => setShowHotkeyGuide(false)} />
+      )}
+      
       {currentView === 'search' ? (
         <div className="w-full flex gap-4 p-4">
           {/* 搜索框区域 */}
@@ -160,6 +167,7 @@ function App() {
               onOpenSettings={() => setCurrentView('settings')} 
               onOpenPlugins={() => setCurrentView('plugins')}
               onOpenClipboard={() => setCurrentView('clipboard')}
+              onShowHotkeyGuide={() => setShowHotkeyGuide(true)}
             />
           </div>
           

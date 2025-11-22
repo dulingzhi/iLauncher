@@ -14,9 +14,10 @@ interface SearchBoxProps {
   onOpenSettings: () => void;
   onOpenPlugins: () => void;
   onOpenClipboard: () => void;
+  onShowHotkeyGuide: () => void;
 }
 
-export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: SearchBoxProps) {
+export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onShowHotkeyGuide }: SearchBoxProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
@@ -117,6 +118,13 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard }: Se
   }, []);
   
   const handleKeyDown = async (e: React.KeyboardEvent) => {
+    // 快捷键指南
+    if ((e.key === '?' && !e.shiftKey) || e.key === 'F1') {
+      e.preventDefault();
+      onShowHotkeyGuide();
+      return;
+    }
+    
     // 如果右键菜单显示中，处理上下键选择操作
     if (contextMenu && contextMenu.actions.length > 0) {
       switch (e.key) {
