@@ -11,14 +11,44 @@ export interface AppConfig {
     search_delay: number;
   };
   appearance: {
+    // Theme settings
     theme: string;
+    custom_theme?: {
+      name: string;
+      colors: {
+        primary: string;
+        secondary: string;
+        background: string;
+        surface: string;
+        text: {
+          primary: string;
+          secondary: string;
+          muted: string;
+        };
+        border: string;
+        hover: string;
+        accent: string;
+        primaryAlpha: string;
+      };
+    };
+    // Window settings
     show_preview: boolean;
     opacity: number;
-    font_size: number;
-    language: string;
     window_width: number;
     window_height: number;
     transparency: number;
+    language: string;
+    // Font settings (deprecated, moved to font)
+    font_size: number;
+  };
+  font: {
+    font_family: string;
+    font_size: number;
+    line_height: number;
+    letter_spacing: number;
+    font_weight: number;
+    title_size: number;
+    subtitle_size: number;
   };
   hotkey: {
     toggle_window: string;
