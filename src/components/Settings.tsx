@@ -117,10 +117,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   }, []);
 
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
+    const handleEsc = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // 只需要切换回搜索视图，不需要隐藏窗口
-        // 窗口会在失焦时自动隐藏
+        console.log('[Settings ESC Key] Hiding app...');
+        await invoke('hide_app');
         onClose();
       }
     };
@@ -236,7 +236,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             )}
             
             <button
-              onClick={onClose}
+              onClick={async () => {
+                console.log('[Settings ESC] Hiding app...');
+                await invoke('hide_app');
+                console.log('[Settings ESC] Calling onClose...');
+                onClose();
+              }}
               className="px-3 py-1.5 text-xs rounded-lg transition-all hover:scale-105"
               style={{ 
                 backgroundColor: 'var(--color-surface)',

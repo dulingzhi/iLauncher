@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
@@ -32,6 +32,13 @@ function App() {
   const { config, loadConfig } = useConfigStore();
   const { message, type, visible, hideToast } = useToast();
   const showPreview = config?.appearance.show_preview ?? true;
+  
+  // 使用ref来保存最新的currentView，避免闭包陈旧问题
+  const currentViewRef = useRef(currentView);
+  useEffect(() => {
+    console.log('[App] Current view changed to:', currentView);
+    currentViewRef.current = currentView;
+  }, [currentView]);
 
   // 当选中项变化时更新预览
   useEffect(() => {
@@ -117,13 +124,18 @@ function App() {
       return unlisten;
     };
     
-    // 监听窗口失焦事件，自动隐藏并切换回搜索视图
+    // 监听窗口失焦事件，自动隐藏并切换回搜索视图（但设置界面除外）
     const setupBlurListener = async () => {
       const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
-        if (!focused && currentView === 'search') {// 然后隐藏窗口
+        console.log('[Blur Listener] Focus changed:', { focused, currentView: currentViewRef.current });
+        // 只在搜索视图失焦时隐藏窗口，设置界面失焦不隐藏
+        if (!focused && currentViewRef.current === 'search') {
+          console.log('[Blur Listener] Hiding app because in search view');
           setTimeout(() => {
             invoke("hide_app");
           }, 100);
+        } else if (!focused) {
+          console.log('[Blur Listener] Not hiding app, current view is:', currentViewRef.current);
         }
       });
       return unlisten;
@@ -183,7 +195,7 @@ function App() {
         </div>
       ) : (
         <div className="w-full h-full overflow-auto rounded-lg" style={{ backgroundColor: 'var(--color-background)', opacity: 0.98 }}>
-          {currentView === 'settings' && <Settings onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
+          {currentView === 'settings' && <Settings onClose={() => { setCurrentView('search'); }} />}
           {currentView === 'plugins' && <PluginManager onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
           {currentView === 'clipboard' && <ClipboardHistory onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
         </div>
