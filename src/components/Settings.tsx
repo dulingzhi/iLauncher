@@ -8,8 +8,6 @@ import { applyTheme, Theme, themes } from '../theme';
 import { ThemeEditor } from './ThemeEditor';
 import { HotkeyRecorder } from './HotkeyRecorder';
 import { UpdateChecker } from './UpdateChecker';
-import { AppearanceSettings } from './AppearanceSettings';
-import { FontSettings } from './FontSettings';
 
 interface AppConfig {
   general: {
@@ -223,7 +221,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             <div className="text-2xl">⚙️</div>
             <div>
               <h1 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>Settings</h1>
-              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Customize your iLauncher experience</p>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{t('settings.subtitle')}</p>
             </div>
           </div>
           
@@ -269,7 +267,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search settings..."
+                placeholder={t('settings.searchSettings')}
                 className="w-full px-3 py-2 text-xs rounded-lg border-0 transition-all focus:ring-2"
                 style={{
                   backgroundColor: 'var(--color-background)',
@@ -302,7 +300,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             {/* 快捷操作 */}
             <div className="mt-6 pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
               <div className="text-xs font-medium mb-2 px-3" style={{ color: 'var(--color-text-muted)' }}>
-                Quick Actions
+                {t('settings.quickActions')}
               </div>
               <button
                 onClick={() => {
@@ -318,7 +316,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 }}
               >
                 <span>🎨</span>
-                <span>Create Theme</span>
+                <span>{t('settings.createTheme')}</span>
               </button>
             </div>
           </div>
@@ -336,7 +334,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       {t('settings.generalSettings')}
                     </h2>
                     <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                      Configure core settings and behavior
+                      {t('settings.generalSettingsDesc')}
                     </p>
                   </div>
                     
@@ -549,19 +547,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {/* Appearance 设置 */}
               {activeTab === 'appearance' && (
                 <div className="space-y-5">
-                  {/* 外观微调 */}
                   <div>
-                    <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>窗口外观微调</h2>
-                    <AppearanceSettings />
-                  </div>
-                  
-                  {/* 字体设置 */}
-                  <div className="border-t pt-5" style={{ borderTopColor: 'var(--color-border)' }}>
-                    <h2 className="text-base font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>字体设置</h2>
-                    <FontSettings />
-                  </div>
-                  
-                  <div className="border-t pt-5" style={{ borderTopColor: 'var(--color-border)' }}>
                     <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>{t('settings.appearanceSettings')}</h2>
                     
                     <div className="space-y-3">
@@ -574,7 +560,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                         <div className="mb-3">
                           <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>{t('settings.basicThemes')}</p>
                           <div className="flex flex-wrap gap-2">
-                            {['dark', 'light', 'blue', 'purple', 'green'].map((themeName) => (
+                            {['dark', 'light', 'blue', 'purple', 'green', 'minimal'].map((themeName) => (
                               <button
                                 key={themeName}
                                 onClick={() => {
@@ -596,6 +582,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                                 {themeName === 'blue' && '💙 Blue'}
                                 {themeName === 'purple' && '💜 Purple'}
                                 {themeName === 'green' && '💚 Green'}
+                                {themeName === 'minimal' && '✨ Minimal'}
                               </button>
                             ))}
                           </div>
@@ -831,40 +818,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           <option value="zh-CN">中文</option>
                           <option value="en">English</option>
                         </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-300">
-                          {t('settings.windowWidth')}: {config.appearance.window_width}px
-                        </label>
-                        <input
-                          type="range"
-                          min="600"
-                          max="1200"
-                          value={config.appearance.window_width}
-                          onChange={(e) => setConfig({
-                            ...config,
-                            appearance: { ...config.appearance, window_width: parseInt(e.target.value) }
-                          })}
-                          className="w-full max-w-md accent-[#007acc]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-300">
-                          {t('settings.transparency')}: {config.appearance.transparency}%
-                        </label>
-                        <input
-                          type="range"
-                          min="50"
-                          max="100"
-                          value={config.appearance.transparency}
-                          onChange={(e) => setConfig({
-                            ...config,
-                            appearance: { ...config.appearance, transparency: parseInt(e.target.value) }
-                          })}
-                          className="w-full max-w-md accent-[#007acc]"
-                        />
                       </div>
                     </div>
                   </div>
@@ -1112,7 +1065,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           >
             <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
               <span>💡</span>
-              <span>Changes will take effect immediately after saving</span>
+              <span>{t('settings.changesEffectNote')}</span>
             </div>
             
             <div className="flex items-center gap-3">
@@ -1120,7 +1073,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 onClick={() => {
                   if (globalConfig) {
                     setConfig(globalConfig as any);
-                    showToast('Settings reset to last saved state', 'success');
+                    showToast(t('settings.resetSuccess'), 'success');
                   }
                 }}
                 className="px-4 py-2 text-sm rounded-lg transition-all hover:scale-105"
@@ -1129,7 +1082,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   color: 'var(--color-text-secondary)'
                 }}
               >
-                Reset
+                {t('settings.reset')}
               </button>
               
               <button

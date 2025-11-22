@@ -3,7 +3,8 @@
     "placeholder": "输入以搜索...",
     "loading": "加载中...",
     "noResults": "无结果",
-    "rightClickForActions": "右键单击查看更多操作"
+    "rightClickForActions": "右键单击查看更多操作",
+    "searchResults": "搜索结果"
   },
   "actions": {
     "open": "打开",
@@ -24,6 +25,7 @@
     "plugins": "插件",
     "advanced": "高级",
     "generalSettings": "常规设置",
+    "generalSettingsDesc": "配置核心设置和行为",
     "appearanceSettings": "外观设置",
     "pluginSettings": "插件设置",
     "advancedSettings": "高级设置",
@@ -54,6 +56,7 @@
     "basicThemes": "基础主题",
     "popularThemes": "流行主题",
     "customTheme": "自定义主题",
+    "createTheme": "创建主题",
     "themes": {
       "dark": "暗色",
       "light": "亮色",
@@ -109,6 +112,12 @@
     "enableCacheDesc": "缓存搜索结果以提高性能",
     "save": "保存",
     "saving": "保存中...",
+    "reset": "重置",
+    "subtitle": "自定义您的 iLauncher 体验",
+    "searchSettings": "搜索设置...",
+    "quickActions": "快捷操作",
+    "changesEffectNote": "保存后更改将立即生效",
+    "resetSuccess": "设置已重置为上次保存的状态",
     "saveSettings": "保存设置",
     "saveSuccess": "设置保存成功",
     "saveFailed": "保存设置失败",
