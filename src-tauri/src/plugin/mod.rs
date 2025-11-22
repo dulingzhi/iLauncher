@@ -32,6 +32,11 @@ pub struct PluginManager {
 
 impl PluginManager {
     pub async fn new() -> Self {
+        Self::new_with_mft_override(None).await
+    }
+    
+    /// 创建插件管理器（可选覆盖 MFT 状态）
+    pub async fn new_with_mft_override(mft_override: Option<bool>) -> Self {
         // 加载插件配置（从存储管理器）
         let storage = match crate::storage::StorageManager::new() {
             Ok(s) => s,
@@ -44,11 +49,21 @@ impl PluginManager {
         };
         
         let file_search_config = storage.get_plugin_config("file_search").await.ok();
-        let use_mft = file_search_config
+        let configured_use_mft = file_search_config
             .as_ref()
             .and_then(|cfg| cfg.get("use_mft"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true); // 默认启用
+        
+        // 🔥 如果有覆盖值，使用覆盖值；否则使用配置值
+        let use_mft = mft_override.unwrap_or(configured_use_mft);
+        
+        // 🔥 如果覆盖值与配置值不同，记录日志
+        if let Some(override_val) = mft_override {
+            if override_val != configured_use_mft {
+                tracing::info!("🔄 MFT mode overridden: config={}, actual={}", configured_use_mft, override_val);
+            }
+        }
         
         let mut manager = Self {
             plugins: Vec::new(),
