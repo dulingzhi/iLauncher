@@ -8,7 +8,9 @@ use fuzzy_matcher::FuzzyMatcher;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use walkdir::WalkDir;
+
+#[cfg(target_os = "windows")]
+use crate::mft_scanner::index_builder::{IndexQuery, PathReader};
 
 #[derive(Debug, Clone)]
 struct GitProject {
@@ -53,6 +55,111 @@ impl GitProjectsPlugin {
     }
 
     async fn scan_projects(&self) -> Result<()> {
+        let projects;
+        
+        // 尝试使用 MFT 索引进行快速扫描
+        #[cfg(target_os = "windows")]
+        {
+            match self.scan_projects_with_mft().await {
+                Ok(mft_projects) => {
+                    tracing::info!("✓ MFT scan found {} Git projects", mft_projects.len());
+                    projects = mft_projects;
+                }
+                Err(e) => {
+                    tracing::warn!("MFT scan failed ({}), falling back to walkdir", e);
+                    projects = self.scan_projects_fallback().await?;
+                }
+            }
+        }
+        
+        #[cfg(not(target_os = "windows"))]
+        {
+            projects = self.scan_projects_fallback().await?;
+        }
+
+        // 去重（可能有符号链接导致重复）
+        let mut projects = projects;
+        projects.sort_by(|a, b| a.path.cmp(&b.path));
+        projects.dedup_by(|a, b| a.path == b.path);
+
+        *self.projects.write().await = projects;
+        Ok(())
+    }
+
+    /// 使用 MFT 索引快速扫描 Git 项目（Windows）
+    #[cfg(target_os = "windows")]
+    async fn scan_projects_with_mft(&self) -> Result<Vec<GitProject>> {
+        use crate::utils::paths;
+        
+        let output_dir = paths::get_mft_database_dir()?;
+        let output_dir_str = output_dir.to_string_lossy().to_string();
+        
+        let mut all_projects = Vec::new();
+        
+        // 扫描所有驱动器
+        for drive in b'C'..=b'Z' {
+            let drive_char = drive as char;
+            let drive_path = format!("{}:\\", drive_char);
+            
+            if !std::path::Path::new(&drive_path).exists() {
+                continue;
+            }
+            
+            // 检查索引文件是否存在
+            let fst_file = format!("{}\\{}_index.fst", output_dir_str, drive_char);
+            if !std::path::Path::new(&fst_file).exists() {
+                tracing::debug!("No MFT index for drive {}, skipping", drive_char);
+                continue;
+            }
+            
+            tracing::info!("🔍 Scanning drive {} with MFT index...", drive_char);
+            
+            // 打开索引
+            let query = IndexQuery::open(drive_char, &output_dir_str)?;
+            let path_reader = PathReader::open(drive_char, &output_dir_str)?;
+            
+            // 搜索 ".git" 目录
+            let file_ids = query.search(".git", 10000)?; // 限制最多 10000 个结果
+            
+            for file_id in file_ids {
+                if let Ok(path_str) = path_reader.get_path(file_id) {
+                    // 检查是否是目录（MFT 中目录路径以 \ 结尾）
+                    if !path_str.ends_with("\\") {
+                        continue;
+                    }
+                    
+                    // 检查是否是 .git 目录（路径以 \.git\ 结尾）
+                    if path_str.to_lowercase().ends_with("\\.git\\") {
+                        // 获取项目路径（.git 的父目录）
+                        let git_path = PathBuf::from(&path_str);
+                        if let Some(project_path) = git_path.parent() {
+                            let project_name = project_path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("Unknown")
+                                .to_string();
+                            
+                            all_projects.push(GitProject {
+                                name: project_name,
+                                path: project_path.to_path_buf(),
+                            });
+                            
+                            tracing::debug!("Found Git project: {}", project_path.display());
+                        }
+                    }
+                }
+            }
+            
+            tracing::info!("✓ Drive {} scan complete", drive_char);
+        }
+        
+        Ok(all_projects)
+    }
+
+    /// 回退方案：使用 walkdir 递归扫描（跨平台）
+    async fn scan_projects_fallback(&self) -> Result<Vec<GitProject>> {
+        use walkdir::WalkDir;
+        
         let mut projects = Vec::new();
         
         // 扫描常用目录
@@ -94,12 +201,7 @@ impl GitProjectsPlugin {
             }
         }
 
-        // 去重（可能有符号链接导致重复）
-        projects.sort_by(|a, b| a.path.cmp(&b.path));
-        projects.dedup_by(|a, b| a.path == b.path);
-
-        *self.projects.write().await = projects;
-        Ok(())
+        Ok(projects)
     }
 
     fn get_scan_directories(&self) -> Vec<PathBuf> {
