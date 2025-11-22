@@ -125,31 +125,48 @@ pub fn run() {
                     // 获取当前 UI 进程的 PID
                     let ui_pid = std::process::id();
                     
-                    // 使用 PowerShell Start-Process -Verb RunAs 请求管理员权限
-                    // 传递 UI 进程 PID，让 Service 可以监控 UI 进程
-                    let ps_command = format!(
-                        "Start-Process -FilePath '{}' -ArgumentList '--mft-service','--ui-pid','{}' -Verb RunAs -WindowStyle Hidden",
-                        exe_path.display(),
-                        ui_pid
-                    );
+                    tracing::info!("📂 Current exe path: {:?}", exe_path);
+                    tracing::info!("🔢 UI PID: {}", ui_pid);
                     
-                    // 🔥 使用 CREATE_NO_WINDOW 标志隐藏控制台窗口
-                    use std::os::windows::process::CommandExt;
-                    const CREATE_NO_WINDOW: u32 = 0x08000000;
-                    
-                    match std::process::Command::new("powershell.exe")
-                        .args(["-WindowStyle", "Hidden", "-Command", &ps_command])
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .spawn()
-                    {
-                        Ok(child) => {
-                            tracing::info!("✓ MFT service launch requested with admin elevation (PowerShell PID: {})", child.id());
-                            tracing::info!("  UI PID: {}, Service will auto-exit when UI closes", ui_pid);
-                            tracing::info!("  User will see UAC prompt if not running as admin");
-                        }
-                        Err(e) => {
-                            tracing::error!("❌ Failed to start MFT service: {}", e);
-                            tracing::warn!("  Falling back to BFS mode");
+                    // 🔥 检查可执行文件是否存在
+                    if !exe_path.exists() {
+                        tracing::error!("❌ Executable not found: {:?}", exe_path);
+                        tracing::warn!("  Falling back to BFS mode");
+                    } else {
+                        // 🔥 使用 Windows ShellExecuteW API 直接请求管理员权限
+                        // 这比通过 PowerShell 更可靠
+                        use windows::core::HSTRING;
+                        use windows::Win32::UI::Shell::ShellExecuteW;
+                        use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+                        
+                        let exe_path_str = exe_path.to_string_lossy().to_string();
+                        let parameters = format!("--mft-service --ui-pid {}", ui_pid);
+                        
+                        tracing::debug!("ShellExecuteW: exe={}, params={}", exe_path_str, parameters);
+                        
+                        unsafe {
+                            let operation = HSTRING::from("runas");  // 请求管理员权限
+                            let file = HSTRING::from(exe_path_str.as_str());
+                            let params = HSTRING::from(parameters.as_str());
+                            
+                            let result = ShellExecuteW(
+                                None,                // hwnd
+                                &operation,          // "runas" = 请求管理员权限
+                                &file,               // 可执行文件路径
+                                &params,             // 参数
+                                None,                // 工作目录
+                                SW_HIDE,             // 隐藏窗口
+                            );
+                            
+                            // ShellExecuteW 返回值 > 32 表示成功
+                            if result.0 as isize > 32 {
+                                tracing::info!("✓ MFT service launch requested with admin elevation via ShellExecuteW");
+                                tracing::info!("  UI PID: {}, Service will auto-exit when UI closes", ui_pid);
+                                tracing::info!("  User will see UAC prompt if not running as admin");
+                            } else {
+                                tracing::error!("❌ ShellExecuteW failed with code: {:?}", result.0 as isize);
+                                tracing::warn!("  Falling back to BFS mode");
+                            }
                         }
                     }
                 } else {
