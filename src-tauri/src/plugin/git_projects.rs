@@ -80,46 +80,40 @@ impl GitProjectsPlugin {
                 tracing::debug!("Found {} potential .git entries", file_ids.len());
                 
                 let mut checked = 0;
-                let mut is_dir = 0;
                 let mut is_git_dir = 0;
                 
                 for file_id in file_ids {
                     if let Ok(path_str) = path_reader.get_path(file_id) {
                         checked += 1;
                         
-                        // 示例日志（仅前3个）
+                        // 示例日志(仅前3个)
                         if checked <= 3 {
                             tracing::debug!("  Sample path: '{}'", path_str);
                         }
                         
-                        // 检查是否是目录（MFT 中目录路径以 \ 结尾）
-                        if path_str.ends_with("\\") {
-                            is_dir += 1;
-                            
-                            // 检查是否是 .git 目录（路径以 \.git\ 结尾）
-                            if path_str.to_lowercase().ends_with("\\.git\\") {
-                                is_git_dir += 1;
-                                // 获取项目路径（.git 的父目录）
-                                let git_path = PathBuf::from(&path_str);
-                                if let Some(project_path) = git_path.parent() {
-                                    let project_name = project_path
-                                        .file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("Unknown")
-                                        .to_string();
-                                    
-                                    all_projects.push(GitProject {
-                                        name: project_name,
-                                        path: project_path.to_path_buf(),
-                                    });
-                                }
+                        // MFT 路径不带尾部反斜杠,检查是否以 \.git 结尾(排除 .gitignore 等文件)
+                        if path_str.to_lowercase().ends_with("\\.git") {
+                            is_git_dir += 1;
+                            // 获取项目路径(.git 的父目录)
+                            let git_path = PathBuf::from(&path_str);
+                            if let Some(project_path) = git_path.parent() {
+                                let project_name = project_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("Unknown")
+                                    .to_string();
+                                
+                                all_projects.push(GitProject {
+                                    name: project_name,
+                                    path: project_path.to_path_buf(),
+                                });
                             }
                         }
                     }
                 }
                 
-                tracing::debug!("  Checked: {}, IsDir: {}, IsGitDir: {}, Projects: {}", 
-                    checked, is_dir, is_git_dir, all_projects.len());
+                tracing::debug!("  Checked: {}, IsGitDir: {}, Projects: {}", 
+                    checked, is_git_dir, all_projects.len());
             }
             
             tracing::info!("✓ MFT dynamic query found {} Git projects", all_projects.len());
