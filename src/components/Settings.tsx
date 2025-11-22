@@ -78,6 +78,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { setTheme } = useThemeStore();
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, PluginConfig>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   // 从全局配置初始化本地编辑状态
   useEffect(() => {
@@ -174,11 +175,26 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
   if (loading || !config) {
     return (
-      <div className="flex items-center justify-center h-full bg-[#1e1e1e]">
-        <div className="text-gray-300 text-sm">Loading settings...</div>
+      <div className="flex items-center justify-center h-full" style={{ backgroundColor: 'var(--color-background)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--color-primary)' }}></div>
+          <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading settings...</div>
+        </div>
       </div>
     );
   }
+
+  // 过滤导航项
+  const tabs = [
+    { key: 'general' as const, label: t('settings.general') || 'General', icon: '⚙️' },
+    { key: 'appearance' as const, label: t('settings.appearance') || 'Appearance', icon: '🎨' },
+    { key: 'plugins' as const, label: t('settings.plugins') || 'Plugins', icon: '🧩' },
+    { key: 'advanced' as const, label: t('settings.advanced') || 'Advanced', icon: '🔧' },
+  ];
+
+  const filteredTabs = tabs.filter(tab => 
+    tab.label.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <>
@@ -194,62 +210,151 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         />
       )}
 
-      <div className="h-full bg-[#1e1e1e] text-gray-200 flex flex-col">
-      {/* 顶部标题栏 - VS Code 风格 */}
-      <div className="flex items-center justify-between px-6 py-2 bg-[#2d2d30] border-b border-[#3e3e42]">
-        <h1 className="text-sm font-medium text-gray-100">Settings</h1>
-        <button
-          onClick={async () => {
-            await invoke('hide_app');
-            onClose();
+      <div className="h-full flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
+        {/* 顶部标题栏 - 现代简洁风格 */}
+        <div 
+          className="flex items-center justify-between px-6 py-3 border-b backdrop-blur-sm"
+          style={{ 
+            backgroundColor: 'rgba(30, 41, 59, 0.8)',
+            borderBottomColor: 'var(--color-border)'
           }}
-          className="px-3 py-1 text-xs text-gray-400 hover:text-gray-100 hover:bg-[#3e3e42] rounded transition-colors"
         >
-          Close (Esc)
-        </button>
-      </div>
-
-      {/* 主体：侧边栏 + 内容区 */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 左侧导航 - VS Code 侧边栏风格 */}
-        <div className="w-48 bg-[#252526] border-r border-[#3e3e42] overflow-y-auto flex-shrink-0">
-          <nav className="py-1">
-            {[
-              { key: 'general' as const, label: t('settings.general') || 'General' },
-              { key: 'appearance' as const, label: t('settings.appearance') || 'Appearance' },
-              { key: 'plugins' as const, label: t('settings.plugins') || 'Plugins' },
-              { key: 'advanced' as const, label: t('settings.advanced') || 'Advanced' },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`w-full px-4 py-2 text-left text-sm transition-colors ${
-                  activeTab === key
-                    ? 'bg-[#37373d] text-white border-l-2 border-[#007acc]'
-                    : 'text-gray-400 hover:bg-[#2a2d2e] hover:text-gray-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">⚙️</div>
+            <div>
+              <h1 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>Settings</h1>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Customize your iLauncher experience</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {saving && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: 'var(--color-primary-alpha)' }}>
+                <div className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--color-primary)' }}></div>
+                <span className="text-xs" style={{ color: 'var(--color-primary)' }}>Saving...</span>
+              </div>
+            )}
+            
+            <button
+              onClick={async () => {
+                await invoke('hide_app');
+                onClose();
+              }}
+              className="px-3 py-1.5 text-xs rounded-lg transition-all hover:scale-105"
+              style={{ 
+                backgroundColor: 'var(--color-surface)',
+                color: 'var(--color-text-secondary)'
+              }}
+            >
+              <span className="mr-1">✕</span> ESC
+            </button>
+          </div>
         </div>
 
-        {/* 右侧内容区 */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="max-w-4xl">
+        {/* 主体：侧边栏 + 内容区 */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* 左侧导航 - 现代卡片式风格 */}
+          <div 
+            className="w-56 p-3 border-r overflow-y-auto"
+            style={{ 
+              backgroundColor: 'var(--color-surface)',
+              borderRightColor: 'var(--color-border)'
+            }}
+          >
+            {/* 搜索框 */}
+            <div className="mb-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search settings..."
+                className="w-full px-3 py-2 text-xs rounded-lg border-0 transition-all focus:ring-2"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-primary)',
+                  outline: 'none',
+                  boxShadow: 'none'
+                }}
+              />
+            </div>
+
+            {/* 导航标签 */}
+            <nav className="space-y-1">
+              {filteredTabs.map(({ key, label, icon }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: activeTab === key ? 'var(--color-primary-alpha)' : 'transparent',
+                    color: activeTab === key ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                    borderLeft: activeTab === key ? '3px solid var(--color-primary)' : '3px solid transparent',
+                  }}
+                >
+                  <span className="text-lg">{icon}</span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+
+            {/* 快捷操作 */}
+            <div className="mt-6 pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <div className="text-xs font-medium mb-2 px-3" style={{ color: 'var(--color-text-muted)' }}>
+                Quick Actions
+              </div>
+              <button
+                onClick={() => {
+                  const currentThemeName = config.appearance.theme;
+                  const currentTheme = themes[currentThemeName];
+                  setEditingTheme(currentTheme || themes.dark);
+                  setShowThemeEditor(true);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs transition-all hover:scale-[1.02]"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-text-secondary)'
+                }}
+              >
+                <span>🎨</span>
+                <span>Create Theme</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 右侧内容区 */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-4xl mx-auto px-8 py-6">
               {/* General 设置 */}
               {activeTab === 'general' && (
-                <div className="space-y-5">
+                <div className="space-y-6">
+                  {/* 区块标题 */}
                   <div>
-                    <h2 className="text-base font-semibold mb-3 text-gray-100">{t('settings.generalSettings')}</h2>
+                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--color-text-primary)' }}>
+                      {t('settings.generalSettings')}
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                      Configure core settings and behavior
+                    </p>
+                  </div>
                     
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-300">
-                          {t('settings.hotkey')}
-                        </label>
+                  {/* 设置卡片组 */}
+                  <div className="space-y-4">
+                    {/* 热键设置 */}
+                    <div 
+                      className="p-5 rounded-xl border transition-all hover:shadow-lg"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        borderColor: 'var(--color-border)'
+                      }}
+                    >
+                      <label className="block">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-lg">⌨️</span>
+                          <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                            {t('settings.hotkey')}
+                          </span>
+                        </div>
                         <HotkeyRecorder
                           value={config.general.hotkey}
                           onChange={(hotkey) => setConfig({
@@ -265,17 +370,37 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           }}
                         />
                         {hotkeyError && (
-                          <p className="mt-1.5 text-xs text-red-400">{hotkeyError}</p>
+                          <p className="mt-2 text-xs" style={{ color: '#ef4444' }}>{hotkeyError}</p>
                         )}
-                        <p className="mt-1.5 text-xs text-gray-500">
+                        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                           {t('settings.hotkeyClickAndPress')}
                         </p>
-                      </div>
+                      </label>
+                    </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-300">
-                          {t('settings.searchDelayMs')}
-                        </label>
+                    {/* 搜索延迟 */}
+                    <div 
+                      className="p-5 rounded-xl border transition-all hover:shadow-lg"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        borderColor: 'var(--color-border)'
+                      }}
+                    >
+                      <label className="block">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">⏱️</span>
+                            <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                              {t('settings.searchDelayMs')}
+                            </span>
+                          </div>
+                          <span className="text-sm font-mono px-2 py-1 rounded" style={{ 
+                            backgroundColor: 'var(--color-primary-alpha)',
+                            color: 'var(--color-primary)' 
+                          }}>
+                            {config.general.search_delay}ms
+                          </span>
+                        </div>
                         <input
                           type="number"
                           value={config.general.search_delay}
@@ -283,17 +408,45 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             ...config,
                             general: { ...config.general, search_delay: parseInt(e.target.value) || 0 }
                           })}
-                          className="w-full max-w-md px-3 py-2 text-sm bg-[#3c3c3c] text-gray-200 rounded border border-[#555] focus:border-[#007acc] focus:outline-none transition-colors"
+                          className="w-full px-4 py-2.5 text-sm rounded-lg border transition-all focus:ring-2"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            color: 'var(--color-text-primary)',
+                            borderColor: 'var(--color-border)',
+                            outline: 'none'
+                          }}
                           min="0"
                           max="1000"
                         />
-                        <p className="mt-1 text-xs text-gray-500">{t('settings.searchDebounceDelay')}</p>
-                      </div>
+                        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          {t('settings.searchDebounceDelay')}
+                        </p>
+                      </label>
+                    </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-300">
-                          {t('settings.maxResults')}
-                        </label>
+                    {/* 最大结果数 */}
+                    <div 
+                      className="p-5 rounded-xl border transition-all hover:shadow-lg"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        borderColor: 'var(--color-border)'
+                      }}
+                    >
+                      <label className="block">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">📊</span>
+                            <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                              {t('settings.maxResults')}
+                            </span>
+                          </div>
+                          <span className="text-sm font-mono px-2 py-1 rounded" style={{ 
+                            backgroundColor: 'var(--color-primary-alpha)',
+                            color: 'var(--color-primary)' 
+                          }}>
+                            {config.general.max_results}
+                          </span>
+                        </div>
                         <input
                           type="number"
                           value={config.general.max_results}
@@ -301,19 +454,45 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             ...config,
                             general: { ...config.general, max_results: parseInt(e.target.value) || 10 }
                           })}
-                          className="w-full max-w-md px-3 py-2 text-sm bg-[#3c3c3c] text-gray-200 rounded border border-[#555] focus:border-[#007acc] focus:outline-none transition-colors"
+                          className="w-full px-4 py-2.5 text-sm rounded-lg border transition-all focus:ring-2"
+                          style={{
+                            backgroundColor: 'var(--color-background)',
+                            color: 'var(--color-text-primary)',
+                            borderColor: 'var(--color-border)',
+                            outline: 'none'
+                          }}
                           min="1"
                           max="50"
                         />
-                        <p className="mt-1 text-xs text-gray-500">{t('settings.maxResultsToDisplay')}</p>
-                      </div>
+                        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          {t('settings.maxResultsToDisplay')}
+                        </p>
+                      </label>
+                    </div>
 
-                      <div>
-                        <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
+                    {/* 开关选项组 */}
+                    <div 
+                      className="p-5 rounded-xl border space-y-3"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        borderColor: 'var(--color-border)'
+                      }}
+                    >
+                      <label className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all hover:shadow-md"
+                        style={{ backgroundColor: 'var(--color-background)' }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">🗑️</span>
                           <div>
-                            <span className="text-sm font-medium text-gray-300">{t('settings.clearOnHide')}</span>
-                            <p className="text-xs text-gray-500 mt-0.5">{t('settings.clearOnHideDesc')}</p>
+                            <span className="text-sm font-medium block" style={{ color: 'var(--color-text-primary)' }}>
+                              {t('settings.clearOnHide')}
+                            </span>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                              {t('settings.clearOnHideDesc')}
+                            </p>
                           </div>
+                        </div>
+                        <div className="relative">
                           <input
                             type="checkbox"
                             checked={config.general.clear_on_hide}
@@ -321,17 +500,30 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                               ...config,
                               general: { ...config.general, clear_on_hide: e.target.checked }
                             })}
-                            className="w-4 h-4 accent-[#007acc]"
+                            className="peer sr-only"
                           />
-                        </label>
-                      </div>
+                          <div className="w-11 h-6 rounded-full transition-all peer-checked:bg-[var(--color-primary)]"
+                            style={{ backgroundColor: 'var(--color-border)' }}
+                          ></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all peer-checked:translate-x-5"></div>
+                        </div>
+                      </label>
 
-                      <div>
-                        <label className="flex items-center justify-between px-4 py-3 bg-[#2d2d30] rounded border border-[#3e3e42] cursor-pointer hover:bg-[#323234] transition-colors">
+                      <label className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all hover:shadow-md"
+                        style={{ backgroundColor: 'var(--color-background)' }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">👁️</span>
                           <div>
-                            <span className="text-sm font-medium text-gray-300">{t('settings.enableFilePreview')}</span>
-                            <p className="text-xs text-gray-500 mt-0.5">{t('settings.enableFilePreviewDesc')}</p>
+                            <span className="text-sm font-medium block" style={{ color: 'var(--color-text-primary)' }}>
+                              {t('settings.enableFilePreview')}
+                            </span>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                              {t('settings.enableFilePreviewDesc')}
+                            </p>
                           </div>
+                        </div>
+                        <div className="relative">
                           <input
                             type="checkbox"
                             checked={config.appearance.show_preview}
@@ -339,10 +531,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                               ...config,
                               appearance: { ...config.appearance, show_preview: e.target.checked }
                             })}
-                            className="w-4 h-4 accent-[#007acc]"
+                            className="peer sr-only"
                           />
-                        </label>
-                      </div>
+                          <div className="w-11 h-6 rounded-full transition-all peer-checked:bg-[var(--color-primary)]"
+                            style={{ backgroundColor: 'var(--color-border)' }}
+                          ></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all peer-checked:translate-x-5"></div>
+                        </div>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -888,15 +1084,58 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             </div>
           </div>
 
-          {/* 底部操作栏 */}
-          <div className="flex items-center justify-end gap-3 px-8 py-4 bg-[#2d2d30] border-t border-[#3e3e42]">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-5 py-2 text-sm bg-[#0e639c] hover:bg-[#1177bb] text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? t('settings.saving') : t('settings.save')}
-            </button>
+          {/* 底部操作栏 - 浮动样式 */}
+          <div 
+            className="flex items-center justify-between px-8 py-4 border-t backdrop-blur-sm"
+            style={{
+              backgroundColor: 'rgba(30, 41, 59, 0.9)',
+              borderTopColor: 'var(--color-border)'
+            }}
+          >
+            <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              <span>💡</span>
+              <span>Changes will take effect immediately after saving</span>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  if (globalConfig) {
+                    setConfig(globalConfig as any);
+                    showToast('Settings reset to last saved state', 'success');
+                  }
+                }}
+                className="px-4 py-2 text-sm rounded-lg transition-all hover:scale-105"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  color: 'var(--color-text-secondary)'
+                }}
+              >
+                Reset
+              </button>
+              
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-6 py-2 text-sm font-medium rounded-lg transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#ffffff'
+                }}
+              >
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Saving...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <span>💾</span>
+                    {t('settings.save')}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
