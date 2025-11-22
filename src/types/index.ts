@@ -95,3 +95,9 @@ export interface Theme {
   };
   border_radius: number;
 }
+
+export interface SearchHistoryItem {
+  query: string;
+  timestamp: string;
+  result_count: number;
+}

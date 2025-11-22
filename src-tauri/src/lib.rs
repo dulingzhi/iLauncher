@@ -6,6 +6,7 @@ mod hotkey;
 mod plugin;
 mod preview;
 mod ranking;
+mod search_history;
 mod storage;
 mod statistics;
 mod utils;
@@ -79,6 +80,9 @@ pub fn run() {
             commands::disable_autostart,
             commands::is_autostart_enabled,
             commands::set_autostart,
+            commands::get_search_history,
+            commands::clear_search_history,
+            commands::remove_search_history,
         ])
         .setup(|app| {
             // 初始化存储管理器
@@ -194,6 +198,15 @@ pub fn run() {
             let statistics_manager = statistics::StatisticsManager::new()
                 .expect("Failed to create statistics manager");
             app.manage(statistics_manager);
+            
+            // 初始化搜索历史管理器
+            let data_dir = utils::paths::get_data_dir()
+                .expect("Failed to get data directory");
+            let history_path = data_dir.join("search_history.json");
+            let search_history = search_history::SearchHistoryManager::new(
+                history_path.to_string_lossy().to_string()
+            );
+            app.manage(search_history);
             
             // 初始化剪贴板管理器
             let clipboard_manager = clipboard::ClipboardManager::new();

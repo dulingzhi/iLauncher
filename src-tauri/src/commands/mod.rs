@@ -15,6 +15,7 @@ pub async fn query(
     input: String,
     manager: State<'_, PluginManager>,
     stats: State<'_, StatisticsManager>,
+    history: State<'_, crate::search_history::SearchHistoryManager>,
 ) -> Result<Vec<QueryResult>, String> {
     let query_start = std::time::Instant::now();
     tracing::debug!("🔍 Query started: '{}'", input);
@@ -71,6 +72,11 @@ pub async fn query(
         plugin_elapsed.as_secs_f64() * 1000.0,
         ranking_elapsed.as_secs_f64() * 1000.0
     );
+    
+    // 记录搜索历史
+    if !input.trim().is_empty() && plugin_results.len() > 0 {
+        let _ = history.add(input.clone(), plugin_results.len()).await;
+    }
     
     Ok(plugin_results)
 }
@@ -495,4 +501,31 @@ pub async fn set_autostart(enabled: bool) -> Result<(), String> {
     } else {
         disable_autostart().await
     }
+}
+
+// ==================== 搜索历史管理 ====================
+
+/// 获取搜索历史
+#[tauri::command]
+pub async fn get_search_history(
+    history: State<'_, crate::search_history::SearchHistoryManager>,
+) -> Result<Vec<crate::search_history::SearchHistoryItem>, String> {
+    Ok(history.get_history().await)
+}
+
+/// 清空搜索历史
+#[tauri::command]
+pub async fn clear_search_history(
+    history: State<'_, crate::search_history::SearchHistoryManager>,
+) -> Result<(), String> {
+    history.clear().await.map_err(|e| e.to_string())
+}
+
+/// 删除指定的搜索历史
+#[tauri::command]
+pub async fn remove_search_history(
+    query: String,
+    history: State<'_, crate::search_history::SearchHistoryManager>,
+) -> Result<(), String> {
+    history.remove(&query).await.map_err(|e| e.to_string())
 }
