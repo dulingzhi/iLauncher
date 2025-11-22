@@ -403,7 +403,7 @@ pub fn run_mft_service(args: &[String]) {
         for drive in &drives {
             let fst_file = format!("{}\\{}_index.fst", output_dir, drive);
             let dat_file = format!("{}\\{}_bitmaps.dat", output_dir, drive);
-            let paths_file = format!("{}\\{}_paths.bin", output_dir, drive);
+            let paths_file = format!("{}\\{}_paths.dat", output_dir, drive);
             
             if std::path::Path::new(&fst_file).exists() 
                 && std::path::Path::new(&dat_file).exists()
