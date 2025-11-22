@@ -11,6 +11,7 @@ pub mod browser;
 pub mod process;
 pub mod translator;
 pub mod devtools;
+pub mod git_projects;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -96,6 +97,10 @@ impl PluginManager {
         manager.register(Box::new(translator::TranslatorPlugin::new()));
         manager.register(Box::new(devtools::DevToolsPlugin::new()));
         
+        let git_projects = git_projects::GitProjectsPlugin::new();
+        git_projects.init().await;
+        manager.register(Box::new(git_projects));
+        
         // 使用插件配置初始化文件搜索插件
         let file_search = file_search::FileSearchPlugin::new_with_config(use_mft);
         file_search.init().await;
@@ -126,6 +131,10 @@ impl PluginManager {
         manager.register(Box::new(process::ProcessPlugin::new()));
         manager.register(Box::new(translator::TranslatorPlugin::new()));
         manager.register(Box::new(devtools::DevToolsPlugin::new()));
+        
+        let git_projects = git_projects::GitProjectsPlugin::new();
+        git_projects.init().await;
+        manager.register(Box::new(git_projects));
         
         let file_search = file_search::FileSearchPlugin::new();
         file_search.init().await;
