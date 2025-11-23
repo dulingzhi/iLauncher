@@ -486,7 +486,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     className="px-4 py-2 rounded font-medium transition-opacity duration-150"
                     style={{
                       backgroundColor: 'var(--color-accent)',
-                      color: 'white',
+                      color: '#ffffff',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.opacity = '0.9';
@@ -539,7 +539,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                               ? 'var(--color-accent)'
                               : 'var(--color-surface)',
                           color:
-                            msg.role === 'user' ? 'white' : 'var(--color-text)',
+                            msg.role === 'user' ? '#ffffff' : 'var(--color-text)',
                         }}
                       >
                         <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -593,7 +593,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                   className="p-3 rounded-lg transition-opacity duration-150"
                   style={{
                     backgroundColor: 'var(--color-accent)',
-                    color: 'white',
+                    color: '#ffffff',
                     opacity: loading || !input.trim() ? 0.5 : 1,
                     cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
                   }}
