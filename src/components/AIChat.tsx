@@ -327,13 +327,13 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     borderColor: 'var(--color-border)',
                   }}
                 >
-                  <option value="openai">OpenAI (GPT-3.5/4)</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                  <option value="github">GitHub Copilot</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="ollama">Ollama (Local)</option>
-                  <option value="custom">Custom Endpoint</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="openai">OpenAI (GPT-3.5/4)</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="anthropic">Anthropic (Claude)</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="github">GitHub Copilot</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="deepseek">DeepSeek</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="gemini">Google Gemini</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="ollama">Ollama (Local)</option>
+                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="custom">Custom Endpoint</option>
                 </select>
                 <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                   {config?.provider === 'github' && 'GitHub Copilot requires GitHub account'}
