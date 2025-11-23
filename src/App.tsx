@@ -103,7 +103,7 @@ function App() {
           await appWindow.setResizable(false);
         } else {
           // 尝试恢复保存的窗口位置
-          const savedPositions = (globalConfig as any)?.appearance?.window_positions;
+          const savedPositions = (config as any)?.appearance?.window_positions;
           const viewKey = currentView.replace('-', '_'); // 'ai-chat' -> 'ai_chat'
           const savedPosition = savedPositions?.[viewKey];
           
@@ -126,7 +126,7 @@ function App() {
     };
 
     adjustWindowSize();
-  }, [currentView, globalConfig]);
+  }, [currentView, config]);
   
   // 监听非搜索视图的窗口位置变化，保存位置
   useEffect(() => {
