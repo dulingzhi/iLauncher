@@ -567,27 +567,11 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
                 isSelected={index === selectedIndex}
                 query={query}
                 onClick={() => {
-                  useAppStore.setState({ selectedIndex: index });
+                  // 更新选中索引
+                  setSelectedIndex(index);
                   // 延迟执行,确保选中状态已更新
                   setTimeout(async () => {
-                    // 检查是否是 Settings 或 Plugin Manager
-                    if (result.id === 'settings') {
-                      onOpenSettings();
-                      return;
-                    }
-                    
-                    if (result.id === 'plugin_manager') {
-                      onOpenPlugins();
-                      return;
-                    }
-                    
-                    const defaultAction = result.actions.find(a => a.is_default) || result.actions[0];
-                    if (defaultAction) {
-                      await executeAction(result.id, defaultAction.id, result.plugin_id, result.title, result.subtitle, result.icon);
-                      if (!defaultAction.prevent_hide) {
-                        await handleHide();
-                      }
-                    }
+                    await handleExecute();
                   }, 0);
                 }}
                 onContextMenu={(e) => handleContextMenu(e, result)}
