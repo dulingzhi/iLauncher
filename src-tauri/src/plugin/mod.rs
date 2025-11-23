@@ -17,6 +17,7 @@ pub mod execution_history;
 pub mod window_manager;
 pub mod sandbox;
 pub mod audit;
+pub mod ai_assistant;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -133,6 +134,9 @@ impl PluginManager {
         file_search.init().await;
         manager.register(Box::new(file_search));
         
+        // AI 助手插件
+        manager.register(Box::new(ai_assistant::AIAssistantPlugin::new()));
+        
         manager
     }
     
@@ -176,6 +180,9 @@ impl PluginManager {
         let file_search = file_search::FileSearchPlugin::new();
         file_search.init().await;
         manager.register(Box::new(file_search));
+        
+        // AI 助手插件
+        manager.register(Box::new(ai_assistant::AIAssistantPlugin::new()));
     }
     
     /// 注册插件
@@ -249,6 +256,17 @@ impl PluginManager {
             if plugin.metadata().id == "execution-history" {
                 // 使用unsafe downcast - 我们知道这是ExecutionHistoryPlugin
                 let ptr = plugin.as_ref() as *const dyn Plugin as *const execution_history::ExecutionHistoryPlugin;
+                return unsafe { Some(&*ptr) };
+            }
+        }
+        None
+    }
+    
+    /// 获取 AI 助手插件
+    pub fn get_ai_plugin(&self) -> Option<&ai_assistant::AIAssistantPlugin> {
+        for plugin in &self.plugins {
+            if plugin.metadata().id == "ai_assistant" {
+                let ptr = plugin.as_ref() as *const dyn Plugin as *const ai_assistant::AIAssistantPlugin;
                 return unsafe { Some(&*ptr) };
             }
         }
@@ -440,6 +458,23 @@ impl PluginManager {
             }
         );
         
-        tracing::info!("✅ Configured sandbox permissions for {} plugins", 16);
+        // 17. AI 助手 - 需要网络访问 AI API
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "ai_assistant".to_string(),
+                security_level: sandbox::SecurityLevel::Restricted,
+                custom_permissions: Some(vec![
+                    PluginPermission::NetworkAccess(NetworkScope::Domain("api.openai.com".to_string())),
+                    PluginPermission::NetworkAccess(NetworkScope::Domain("api.anthropic.com".to_string())),
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(60000), // AI 响应可能需要更长时间
+                max_memory_mb: Some(200),
+            }
+        );
+        
+        tracing::info!("✅ Configured sandbox permissions for {} plugins", 17);
     }
 }

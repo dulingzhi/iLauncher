@@ -1,6 +1,7 @@
 // Tauri Commands - 前端调用的 Rust 函数
 
 pub mod audit;
+pub mod ai;
 
 use crate::clipboard::ClipboardManager;
 use crate::core::types::*;

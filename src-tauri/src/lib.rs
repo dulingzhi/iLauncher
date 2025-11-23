@@ -100,6 +100,13 @@ pub fn run() {
             commands::audit::get_audit_statistics,
             commands::audit::clear_audit_log,
             commands::audit::export_audit_log,
+            commands::ai::get_ai_config,
+            commands::ai::save_ai_config,
+            commands::ai::send_ai_message,
+            commands::ai::create_ai_conversation,
+            commands::ai::get_ai_conversations,
+            commands::ai::switch_ai_conversation,
+            commands::ai::delete_ai_conversation,
         ])
         .setup(|app| {
             // 初始化存储管理器

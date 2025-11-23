@@ -5,6 +5,7 @@ import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
 import { PluginManager } from "./components/PluginManager";
 import ClipboardHistory from "./components/ClipboardHistory";
+import AIChat from "./components/AIChat";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { Toast } from "./components/Toast";
 import { HotkeyGuide } from "./components/HotkeyGuide";
@@ -14,14 +15,15 @@ import { useConfigStore } from "./store/useConfigStore";
 import { useToast } from "./hooks/useToast";
 import "./index.css";
 
-type View = 'search' | 'settings' | 'plugins' | 'clipboard';
+type View = 'search' | 'settings' | 'plugins' | 'clipboard' | 'ai-chat';
 
 // 不同视图的窗口配置
 const VIEW_CONFIGS = {
-  search: { width: 700, height: 580 },      // 🔥 增加高度以完整显示结果列表（搜索框60px + 列表450px + 边距70px）
+  search: { width: 700, height: 580 },      // 🔥 增加高度以完整显示结果列表（搜索框60px + 列表0px + 边襰7px）
   settings: { width: 1000, height: 700 },   // 设置页面使用宽窗口
   plugins: { width: 1000, height: 700 },    // 插件管理使用宽窗口
   clipboard: { width: 900, height: 650 },   // 剪贴板历史使用中等宽度
+  'ai-chat': { width: 1200, height: 800 },  // AI 聊天使用大窗口
 };
 
 function App() {
@@ -211,6 +213,7 @@ function App() {
           {currentView === 'settings' && <Settings onClose={() => { setCurrentView('search'); }} />}
           {currentView === 'plugins' && <PluginManager onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
           {currentView === 'clipboard' && <ClipboardHistory onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
+          {currentView === 'ai-chat' && <AIChat onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
         </div>
       )}
     </div>
