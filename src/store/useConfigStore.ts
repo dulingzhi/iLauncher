@@ -40,6 +40,13 @@ export interface AppConfig {
     language: string;
     // Font settings (deprecated, moved to font)
     font_size: number;
+    // Window positions (for non-search views)
+    window_positions?: {
+      settings?: { x: number; y: number };
+      plugins?: { x: number; y: number };
+      clipboard?: { x: number; y: number };
+      ai_chat?: { x: number; y: number };
+    };
   };
   font: {
     font_family: string;

@@ -37,6 +37,25 @@ fn default_true() -> bool {
     true
 }
 
+// 窗口位置配置（每个视图单独记忆）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WindowPositions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<WindowPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugins: Option<WindowPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clipboard: Option<WindowPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_chat: Option<WindowPosition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowPosition {
+    pub x: i32,
+    pub y: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppearanceConfig {
     pub theme: String,
@@ -48,6 +67,9 @@ pub struct AppearanceConfig {
     pub transparency: u8,
     #[serde(default = "default_true")]
     pub show_preview: bool,
+    // 窗口位置记忆（仅用于非搜索视图）
+    #[serde(default)]
+    pub window_positions: WindowPositions,
 }
 
 // UI外观微调配置

@@ -78,7 +78,7 @@ function App() {
     initialize();
   }, []);
 
-  // 当视图切换时，调整窗口尺寸、居中、设置置顶和任务栏显示
+  // 当视图切换时，调整窗口尺寸、位置、设置置顶和任务栏显示
   useEffect(() => {
     const adjustWindowSize = async () => {
       const appWindow = getCurrentWindow();
@@ -91,27 +91,89 @@ function App() {
         // 调整尺寸
         await appWindow.setSize(new LogicalSize(config.width, config.height));
         
-        // 居中窗口
-        await appWindow.center();
-        
-        // 禁止用户手动调整大小
-        await appWindow.setResizable(false);
-        
-        // 🔥 根据视图类型设置窗口置顶和任务栏显示
-        // 搜索视图：置顶 + 不显示任务栏图标
-        // 其他视图：不置顶 + 显示任务栏图标
+        // 根据视图类型设置窗口置顶和任务栏显示
         const isSearchView = currentView === 'search';
         await appWindow.setAlwaysOnTop(isSearchView);
         await appWindow.setSkipTaskbar(isSearchView);
         
-        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height} (centered, alwaysOnTop=${isSearchView}, skipTaskbar=${isSearchView})`);
+        // 🔥 搜索视图：居中且不可拖拽
+        // 其他视图：恢复保存的位置或居中，允许拖拽
+        if (isSearchView) {
+          await appWindow.center();
+          await appWindow.setResizable(false);
+        } else {
+          // 尝试恢复保存的窗口位置
+          const savedPositions = (globalConfig as any)?.appearance?.window_positions;
+          const viewKey = currentView.replace('-', '_'); // 'ai-chat' -> 'ai_chat'
+          const savedPosition = savedPositions?.[viewKey];
+          
+          if (savedPosition && savedPosition.x !== undefined && savedPosition.y !== undefined) {
+            await appWindow.setPosition({ type: 'Physical', x: savedPosition.x, y: savedPosition.y });
+            console.log(`Window position restored for ${currentView}: (${savedPosition.x}, ${savedPosition.y})`);
+          } else {
+            await appWindow.center();
+            console.log(`Window centered for ${currentView} (no saved position)`);
+          }
+          
+          // 允许用户拖拽窗口（保持大小固定）
+          await appWindow.setResizable(false);
+        }
+        
+        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height} (alwaysOnTop=${isSearchView}, skipTaskbar=${isSearchView})`);
       } catch (error) {
         console.error('Failed to adjust window:', error);
       }
     };
 
     adjustWindowSize();
-  }, [currentView]);
+  }, [currentView, globalConfig]);
+  
+  // 监听非搜索视图的窗口位置变化，保存位置
+  useEffect(() => {
+    if (currentView === 'search') return;
+    
+    const appWindow = getCurrentWindow();
+    let saveTimeout: NodeJS.Timeout;
+    
+    const setupPositionListener = async () => {
+      const unlisten = await appWindow.listen('tauri://move', async () => {
+        // 防抖：延迟保存，避免频繁写入
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+          try {
+            const position = await appWindow.outerPosition();
+            const viewKey = currentView.replace('-', '_'); // 'ai-chat' -> 'ai_chat'
+            
+            if (config) {
+              const updatedConfig = {
+                ...config,
+                appearance: {
+                  ...config.appearance,
+                  window_positions: {
+                    ...((config.appearance as any).window_positions || {}),
+                    [viewKey]: { x: position.x, y: position.y }
+                  }
+                }
+              };
+              
+              await saveConfig(updatedConfig);
+              console.log(`Window position saved for ${currentView}: (${position.x}, ${position.y})`);
+            }
+          } catch (error) {
+            console.error('Failed to save window position:', error);
+          }
+        }, 500); // 500ms 防抖
+      });
+      return unlisten;
+    };
+    
+    const listenerPromise = setupPositionListener();
+    
+    return () => {
+      clearTimeout(saveTimeout);
+      listenerPromise.then(fn => fn());
+    };
+  }, [currentView, config, saveConfig]);
   
   useEffect(() => {
     const appWindow = getCurrentWindow();
