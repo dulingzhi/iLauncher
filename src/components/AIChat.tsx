@@ -172,6 +172,13 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
       className="flex h-full relative"
       style={{ backgroundColor: 'var(--color-background)' }}
     >
+      {/* 拖动区域 */}
+      <div 
+        data-tauri-drag-region
+        className="absolute top-0 left-0 right-0 h-12 z-40"
+        style={{ pointerEvents: 'none' }}
+      />
+      
       {/* 关闭按钮 */}
       {onClose && (
         <button
@@ -181,6 +188,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
             backgroundColor: 'var(--color-surface)',
             color: 'var(--color-text-secondary)',
             border: '1px solid var(--color-border)',
+            pointerEvents: 'auto'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.backgroundColor = 'var(--color-hover)';

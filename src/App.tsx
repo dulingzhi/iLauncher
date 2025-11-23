@@ -82,14 +82,14 @@ function App() {
   useEffect(() => {
     const adjustWindowSize = async () => {
       const appWindow = getCurrentWindow();
-      const config = VIEW_CONFIGS[currentView];
+      const viewConfig = VIEW_CONFIGS[currentView];
       
       try {
         // 临时允许调整大小
         await appWindow.setResizable(true);
         
         // 调整尺寸
-        await appWindow.setSize(new LogicalSize(config.width, config.height));
+        await appWindow.setSize(new LogicalSize(viewConfig.width, viewConfig.height));
         
         // 根据视图类型设置窗口置顶和任务栏显示
         const isSearchView = currentView === 'search';
@@ -119,7 +119,7 @@ function App() {
           await appWindow.setResizable(false);
         }
         
-        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height} (alwaysOnTop=${isSearchView}, skipTaskbar=${isSearchView})`);
+        console.log(`Window adjusted for ${currentView}: ${viewConfig.width}x${viewConfig.height} (alwaysOnTop=${isSearchView}, skipTaskbar=${isSearchView})`);
       } catch (error) {
         console.error('Failed to adjust window:', error);
       }

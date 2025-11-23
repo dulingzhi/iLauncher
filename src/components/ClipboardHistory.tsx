@@ -173,10 +173,14 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--color-background)' }}>
       {/* 头部 */}
-      <div className="p-4" style={{ 
-        backgroundColor: 'var(--color-surface)', 
-        borderBottom: '1px solid var(--color-border)' 
-      }}>
+      <div 
+        data-tauri-drag-region
+        className="p-4" 
+        style={{ 
+          backgroundColor: 'var(--color-surface)', 
+          borderBottom: '1px solid var(--color-border)' 
+        }}
+      >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Clipboard className="w-5 h-5" style={{ color: 'var(--color-accent)' }} />

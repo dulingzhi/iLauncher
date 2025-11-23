@@ -211,6 +211,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       <div className="h-full flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
         {/* 顶部标题栏 - 现代简洁风格 */}
         <div 
+          data-tauri-drag-region
           className="flex items-center justify-between px-6 py-3 border-b backdrop-blur-sm"
           style={{ 
             backgroundColor: 'var(--settings-sidebar-bg)',

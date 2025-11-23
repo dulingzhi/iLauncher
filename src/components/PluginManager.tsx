@@ -134,7 +134,10 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
   return (
     <div className="h-full bg-[#1e1e1e] text-gray-200 flex flex-col">
       {/* 顶部标题栏 */}
-      <div className="flex items-center justify-between px-6 py-3 bg-[#2d2d30] border-b border-[#3e3e42]">
+      <div 
+        data-tauri-drag-region
+        className="flex items-center justify-between px-6 py-3 bg-[#2d2d30] border-b border-[#3e3e42]"
+      >
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-100">Plugin Manager</h1>
           <button
