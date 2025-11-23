@@ -1,9 +1,12 @@
 // 文件预览模块
 
+mod code_highlight;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
+use code_highlight::CodeHighlighter;
 
 const MAX_PREVIEW_SIZE: u64 = 1024 * 1024; // 1MB
 
@@ -14,6 +17,7 @@ pub struct FilePreview {
     pub size: u64,
     pub modified: String,
     pub extension: String,
+    pub highlighted_html: Option<String>, // 代码高亮后的HTML
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,11 +67,20 @@ pub async fn read_file_preview(path: &str) -> Result<FilePreview> {
     }
     
     // 对于二进制文件，不读取内容
-    let content = if matches!(file_type, FileType::Binary | FileType::Image) {
-        String::new()
+    let (content, highlighted_html) = if matches!(file_type, FileType::Binary | FileType::Image) {
+        (String::new(), None)
     } else {
         match fs::read_to_string(path).await {
-            Ok(content) => content,
+            Ok(content) => {
+                // 尝试高亮代码
+                let highlighted = if matches!(file_type, FileType::Code) {
+                    let highlighter = CodeHighlighter::new();
+                    highlighter.highlight_code(&content, &extension).ok()
+                } else {
+                    None
+                };
+                (content, highlighted)
+            }
             Err(_) => {
                 // 如果无法读取为文本，标记为二进制
                 return Ok(FilePreview {
@@ -76,6 +89,7 @@ pub async fn read_file_preview(path: &str) -> Result<FilePreview> {
                     size,
                     modified,
                     extension,
+                    highlighted_html: None,
                 });
             }
         }
@@ -87,6 +101,7 @@ pub async fn read_file_preview(path: &str) -> Result<FilePreview> {
         size,
         modified,
         extension,
+        highlighted_html,
     })
 }
 
