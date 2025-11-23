@@ -245,7 +245,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
 
             <div className="space-y-4 max-w-2xl">
               <div>
-                <label className="block text-sm font-medium mb-1">Provider</label>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>Provider</label>
                 <select
                   value={config?.provider || 'openai'}
                   onChange={(e) =>
@@ -258,69 +258,182 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     borderColor: 'var(--color-border)',
                   }}
                 >
-                  <option value="openai">OpenAI</option>
+                  <option value="openai">OpenAI (GPT-3.5/4)</option>
                   <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="github">GitHub Copilot</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="ollama">Ollama (Local)</option>
+                  <option value="custom">Custom Endpoint</option>
                 </select>
+                <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  {config?.provider === 'github' && 'GitHub Copilot requires GitHub account'}
+                  {config?.provider === 'ollama' && 'Make sure Ollama is running locally'}
+                  {config?.provider === 'custom' && 'Provide your custom API base URL below'}
+                </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">API Key</label>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                  API Key / Token
+                </label>
                 <input
                   type="password"
                   value={config?.api_key || ''}
                   onChange={(e) =>
                     setConfig({ ...config!, api_key: e.target.value })
                   }
-                  placeholder="sk-..."
-                  className="w-full p-2 rounded border"
+                  placeholder={
+                    config?.provider === 'github' ? 'ghu_...' :
+                    config?.provider === 'anthropic' ? 'sk-ant-...' :
+                    config?.provider === 'ollama' ? 'Not required for local' :
+                    'sk-...'
+                  }
+                  disabled={config?.provider === 'ollama'}
+                  className="w-full p-2 rounded border font-mono text-sm"
                   style={{
                     backgroundColor: 'var(--color-surface)',
                     color: 'var(--color-text)',
                     borderColor: 'var(--color-border)',
+                    opacity: config?.provider === 'ollama' ? 0.5 : 1,
                   }}
                 />
+                <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  {config?.provider === 'openai' && 'Get your API key from platform.openai.com'}
+                  {config?.provider === 'anthropic' && 'Get your API key from console.anthropic.com'}
+                  {config?.provider === 'github' && 'Generate token at github.com/settings/tokens (needs copilot scope)'}
+                  {config?.provider === 'deepseek' && 'Get your API key from platform.deepseek.com'}
+                  {config?.provider === 'gemini' && 'Get your API key from makersuite.google.com'}
+                  {config?.provider === 'ollama' && 'No API key needed for local Ollama'}
+                </p>
               </div>
 
+              {(config?.provider === 'custom' || config?.provider === 'ollama' || config?.provider === 'github') && (
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                    Base URL
+                  </label>
+                  <input
+                    type="text"
+                    value={config?.base_url || ''}
+                    onChange={(e) =>
+                      setConfig({ ...config!, base_url: e.target.value })
+                    }
+                    placeholder={
+                      config?.provider === 'ollama' ? 'http://localhost:11434' :
+                      config?.provider === 'github' ? 'https://api.githubcopilot.com' :
+                      'https://api.your-endpoint.com'
+                    }
+                    className="w-full p-2 rounded border font-mono text-sm"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      color: 'var(--color-text)',
+                      borderColor: 'var(--color-border)',
+                    }}
+                  />
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-medium mb-1">Model</label>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>Model</label>
                 <input
                   type="text"
                   value={config?.model || ''}
                   onChange={(e) =>
                     setConfig({ ...config!, model: e.target.value })
                   }
-                  placeholder="gpt-3.5-turbo"
-                  className="w-full p-2 rounded border"
+                  placeholder={
+                    config?.provider === 'openai' ? 'gpt-3.5-turbo or gpt-4' :
+                    config?.provider === 'anthropic' ? 'claude-3-opus-20240229' :
+                    config?.provider === 'github' ? 'gpt-4 or copilot-chat' :
+                    config?.provider === 'deepseek' ? 'deepseek-chat' :
+                    config?.provider === 'gemini' ? 'gemini-pro' :
+                    config?.provider === 'ollama' ? 'llama2 or mistral' :
+                    'model-name'
+                  }
+                  className="w-full p-2 rounded border font-mono text-sm"
                   style={{
                     backgroundColor: 'var(--color-surface)',
                     color: 'var(--color-text)',
                     borderColor: 'var(--color-border)',
                   }}
                 />
+                <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  Available models depend on your provider and subscription
+                </p>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={saveConfig}
-                  className="px-4 py-2 rounded"
-                  style={{
-                    backgroundColor: 'var(--color-accent)',
-                    color: 'white',
-                  }}
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="px-4 py-2 rounded"
-                  style={{
-                    backgroundColor: 'var(--color-surface)',
-                    color: 'var(--color-text)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  Cancel
-                </button>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                    Temperature ({config?.temperature || 0.7})
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={config?.temperature || 0.7}
+                    onChange={(e) =>
+                      setConfig({ ...config!, temperature: parseFloat(e.target.value) })
+                    }
+                    className="w-full"
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                    Higher = more creative, Lower = more focused
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                    Max Tokens
+                  </label>
+                  <input
+                    type="number"
+                    min="100"
+                    max="8000"
+                    step="100"
+                    value={config?.max_tokens || 2000}
+                    onChange={(e) =>
+                      setConfig({ ...config!, max_tokens: parseInt(e.target.value) })
+                    }
+                    className="w-full p-2 rounded border"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      color: 'var(--color-text)',
+                      borderColor: 'var(--color-border)',
+                    }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                    Maximum response length
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveConfig}
+                    className="px-4 py-2 rounded font-medium"
+                    style={{
+                      backgroundColor: 'var(--color-accent)',
+                      color: 'white',
+                    }}
+                  >
+                    Save Configuration
+                  </button>
+                  <button
+                    onClick={() => setShowSettings(false)}
+                    className="px-4 py-2 rounded"
+                    style={{
+                      backgroundColor: 'var(--color-surface)',
+                      color: 'var(--color-text)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>

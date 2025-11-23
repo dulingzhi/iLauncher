@@ -177,6 +177,11 @@ impl AIAssistantPlugin {
         let response = match config.provider.as_str() {
             "openai" => self.call_openai_api(&config, &conv_id).await?,
             "anthropic" => self.call_anthropic_api(&config, &conv_id).await?,
+            "github" => self.call_github_copilot_api(&config, &conv_id).await?,
+            "deepseek" => self.call_deepseek_api(&config, &conv_id).await?,
+            "gemini" => self.call_gemini_api(&config, &conv_id).await?,
+            "ollama" => self.call_ollama_api(&config, &conv_id).await?,
+            "custom" => self.call_openai_api(&config, &conv_id).await?, // Use OpenAI-compatible format
             _ => return Err(anyhow::anyhow!("Unknown provider: {}", config.provider)),
         };
 
@@ -494,5 +499,266 @@ impl Plugin for AIAssistantPlugin {
         }
 
         Ok(())
+    }
+}
+
+impl AIAssistantPlugin {
+    /// 调用 GitHub Copilot API
+    async fn call_github_copilot_api(&self, config: &AIConfig, conv_id: &str) -> Result<String> {
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.githubcopilot.com".to_string());
+
+        let messages = {
+            let convs = self.conversations.read().await;
+            convs
+                .iter()
+                .find(|c| c.id == conv_id)
+                .map(|c| c.messages.clone())
+                .unwrap_or_default()
+        };
+
+        #[derive(Serialize)]
+        struct CopilotRequest {
+            messages: Vec<ChatMessage>,
+            model: String,
+            temperature: f32,
+            max_tokens: usize,
+        }
+
+        #[derive(Deserialize)]
+        struct CopilotResponse {
+            choices: Vec<CopilotChoice>,
+        }
+
+        #[derive(Deserialize)]
+        struct CopilotChoice {
+            message: ChatMessage,
+        }
+
+        let request = CopilotRequest {
+            messages,
+            model: config.model.clone(),
+            temperature: config.temperature,
+            max_tokens: config.max_tokens,
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", base_url))
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header("Content-Type", "application/json")
+            .header("Editor-Version", "vscode/1.85.0")
+            .header("Editor-Plugin-Version", "copilot/1.145.0")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("GitHub Copilot API error: {}", error_text));
+        }
+
+        let result: CopilotResponse = response.json().await?;
+        Ok(result
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default())
+    }
+
+    /// 调用 DeepSeek API (OpenAI compatible)
+    async fn call_deepseek_api(&self, config: &AIConfig, conv_id: &str) -> Result<String> {
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.deepseek.com".to_string());
+
+        let messages = {
+            let convs = self.conversations.read().await;
+            convs
+                .iter()
+                .find(|c| c.id == conv_id)
+                .map(|c| c.messages.clone())
+                .unwrap_or_default()
+        };
+
+        #[derive(Serialize)]
+        struct DeepSeekRequest {
+            model: String,
+            messages: Vec<ChatMessage>,
+            temperature: f32,
+            max_tokens: usize,
+        }
+
+        #[derive(Deserialize)]
+        struct DeepSeekResponse {
+            choices: Vec<DeepSeekChoice>,
+        }
+
+        #[derive(Deserialize)]
+        struct DeepSeekChoice {
+            message: ChatMessage,
+        }
+
+        let request = DeepSeekRequest {
+            model: config.model.clone(),
+            messages,
+            temperature: config.temperature,
+            max_tokens: config.max_tokens,
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", base_url))
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("DeepSeek API error: {}", error_text));
+        }
+
+        let result: DeepSeekResponse = response.json().await?;
+        Ok(result
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default())
+    }
+
+    /// 调用 Google Gemini API
+    async fn call_gemini_api(&self, config: &AIConfig, conv_id: &str) -> Result<String> {
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
+
+        let messages = {
+            let convs = self.conversations.read().await;
+            convs
+                .iter()
+                .find(|c| c.id == conv_id)
+                .map(|c| c.messages.clone())
+                .unwrap_or_default()
+        };
+
+        // Gemini uses different message format
+        #[derive(Serialize, Deserialize)]
+        struct GeminiContent {
+            parts: Vec<GeminiPart>,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct GeminiPart {
+            text: String,
+        }
+
+        #[derive(Serialize)]
+        struct GeminiRequest {
+            contents: Vec<GeminiContent>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiResponse {
+            candidates: Vec<GeminiCandidate>,
+        }
+
+        #[derive(Deserialize)]
+        struct GeminiCandidate {
+            content: GeminiContent,
+        }
+
+        let contents: Vec<GeminiContent> = messages
+            .iter()
+            .map(|m| GeminiContent {
+                parts: vec![GeminiPart {
+                    text: m.content.clone(),
+                }],
+            })
+            .collect();
+
+        let request = GeminiRequest { contents };
+
+        let url = format!(
+            "{}/models/{}:generateContent?key={}",
+            base_url, config.model, config.api_key
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Gemini API error: {}", error_text));
+        }
+
+        let result: GeminiResponse = response.json().await?;
+        Ok(result
+            .candidates
+            .first()
+            .and_then(|c| c.content.parts.first())
+            .map(|p| p.text.clone())
+            .unwrap_or_default())
+    }
+
+    /// 调用 Ollama API (Local)
+    async fn call_ollama_api(&self, config: &AIConfig, conv_id: &str) -> Result<String> {
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
+
+        let messages = {
+            let convs = self.conversations.read().await;
+            convs
+                .iter()
+                .find(|c| c.id == conv_id)
+                .map(|c| c.messages.clone())
+                .unwrap_or_default()
+        };
+
+        #[derive(Serialize)]
+        struct OllamaRequest {
+            model: String,
+            messages: Vec<ChatMessage>,
+            stream: bool,
+        }
+
+        #[derive(Deserialize)]
+        struct OllamaResponse {
+            message: ChatMessage,
+        }
+
+        let request = OllamaRequest {
+            model: config.model.clone(),
+            messages,
+            stream: false,
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/api/chat", base_url))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Ollama API error: {}", error_text));
+        }
+
+        let result: OllamaResponse = response.json().await?;
+        Ok(result.message.content)
     }
 }
