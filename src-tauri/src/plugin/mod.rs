@@ -196,6 +196,17 @@ impl PluginManager {
     
     /// 查询所有插件
     pub async fn query(&self, input: &str) -> Result<Vec<QueryResult>> {
+        // 加载配置以获取禁用的插件列表
+        let disabled_plugins = match crate::storage::StorageManager::new() {
+            Ok(storage) => {
+                match storage.load_config().await {
+                    Ok(config) => config.plugins.disabled_plugins,
+                    Err(_) => Vec::new(),
+                }
+            }
+            Err(_) => Vec::new(),
+        };
+        
         let ctx = QueryContext {
             query_type: QueryType::Input,
             trigger_keyword: String::new(),
@@ -208,6 +219,14 @@ impl PluginManager {
         let mut other_results = Vec::new();
         
         for plugin in &self.plugins {
+            let plugin_id = &plugin.metadata().id;
+            
+            // 跳过禁用的插件
+            if disabled_plugins.contains(plugin_id) {
+                tracing::debug!("Skipping disabled plugin: {}", plugin_id);
+                continue;
+            }
+            
             match plugin.query(&ctx).await {
                 Ok(mut results) => {
                     // 🔹 将文件搜索和应用搜索结果分开存放

@@ -32,7 +32,7 @@ interface PluginConfig {
 
 export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
   const [plugins, setPlugins] = useState<PluginMetadata[]>([]);
-  const [pluginStatuses, setPluginStatuses] = useState<Map<string, boolean>>(new Map());
+  const [pluginStatuses, setPluginStatuses] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [configPlugin, setConfigPlugin] = useState<PluginMetadata | null>(null);
@@ -63,14 +63,14 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       
       // 使用全局配置获取启用状态
       if (config) {
-        const statusMap = new Map<string, boolean>();
+        const statusObj: Record<string, boolean> = {};
         
         result.forEach(plugin => {
           const isDisabled = config.plugins.disabled_plugins.includes(plugin.id);
-          statusMap.set(plugin.id, !isDisabled);
+          statusObj[plugin.id] = !isDisabled;
         });
         
-        setPluginStatuses(statusMap);
+        setPluginStatuses(statusObj);
       }
     } catch (error) {
       console.error('Failed to load plugins:', error);
@@ -103,9 +103,10 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       console.log('[PluginManager] Config saved successfully');
       
       // 更新本地状态
-      const newStatuses = new Map(pluginStatuses);
-      newStatuses.set(pluginId, !isCurrentlyDisabled);
-      setPluginStatuses(newStatuses);
+      setPluginStatuses({
+        ...pluginStatuses,
+        [pluginId]: !isCurrentlyDisabled
+      });
       
     } catch (error) {
       console.error('Failed to toggle plugin:', error);
@@ -186,7 +187,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
           {/* 插件列表 */}
           <div className="space-y-3">
             {plugins.map((plugin) => {
-              const isEnabled = pluginStatuses.get(plugin.id) ?? true;
+              const isEnabled = pluginStatuses[plugin.id] ?? true;
               
               return (
                 <div
