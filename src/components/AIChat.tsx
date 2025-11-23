@@ -326,14 +326,12 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                 >
                   <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="openai">OpenAI (GPT-3.5/4)</option>
                   <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="anthropic">Anthropic (Claude)</option>
-                  <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="github">GitHub Copilot</option>
                   <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="deepseek">DeepSeek</option>
                   <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="gemini">Google Gemini</option>
                   <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="ollama">Ollama (Local)</option>
                   <option style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} value="custom">Custom Endpoint</option>
                 </select>
                 <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-                  {config?.provider === 'github' && 'GitHub Copilot requires GitHub account'}
                   {config?.provider === 'ollama' && 'Make sure Ollama is running locally'}
                   {config?.provider === 'custom' && 'Provide your custom API base URL below'}
                 </p>
@@ -350,7 +348,6 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     setConfig({ ...config!, api_key: e.target.value })
                   }
                   placeholder={
-                    config?.provider === 'github' ? 'ghu_...' :
                     config?.provider === 'anthropic' ? 'sk-ant-...' :
                     config?.provider === 'ollama' ? 'Not required for local' :
                     'sk-...'
@@ -367,14 +364,13 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                 <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                   {config?.provider === 'openai' && 'Get your API key from platform.openai.com'}
                   {config?.provider === 'anthropic' && 'Get your API key from console.anthropic.com'}
-                  {config?.provider === 'github' && 'Generate token at github.com/settings/tokens (needs copilot scope)'}
                   {config?.provider === 'deepseek' && 'Get your API key from platform.deepseek.com'}
                   {config?.provider === 'gemini' && 'Get your API key from makersuite.google.com'}
                   {config?.provider === 'ollama' && 'No API key needed for local Ollama'}
                 </p>
               </div>
 
-              {(config?.provider === 'custom' || config?.provider === 'ollama' || config?.provider === 'github') && (
+              {(config?.provider === 'custom' || config?.provider === 'ollama') && (
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
                     Base URL
@@ -387,7 +383,6 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     }
                     placeholder={
                       config?.provider === 'ollama' ? 'http://localhost:11434' :
-                      config?.provider === 'github' ? 'https://api.githubcopilot.com' :
                       'https://api.your-endpoint.com'
                     }
                     className="w-full p-2 rounded border text-sm font-mono focus:outline-none transition-colors"
