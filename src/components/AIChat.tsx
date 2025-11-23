@@ -317,10 +317,10 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                   onChange={(e) =>
                     setConfig({ ...config!, provider: e.target.value })
                   }
-                  className="w-full p-2 rounded border"
+                  className="w-full p-2 text-sm rounded border focus:outline-none transition-colors"
                   style={{
                     backgroundColor: 'var(--color-surface)',
-                    color: 'var(--color-text)',
+                    color: 'var(--color-text-primary)',
                     borderColor: 'var(--color-border)',
                   }}
                 >
@@ -356,10 +356,10 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     'sk-...'
                   }
                   disabled={config?.provider === 'ollama'}
-                  className="w-full p-2 rounded border text-sm font-mono"
+                  className="w-full p-2 rounded border text-sm font-mono focus:outline-none transition-colors"
                   style={{
                     backgroundColor: 'var(--color-surface)',
-                    color: 'var(--color-text)',
+                    color: 'var(--color-text-primary)',
                     borderColor: 'var(--color-border)',
                     opacity: config?.provider === 'ollama' ? 0.5 : 1,
                   }}
@@ -390,10 +390,10 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                       config?.provider === 'github' ? 'https://api.githubcopilot.com' :
                       'https://api.your-endpoint.com'
                     }
-                    className="w-full p-2 rounded border text-sm font-mono"
+                    className="w-full p-2 rounded border text-sm font-mono focus:outline-none transition-colors"
                     style={{
                       backgroundColor: 'var(--color-surface)',
-                      color: 'var(--color-text)',
+                      color: 'var(--color-text-primary)',
                       borderColor: 'var(--color-border)',
                     }}
                   />
@@ -417,10 +417,10 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     config?.provider === 'ollama' ? 'llama2 or mistral' :
                     'model-name'
                   }
-                  className="w-full p-2 rounded border text-sm font-mono"
+                  className="w-full p-2 rounded border text-sm font-mono focus:outline-none transition-colors"
                   style={{
                     backgroundColor: 'var(--color-surface)',
-                    color: 'var(--color-text)',
+                    color: 'var(--color-text-primary)',
                     borderColor: 'var(--color-border)',
                   }}
                 />
@@ -463,10 +463,10 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     onChange={(e) =>
                       setConfig({ ...config!, max_tokens: parseInt(e.target.value) })
                     }
-                    className="w-full p-2 rounded border"
+                    className="w-full p-2 text-sm rounded border focus:outline-none transition-colors"
                     style={{
                       backgroundColor: 'var(--color-surface)',
-                      color: 'var(--color-text)',
+                      color: 'var(--color-text-primary)',
                       borderColor: 'var(--color-border)',
                     }}
                   />
@@ -496,17 +496,19 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                   </button>
                   <button
                     onClick={() => setShowSettings(false)}
-                    className="px-4 py-2 rounded transition-colors duration-150"
+                    className="px-4 py-2 text-sm rounded border transition-colors duration-150"
                     style={{
                       backgroundColor: 'var(--color-surface)',
-                      color: 'var(--color-text)',
-                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-secondary)',
+                      borderColor: 'var(--color-border)',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+                      e.currentTarget.style.color = 'var(--color-text-primary)';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                      e.currentTarget.style.color = 'var(--color-text-secondary)';
                     }}
                   >
                     Cancel
