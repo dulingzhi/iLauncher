@@ -353,6 +353,28 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
       return;
     }
     
+    // 处理执行历史的 execute 动作 - 使用原始的 plugin_id 和 result_id
+    if (actionId === 'execute' && result.plugin_id === 'execution-history') {
+      const contextData = result.context_data as any;
+      if (contextData && contextData.original_id && contextData.plugin_id && contextData.action_id) {
+        await executeAction(
+          contextData.original_id,
+          contextData.action_id,
+          contextData.plugin_id,
+          result.title,
+          result.subtitle,
+          result.icon
+        );
+        
+        if (!action.prevent_hide) {
+          await handleHide();
+        }
+        
+        setContextMenu(null);
+        return;
+      }
+    }
+    
     await executeAction(result.id, actionId, result.plugin_id, result.title, result.subtitle, result.icon);
     
     if (!action.prevent_hide) {
@@ -378,6 +400,29 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
     
     // 从results中找到对应的结果获取subtitle和icon
     const result = displayResults.find(r => r.id === contextMenu.resultId);
+    
+    // 处理执行历史的 execute 动作 - 使用原始的 plugin_id 和 result_id
+    if (actionId === 'execute' && contextMenu.pluginId === 'execution-history' && result) {
+      const contextData = result.context_data as any;
+      if (contextData && contextData.original_id && contextData.plugin_id && contextData.action_id) {
+        await executeAction(
+          contextData.original_id,
+          contextData.action_id,
+          contextData.plugin_id,
+          contextMenu.resultTitle,
+          result?.subtitle || '',
+          result?.icon || { type: 'emoji', data: '📋' }
+        );
+        
+        if (!action.prevent_hide) {
+          await handleHide();
+        }
+        
+        setContextMenu(null);
+        return;
+      }
+    }
+    
     await executeAction(
       contextMenu.resultId, 
       actionId, 
