@@ -191,10 +191,14 @@ function App() {
             style={{ backgroundColor: 'var(--color-surface)', opacity: 0.98 }}
           >
             <SearchBox 
-              onOpenSettings={() => setCurrentView('settings')} 
+              onOpenSettings={() => setCurrentView('settings')}
               onOpenPlugins={() => setCurrentView('plugins')}
               onOpenClipboard={() => setCurrentView('clipboard')}
-              onOpenAIChat={() => setCurrentView('ai-chat')}
+              onOpenAIChat={async () => {
+                // 确保窗口显示
+                await invoke("show_app");
+                setCurrentView('ai-chat');
+              }}
               onShowHotkeyGuide={() => setShowHotkeyGuide(true)}
             />
           </div>
@@ -214,7 +218,7 @@ function App() {
           {currentView === 'settings' && <Settings onClose={() => { setCurrentView('search'); }} />}
           {currentView === 'plugins' && <PluginManager onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
           {currentView === 'clipboard' && <ClipboardHistory onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
-          {currentView === 'ai-chat' && <AIChat onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
+          {currentView === 'ai-chat' && <AIChat onClose={() => { setCurrentView('search'); invoke("show_app"); }} />}
         </div>
       )}
     </div>
