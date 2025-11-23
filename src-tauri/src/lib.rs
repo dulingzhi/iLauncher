@@ -15,6 +15,7 @@ mod utils;
 #[cfg(target_os = "windows")]
 pub mod mft_scanner;
 
+use std::sync::Arc; // 用于 PluginMarketState
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt::time::OffsetTime};
 
@@ -107,6 +108,20 @@ pub fn run() {
             commands::ai::get_ai_conversations,
             commands::ai::switch_ai_conversation,
             commands::ai::delete_ai_conversation,
+            commands::plugin_market::search_plugins,
+            commands::plugin_market::get_plugin_details,
+            commands::plugin_market::install_plugin,
+            commands::plugin_market::uninstall_plugin,
+            commands::plugin_market::update_plugin,
+            commands::plugin_market::list_installed_plugins,
+            commands::plugin_market::toggle_plugin,
+            commands::plugin_market::update_plugin_settings,
+            commands::plugin_market::check_plugin_updates,
+            commands::plugin_market::get_popular_plugins,
+            commands::plugin_market::get_recent_plugins,
+            commands::plugin_market::get_plugins_by_category,
+            commands::plugin_market::clear_plugin_cache,
+            commands::plugin_market::install_plugin_from_file,
         ])
         .setup(|app| {
             // 初始化存储管理器
@@ -248,6 +263,23 @@ pub fn run() {
                 plugin::PluginManager::new_with_mft_override(Some(actual_use_mft)).await
             });
             app.manage(plugin_manager);
+            
+            // 🔥 Phase 3: 初始化插件市场状态
+            let plugins_dir = storage::get_plugins_dir().expect("Failed to get plugins directory");
+            let cache_dir = storage::get_cache_dir().expect("Failed to get cache directory");
+            let plugin_market_state = Arc::new(tokio::sync::RwLock::new(
+                commands::plugin_market::PluginMarketState::new(
+                    plugins_dir,
+                    cache_dir.join("plugins")
+                )
+            ));
+            // 🔥 加载已安装插件
+            tauri::async_runtime::block_on(async {
+                if let Err(e) = plugin_market_state.read().await.registry.load_installed_plugins().await {
+                    tracing::warn!("Failed to load installed plugins: {}", e);
+                }
+            });
+            app.manage(plugin_market_state);
             
             // 初始化热键管理器
             let mut hotkey_manager = hotkey::HotkeyManager::new()

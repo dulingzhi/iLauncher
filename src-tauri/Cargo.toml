@@ -73,6 +73,7 @@ parking_lot = "0.12"  # 高性能锁
 
 # 文件系统
 walkdir = "2"
+zip = "2.2" # ZIP 压缩/解压（插件市场）
 
 # 命令行解析（用于 scanner/monitor 二进制）
 clap = { version = "4", features = ["derive"] }

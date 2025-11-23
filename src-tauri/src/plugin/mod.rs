@@ -18,6 +18,8 @@ pub mod window_manager;
 pub mod sandbox;
 pub mod audit;
 pub mod ai_assistant;
+pub mod plugin_installer; // 插件安装器
+pub mod plugin_store;     // 插件商店
 
 use crate::core::types::*;
 use anyhow::Result;

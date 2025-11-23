@@ -367,3 +367,23 @@ impl StorageManager {
         Ok(())
     }
 }
+
+// ==================== 公共函数 ====================
+
+/// 获取插件安装目录
+pub fn get_plugins_dir() -> Result<PathBuf> {
+    use crate::utils::paths;
+    let app_data_dir = paths::get_app_data_dir()?;
+    let plugins_dir = app_data_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir)?;
+    Ok(plugins_dir)
+}
+
+/// 获取缓存目录
+pub fn get_cache_dir() -> Result<PathBuf> {
+    use crate::utils::paths;
+    let app_data_dir = paths::get_app_data_dir()?;
+    let cache_dir = app_data_dir.join("cache");
+    std::fs::create_dir_all(&cache_dir)?;
+    Ok(cache_dir)
+}
