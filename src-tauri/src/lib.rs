@@ -122,6 +122,12 @@ pub fn run() {
             commands::plugin_market::get_plugins_by_category,
             commands::plugin_market::clear_plugin_cache,
             commands::plugin_market::install_plugin_from_file,
+            commands::workflow::list_workflows,
+            commands::workflow::get_workflow,
+            commands::workflow::save_workflow,
+            commands::workflow::delete_workflow,
+            commands::workflow::execute_workflow,
+            commands::workflow::find_workflows_by_keyword,
         ])
         .setup(|app| {
             // 初始化存储管理器
@@ -280,6 +286,21 @@ pub fn run() {
                 }
             });
             app.manage(plugin_market_state);
+            
+            // 🔥 Phase 4: 初始化工作流引擎
+            let workflows_dir = storage::get_cache_dir()
+                .expect("Failed to get cache directory")
+                .join("workflows");
+            let workflow_engine = Arc::new(tokio::sync::RwLock::new(
+                plugin::workflow_engine::WorkflowEngine::new(workflows_dir)
+            ));
+            // 加载已有工作流
+            tauri::async_runtime::block_on(async {
+                if let Err(e) = workflow_engine.read().await.load_workflows().await {
+                    tracing::warn!("Failed to load workflows: {}", e);
+                }
+            });
+            app.manage(workflow_engine);
             
             // 初始化热键管理器
             let mut hotkey_manager = hotkey::HotkeyManager::new()
