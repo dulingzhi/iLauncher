@@ -41,6 +41,19 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
   useEffect(() => {
     loadPlugins();
   }, []);
+  
+  // 监听 config 变化，同步 pluginStatuses
+  useEffect(() => {
+    if (config && plugins.length > 0) {
+      const statusObj: Record<string, boolean> = {};
+      plugins.forEach(plugin => {
+        const isDisabled = config.plugins.disabled_plugins.includes(plugin.id);
+        statusObj[plugin.id] = !isDisabled;
+      });
+      setPluginStatuses(statusObj);
+      console.log('[PluginManager] Synced pluginStatuses from config:', statusObj);
+    }
+  }, [config, plugins]);
 
   // ESC 键监听
   useEffect(() => {
@@ -86,6 +99,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       const isCurrentlyDisabled = config.plugins.disabled_plugins.includes(pluginId);
       console.log(`[PluginManager] Toggling ${pluginId}, currently disabled: ${isCurrentlyDisabled}`);
       console.log('[PluginManager] Current disabled_plugins:', config.plugins.disabled_plugins);
+      console.log('[PluginManager] Current pluginStatuses:', pluginStatuses);
       
       // 深拷贝配置对象
       const updatedConfig = {
@@ -99,17 +113,26 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       };
       
       console.log('[PluginManager] New disabled_plugins:', updatedConfig.plugins.disabled_plugins);
+      
+      // 先更新 UI 状态（立即响应）
+      const newStatuses = {
+        ...pluginStatuses,
+        [pluginId]: !isCurrentlyDisabled
+      };
+      console.log('[PluginManager] Setting new pluginStatuses:', newStatuses);
+      setPluginStatuses(newStatuses);
+      
+      // 然后保存配置
       await saveConfig(updatedConfig);
       console.log('[PluginManager] Config saved successfully');
       
-      // 更新本地状态
-      setPluginStatuses({
-        ...pluginStatuses,
-        [pluginId]: !isCurrentlyDisabled
-      });
-      
     } catch (error) {
       console.error('Failed to toggle plugin:', error);
+      // 保存失败时回滚状态
+      setPluginStatuses({
+        ...pluginStatuses,
+        [pluginId]: !(!isCurrentlyDisabled)
+      });
       alert('Failed to toggle plugin: ' + error);
     }
   };
