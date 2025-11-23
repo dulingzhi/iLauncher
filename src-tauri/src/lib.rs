@@ -86,6 +86,10 @@ pub fn run() {
             commands::remove_search_history,
             commands::get_search_suggestions,
             commands::record_search_execution,
+            commands::get_sandbox_config,
+            commands::update_sandbox_config,
+            commands::get_plugin_permissions,
+            commands::check_plugin_permission,
         ])
         .setup(|app| {
             // 初始化存储管理器

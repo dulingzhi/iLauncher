@@ -15,10 +15,12 @@ pub mod git_projects;
 pub mod system_commands;
 pub mod execution_history;
 pub mod window_manager;
+pub mod sandbox;
 
 use crate::core::types::*;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 /// 插件特征
 #[async_trait]
@@ -36,6 +38,7 @@ pub trait Plugin: Send + Sync {
 /// 插件管理器
 pub struct PluginManager {
     plugins: Vec<Box<dyn Plugin>>,
+    sandbox_manager: Arc<sandbox::SandboxManager>,
 }
 
 impl PluginManager {
@@ -45,6 +48,21 @@ impl PluginManager {
     
     /// 创建插件管理器（可选覆盖 MFT 状态）
     pub async fn new_with_mft_override(mft_override: Option<bool>) -> Self {
+        // 初始化沙盒管理器
+        let sandbox_manager = Arc::new(sandbox::SandboxManager::new());
+        
+        // 注册内置插件的沙盒配置（系统级，无限制）
+        let builtin_plugins = vec![
+            "calculator", "web_search", "unit_converter", "settings",
+            "plugin_manager", "system_commands", "window_manager",
+            "execution-history", "clipboard", "app_search", "browser",
+            "process", "translator", "devtools", "git_projects", "file_search"
+        ];
+        
+        for plugin_id in builtin_plugins {
+            sandbox_manager.register(sandbox::SandboxConfig::system(plugin_id));
+        }
+        
         // 加载插件配置（从存储管理器）
         let storage = match crate::storage::StorageManager::new() {
             Ok(s) => s,
@@ -52,6 +70,7 @@ impl PluginManager {
                 tracing::warn!("Failed to create storage manager for plugin config");
                 let mut manager = Self { 
                     plugins: Vec::new(),
+                    sandbox_manager,
                 };
                 Self::register_default_plugins(&mut manager).await;
                 return manager;
@@ -77,6 +96,7 @@ impl PluginManager {
         
         let mut manager = Self {
             plugins: Vec::new(),
+            sandbox_manager,
         };
         
         // 注册插件
@@ -241,5 +261,15 @@ impl PluginManager {
             }
         }
         None
+    }
+    
+    /// 获取沙盒管理器
+    pub fn sandbox_manager(&self) -> &Arc<sandbox::SandboxManager> {
+        &self.sandbox_manager
+    }
+    
+    /// 验证插件权限
+    pub fn validate_permission(&self, plugin_id: &str, permission: &sandbox::PluginPermission) -> Result<()> {
+        self.sandbox_manager.check_permission(plugin_id, permission)
     }
 }

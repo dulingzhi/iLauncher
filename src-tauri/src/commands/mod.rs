@@ -575,3 +575,52 @@ pub async fn record_search_execution(
 ) -> Result<(), String> {
     history.record_execution(&query).await.map_err(|e| e.to_string())
 }
+
+// ==================== 插件沙盒管理 ====================
+
+/// 获取插件沙盒配置
+#[tauri::command]
+pub async fn get_sandbox_config(
+    plugin_id: String,
+    manager: State<'_, PluginManager>,
+) -> Result<Option<crate::plugin::sandbox::SandboxConfig>, String> {
+    Ok(manager.sandbox_manager().get_config(&plugin_id))
+}
+
+/// 更新插件沙盒配置
+#[tauri::command]
+pub async fn update_sandbox_config(
+    config: crate::plugin::sandbox::SandboxConfig,
+    manager: State<'_, PluginManager>,
+) -> Result<(), String> {
+    let plugin_id = config.plugin_id.clone();
+    manager.sandbox_manager().update_config(config);
+    tracing::info!("🔒 Updated sandbox config for plugin: {}", plugin_id);
+    Ok(())
+}
+
+/// 获取插件权限列表
+#[tauri::command]
+pub async fn get_plugin_permissions(
+    plugin_id: String,
+    manager: State<'_, PluginManager>,
+) -> Result<Vec<String>, String> {
+    if let Some(config) = manager.sandbox_manager().get_config(&plugin_id) {
+        let perms = config.effective_permissions();
+        Ok(perms.iter().map(|p| format!("{:?}", p)).collect())
+    } else {
+        Ok(vec![])
+    }
+}
+
+/// 检查插件权限
+#[tauri::command]
+pub async fn check_plugin_permission(
+    _plugin_id: String,
+    _permission: String,
+    _manager: State<'_, PluginManager>,
+) -> Result<bool, String> {
+    // 这里需要解析 permission 字符串，简化处理
+    // 实际应该实现完整的权限解析逻辑
+    Ok(true) // 暂时返回 true，实际需要实现权限检查
+}

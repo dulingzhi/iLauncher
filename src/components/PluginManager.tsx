@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Settings, Power, PowerOff, RefreshCw, Download, X, Save, AlertCircle } from 'lucide-react';
+import { Settings, Power, PowerOff, RefreshCw, Download, X, Save, AlertCircle, Shield } from 'lucide-react';
 import { useConfigStore } from '../store/useConfigStore';
+import { SandboxSettings } from './SandboxSettings';
 
 interface PluginMetadata {
   id: string;
@@ -307,6 +308,7 @@ const PluginConfigPanel: React.FC<PluginConfigPanelProps> = ({ plugin, onClose }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'config' | 'sandbox'>('config');
 
   // 加载插件配置
   useEffect(() => {
@@ -451,8 +453,8 @@ const PluginConfigPanel: React.FC<PluginConfigPanelProps> = ({ plugin, onClose }
           <div className="flex items-center gap-3">
             <span className="text-2xl">{getIconEmoji(plugin.icon)}</span>
             <div>
-              <h2 className="text-lg font-semibold text-gray-100">{plugin.name} Settings</h2>
-              <p className="text-xs text-gray-500">Configure plugin preferences</p>
+              <h2 className="text-lg font-semibold text-gray-100">{plugin.name}</h2>
+              <p className="text-xs text-gray-500">插件配置与安全管理</p>
             </div>
           </div>
           <button
@@ -464,50 +466,84 @@ const PluginConfigPanel: React.FC<PluginConfigPanelProps> = ({ plugin, onClose }
           </button>
         </div>
 
+        {/* 标签页导航 */}
+        <div className="flex border-b border-[#3e3e42] bg-[#252526]">
+          <button
+            onClick={() => setActiveTab('config')}
+            className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'config'
+                ? 'text-white border-b-2 border-[#007acc]'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            配置选项
+          </button>
+          <button
+            onClick={() => setActiveTab('sandbox')}
+            className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'sandbox'
+                ? 'text-white border-b-2 border-[#007acc]'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Shield className="w-4 h-4" />
+            沙盒隔离
+          </button>
+        </div>
+
         {/* 内容 */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-gray-400">Loading configuration...</div>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-red-400">
-              <AlertCircle className="w-5 h-5" />
-              <span>{error}</span>
-            </div>
-          ) : plugin.settings && plugin.settings.length > 0 ? (
-            <div className="space-y-4 max-w-2xl">
-              {plugin.settings.map((setting, index) => renderSettingField(setting, index))}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === 'config' ? (
+            <div className="p-6">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-gray-400">Loading configuration...</div>
+                </div>
+              ) : error ? (
+                <div className="flex items-center justify-center gap-2 py-12 text-red-400">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>{error}</span>
+                </div>
+              ) : plugin.settings && plugin.settings.length > 0 ? (
+                <div className="space-y-4 max-w-2xl">
+                  {plugin.settings.map((setting, index) => renderSettingField(setting, index))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <AlertCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-400 mb-1">No settings available</p>
+                    <p className="text-gray-600 text-sm">This plugin doesn't have any configurable options</p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <AlertCircle className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-400 mb-1">No settings available</p>
-                <p className="text-gray-600 text-sm">This plugin doesn't have any configurable options</p>
-              </div>
-            </div>
+            <SandboxSettings pluginId={plugin.id} pluginName={plugin.name} />
           )}
         </div>
 
-        {/* 底部操作栏 */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-[#2d2d30] border-t border-[#3e3e42]">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-300 hover:bg-[#3e3e42] rounded transition-colors"
-            disabled={saving}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !plugin.settings || plugin.settings.length === 0}
-            className="px-4 py-2 text-sm bg-[#007acc] text-white rounded hover:bg-[#005a9e] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
+        {/* 底部操作栏 - 仅在配置标签页显示 */}
+        {activeTab === 'config' && (
+          <div className="flex items-center justify-end gap-3 px-6 py-4 bg-[#2d2d30] border-t border-[#3e3e42]">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-300 hover:bg-[#3e3e42] rounded transition-colors"
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !plugin.settings || plugin.settings.length === 0}
+              className="px-4 py-2 text-sm bg-[#007acc] text-white rounded hover:bg-[#005a9e] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
