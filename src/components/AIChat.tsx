@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Bot, Send, Loader2, Settings, Trash2, Plus } from 'lucide-react';
+import { Bot, Send, Loader2, Settings, Trash2, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface ChatMessage {
@@ -42,6 +42,17 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
     loadConfig();
     loadConversations();
   }, []);
+
+  // ESC 键关闭窗口
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     scrollToBottom();
@@ -115,6 +126,8 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
         message: userMessage,
       });
 
+      console.log('AI response:', response);
+
       // 重新加载对话以获取最新消息
       await loadConversations();
     } catch (error) {
@@ -156,9 +169,33 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
 
   return (
     <div
-      className="flex h-full"
+      className="flex h-full relative"
       style={{ backgroundColor: 'var(--color-background)' }}
     >
+      {/* 关闭按钮 */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-50 p-2 rounded-lg transition-all duration-200"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            color: 'var(--color-text-secondary)',
+            border: '1px solid var(--color-border)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+            e.currentTarget.style.color = 'var(--color-text)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
+          }}
+          title="Close (ESC)"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+
       {/* 对话列表侧边栏 */}
       <div
         className="w-64 border-r flex flex-col"
@@ -174,8 +211,15 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
           </h2>
           <button
             onClick={createNewConversation}
-            className="p-2 rounded hover:bg-opacity-10"
+            className="p-2 rounded transition-colors duration-200"
             style={{ color: 'var(--color-accent)' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            title="New Chat"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -186,13 +230,23 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
             <div
               key={conv.id}
               onClick={() => setCurrentConvId(conv.id)}
-              className="group p-3 rounded-lg cursor-pointer mb-2 flex justify-between items-center"
+              className="group p-3 rounded-lg cursor-pointer mb-2 flex justify-between items-center transition-colors duration-150"
               style={{
                 backgroundColor:
                   currentConvId === conv.id
                     ? 'var(--color-hover)'
                     : 'transparent',
                 color: 'var(--color-text)',
+              }}
+              onMouseEnter={(e) => {
+                if (currentConvId !== conv.id) {
+                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentConvId !== conv.id) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }
               }}
             >
               <div className="flex-1 min-w-0">
@@ -209,8 +263,15 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                   e.stopPropagation();
                   deleteConversation(conv.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-opacity-20"
-                style={{ color: 'var(--color-danger, #e53e3e)' }}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all duration-150"
+                style={{ color: '#e53e3e' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(229, 62, 62, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                title="Delete conversation"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -220,10 +281,18 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
 
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className="p-4 border-t flex items-center gap-2"
+          className="p-4 border-t flex items-center gap-2 transition-colors duration-150"
           style={{
             borderColor: 'var(--color-border)',
             color: 'var(--color-text-secondary)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+            e.currentTarget.style.color = 'var(--color-text)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
           }}
         >
           <Settings className="w-4 h-4" />
@@ -414,21 +483,33 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                 <div className="flex gap-2">
                   <button
                     onClick={saveConfig}
-                    className="px-4 py-2 rounded font-medium"
+                    className="px-4 py-2 rounded font-medium transition-opacity duration-150"
                     style={{
                       backgroundColor: 'var(--color-accent)',
                       color: 'white',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '0.9';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1';
                     }}
                   >
                     Save Configuration
                   </button>
                   <button
                     onClick={() => setShowSettings(false)}
-                    className="px-4 py-2 rounded"
+                    className="px-4 py-2 rounded transition-colors duration-150"
                     style={{
                       backgroundColor: 'var(--color-surface)',
                       color: 'var(--color-text)',
                       border: '1px solid var(--color-border)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-surface)';
                     }}
                   >
                     Cancel
@@ -493,22 +574,40 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                   onKeyPress={(e) => e.key === 'Enter' && !loading && sendMessage()}
                   placeholder="Type your message..."
                   disabled={loading}
-                  className="flex-1 p-3 rounded-lg border"
+                  className="flex-1 p-3 rounded-lg border focus:outline-none transition-colors duration-150"
                   style={{
                     backgroundColor: 'var(--color-surface)',
                     color: 'var(--color-text)',
                     borderColor: 'var(--color-border)',
                   }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                  }}
                 />
                 <button
                   onClick={sendMessage}
                   disabled={loading || !input.trim()}
-                  className="p-3 rounded-lg"
+                  className="p-3 rounded-lg transition-opacity duration-150"
                   style={{
                     backgroundColor: 'var(--color-accent)',
                     color: 'white',
                     opacity: loading || !input.trim() ? 0.5 : 1,
+                    cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
                   }}
+                  onMouseEnter={(e) => {
+                    if (!loading && input.trim()) {
+                      e.currentTarget.style.opacity = '0.9';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!loading && input.trim()) {
+                      e.currentTarget.style.opacity = '1';
+                    }
+                  }}
+                  title={loading ? 'Sending...' : 'Send message (Enter)'}
                 >
                   {loading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
