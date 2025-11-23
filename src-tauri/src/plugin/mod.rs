@@ -14,6 +14,7 @@ pub mod devtools;
 pub mod git_projects;
 pub mod system_commands;
 pub mod execution_history;
+pub mod window_manager;
 
 use crate::core::types::*;
 use anyhow::Result;
@@ -85,6 +86,7 @@ impl PluginManager {
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
         manager.register(Box::new(system_commands::SystemCommandPlugin::new()));
+        manager.register(Box::new(window_manager::WindowManagerPlugin::new()));
         
         // 创建运行历史插件
         let data_dir = crate::utils::paths::get_data_dir()
@@ -129,6 +131,7 @@ impl PluginManager {
         manager.register(Box::new(settings::SettingsPlugin::new()));
         manager.register(Box::new(settings::PluginManagerPlugin::new()));
         manager.register(Box::new(system_commands::SystemCommandPlugin::new()));
+        manager.register(Box::new(window_manager::WindowManagerPlugin::new()));
         
         // 创建运行历史插件
         let data_dir = crate::utils::paths::get_data_dir()
