@@ -16,6 +16,7 @@
     "core:window:allow-outer-size",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-skip-taskbar",
+    "core:window:allow-start-dragging",
     "core:path:default",
     "core:image:default",
     "core:app:default",
