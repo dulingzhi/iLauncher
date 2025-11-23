@@ -218,7 +218,7 @@ function App() {
           {currentView === 'settings' && <Settings onClose={() => { setCurrentView('search'); }} />}
           {currentView === 'plugins' && <PluginManager onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
           {currentView === 'clipboard' && <ClipboardHistory onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
-          {currentView === 'ai-chat' && <AIChat onClose={() => { setCurrentView('search'); invoke("show_app"); }} />}
+          {currentView === 'ai-chat' && <AIChat onClose={() => { invoke("hide_app"); setCurrentView('search'); }} />}
         </div>
       )}
     </div>
