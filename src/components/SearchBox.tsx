@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Search } from 'lucide-react';
@@ -10,6 +10,27 @@ import { useQuery, useExecuteAction } from '../hooks/useQuery';
 import { ContextMenu } from './ContextMenu';
 import { highlightMatch } from '../utils/pinyinSearch';
 import '../animations.css';
+
+// 格式化时间戳为相对时间
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    return `${days} 天前`;
+  } else if (hours > 0) {
+    return `${hours} 小时前`;
+  } else if (minutes > 0) {
+    return `${minutes} 分钟前`;
+  } else {
+    return '刚刚';
+  }
+}
 
 interface SearchBoxProps {
   onOpenSettings: () => void;
@@ -33,6 +54,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
     pluginId: string;
   } | null>(null);
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   
   const {
     query,
@@ -50,9 +72,73 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
   const { results, loading, debouncedQuery } = useQuery();
   const executeAction = useExecuteAction();
   
+  // 获取搜索建议
   useEffect(() => {
-    setResults(results);
-  }, [results, setResults]);
+    const fetchSuggestions = async () => {
+      if (!query.trim() || loading) {
+        setSuggestions([]);
+        return;
+      }
+      
+      try {
+        const items = await invoke<any[]>('get_search_suggestions', {
+          prefix: query,
+          limit: 5,
+        });
+        setSuggestions(items);
+      } catch (error) {
+        console.error('Failed to fetch suggestions:', error);
+        setSuggestions([]);
+      }
+    };
+    
+    const timer = setTimeout(fetchSuggestions, 150);
+    return () => clearTimeout(timer);
+  }, [query, loading]);
+  
+  // 判断是否有有效的搜索结果
+  const hasValidResults = useMemo(() => {
+    return results.length > 0 && !results.every(r => 
+      r.title.toLowerCase().includes('no ') || 
+      r.title.toLowerCase().includes('无') ||
+      r.title === 'No files found' ||
+      r.title === 'No clipboard history'
+    );
+  }, [results]);
+  
+  // 合并搜索结果和建议
+  const displayResults = useMemo(() => {
+    if (hasValidResults) {
+      return results;
+    } else if (suggestions.length > 0) {
+      const suggestionResults = suggestions.map((item) => ({
+        id: `suggestion_${item.query}`,
+        title: item.query,
+        subtitle: `搜索历史 · 使用 ${item.frequency} 次 · ${formatTimestamp(item.timestamp)}`,
+        icon: { type: 'emoji', data: '🕒' } as any,
+        score: 1000,
+        plugin_id: 'search_history',
+        context_data: null,
+        actions: [{
+          id: 'search',
+          name: '搜索',
+          is_default: true,
+          prevent_hide: true,
+          hotkey: undefined,
+          icon: undefined,
+        }],
+        preview: undefined,
+        refreshable: false,
+        group: '搜索历史建议',
+      }));
+      
+      if (results.length > 0) {
+        return [...suggestionResults, ...results];
+      }
+      return suggestionResults;
+    }
+    return results;
+  }, [results, suggestions, hasValidResults]);
   
   useEffect(() => {
     debouncedQuery(query);
@@ -189,9 +275,27 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
   };
   
   const handleExecute = async () => {
-    if (results.length === 0) return;
+    if (displayResults.length === 0) return;
     
-    const result = results[selectedIndex];
+    const result = displayResults[selectedIndex];
+    
+    // 处理搜索建议
+    if (result.plugin_id === 'search_history') {
+      setQuery(result.title);
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+      return;
+    }
+    
+    // 记录搜索执行
+    if (query.trim()) {
+      try {
+        await invoke('record_search_execution', { query: query.trim() });
+      } catch (error) {
+        console.error('Failed to record search execution:', error);
+      }
+    }
     
     // 检查是否是 Settings 或 Plugin Manager 或 Clipboard
     if (result.id === 'settings') {
@@ -217,9 +321,9 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
   };
   
   const handleExecuteAction = async (actionId: string) => {
-    if (results.length === 0) return;
+    if (displayResults.length === 0) return;
     
-    const result = results[selectedIndex];
+    const result = displayResults[selectedIndex];
     const action = result.actions.find(a => a.id === actionId);
     
     if (!action) return;
@@ -248,7 +352,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
     });
     
     // 从results中找到对应的结果获取subtitle和icon
-    const result = results.find(r => r.id === contextMenu.resultId);
+    const result = displayResults.find(r => r.id === contextMenu.resultId);
     await executeAction(
       contextMenu.resultId, 
       actionId, 
@@ -330,7 +434,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
       </div>
       
       {/* 结果列表标题 - Windows 11 风格 */}
-      {results.length > 0 && (
+      {displayResults.length > 0 && (
         <>
           <div className="px-6 py-2 text-xs font-medium" style={{ 
             color: 'var(--color-text-muted)',
@@ -345,7 +449,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
             className="max-h-[450px] overflow-y-auto pb-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
             style={{ backgroundColor: 'var(--color-surface)' }}
           >
-            {results.map((result, index) => (
+            {displayResults.map((result, index) => (
               <ResultItem
                 key={result.id}
                 ref={index === selectedIndex ? selectedItemRef : null}
