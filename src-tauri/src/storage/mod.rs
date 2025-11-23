@@ -198,6 +198,7 @@ impl Default for AppConfig {
                 font_size: 14,
                 transparency: 95,
                 show_preview: true,
+                window_positions: WindowPositions::default(),
             },
             plugins: PluginsConfig {
                 enabled_plugins: vec![
