@@ -1,0 +1,59 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景渐变圆形 -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="search-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f0f0f0;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- 主圆形背景 -->
+  <circle cx="256" cy="256" r="230" fill="url(#bg-gradient)" filter="url(#shadow)"/>
+  
+  <!-- 内层光晕 -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.1"/>
+  
+  <!-- 放大镜 -->
+  <g transform="translate(200, 200)">
+    <!-- 放大镜圆圈 -->
+    <circle cx="40" cy="40" r="55" fill="none" stroke="url(#search-gradient)" stroke-width="16" stroke-linecap="round"/>
+    
+    <!-- 放大镜内部高光 -->
+    <circle cx="25" cy="25" r="8" fill="#ffffff" opacity="0.6"/>
+    
+    <!-- 放大镜手柄 -->
+    <line x1="80" y1="80" x2="135" y2="135" stroke="url(#search-gradient)" stroke-width="16" stroke-linecap="round"/>
+    
+    <!-- 手柄末端圆点 -->
+    <circle cx="135" cy="135" r="8" fill="#ffffff"/>
+  </g>
+  
+  <!-- 装饰元素：小星星（左上角） -->
+  <g transform="translate(120, 100)">
+    <polygon points="0,-8 2,-2 8,0 2,2 0,8 -2,2 -8,0 -2,-2" fill="#ffd700" opacity="0.9"/>
+  </g>
+  
+  <!-- 装饰元素：小星星（右上角） -->
+  <g transform="translate(392, 120)">
+    <polygon points="0,-6 1.5,-1.5 6,0 1.5,1.5 0,6 -1.5,1.5 -6,0 -1.5,-1.5" fill="#ffd700" opacity="0.8"/>
+  </g>
+  
+  <!-- 装饰元素：闪光点（右下角） -->
+  <g transform="translate(370, 350)">
+    <circle cx="0" cy="0" r="4" fill="#64ffda" opacity="0.8"/>
+  </g>
+  
+  <!-- 速度线条效果（右侧） -->
+  <g opacity="0.15">
+    <line x1="350" y1="240" x2="380" y2="240" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    <line x1="360" y1="256" x2="385" y2="256" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    <line x1="355" y1="272" x2="378" y2="272" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
