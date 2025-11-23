@@ -84,6 +84,8 @@ pub fn run() {
             commands::get_search_history,
             commands::clear_search_history,
             commands::remove_search_history,
+            commands::get_search_suggestions,
+            commands::record_search_execution,
         ])
         .setup(|app| {
             // 初始化存储管理器

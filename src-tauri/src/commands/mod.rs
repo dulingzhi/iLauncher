@@ -556,3 +556,22 @@ pub async fn remove_search_history(
 ) -> Result<(), String> {
     history.remove(&query).await.map_err(|e| e.to_string())
 }
+
+/// 获取搜索建议（根据前缀匹配）
+#[tauri::command]
+pub async fn get_search_suggestions(
+    prefix: String,
+    limit: Option<usize>,
+    history: State<'_, crate::search_history::SearchHistoryManager>,
+) -> Result<Vec<crate::search_history::SearchHistoryItem>, String> {
+    Ok(history.get_suggestions(&prefix, limit.unwrap_or(5)).await)
+}
+
+/// 记录搜索执行（当用户选择并执行某个结果时）
+#[tauri::command]
+pub async fn record_search_execution(
+    query: String,
+    history: State<'_, crate::search_history::SearchHistoryManager>,
+) -> Result<(), String> {
+    history.record_execution(&query).await.map_err(|e| e.to_string())
+}

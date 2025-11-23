@@ -100,4 +100,6 @@ export interface SearchHistoryItem {
   query: string;
   timestamp: string;
   result_count: number;
+  frequency: number;  // 搜索频率（使用次数）
+  last_executed?: string;  // 最后一次执行时间
 }

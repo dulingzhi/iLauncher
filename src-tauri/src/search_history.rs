@@ -13,6 +13,10 @@ pub struct SearchHistoryItem {
     pub query: String,
     pub timestamp: DateTime<Utc>,
     pub result_count: usize,
+    #[serde(default)]
+    pub frequency: usize,  // 搜索频率（使用次数）
+    #[serde(default)]
+    pub last_executed: Option<DateTime<Utc>>,  // 最后一次执行时间
 }
 
 pub struct SearchHistoryManager {
@@ -43,15 +47,22 @@ impl SearchHistoryManager {
         
         let mut history = self.history.write().await;
         
-        // 移除重复项（保留最新的）
-        history.retain(|item| item.query != query);
-        
-        // 添加新记录
-        history.insert(0, SearchHistoryItem {
-            query,
-            timestamp: Utc::now(),
-            result_count,
-        });
+        // 查找是否已存在相同的查询
+        if let Some(existing) = history.iter_mut().find(|item| item.query == query) {
+            // 更新频率和时间戳
+            existing.frequency += 1;
+            existing.timestamp = Utc::now();
+            existing.result_count = result_count;
+        } else {
+            // 添加新记录
+            history.insert(0, SearchHistoryItem {
+                query,
+                timestamp: Utc::now(),
+                result_count,
+                frequency: 1,
+                last_executed: None,
+            });
+        }
         
         // 限制历史记录数量
         if history.len() > MAX_HISTORY_SIZE {
@@ -66,9 +77,50 @@ impl SearchHistoryManager {
         Ok(())
     }
     
-    /// 获取历史记录
+    /// 记录执行（当用户选择并执行某个搜索结果时调用）
+    pub async fn record_execution(&self, query: &str) -> Result<()> {
+        let mut history = self.history.write().await;
+        
+        if let Some(item) = history.iter_mut().find(|item| item.query == query) {
+            item.last_executed = Some(Utc::now());
+            item.frequency += 1;
+        }
+        
+        drop(history);
+        self.save().await?;
+        
+        Ok(())
+    }
+    
+    /// 获取历史记录（智能排序）
     pub async fn get_history(&self) -> Vec<SearchHistoryItem> {
-        self.history.read().await.clone()
+        let mut history = self.history.read().await.clone();
+        
+        // 智能排序算法：综合考虑频率、时效性、执行情况
+        let now = Utc::now();
+        history.sort_by(|a, b| {
+            let score_a = calculate_relevance_score(a, &now);
+            let score_b = calculate_relevance_score(b, &now);
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        
+        history
+    }
+    
+    /// 获取搜索建议（根据前缀匹配）
+    pub async fn get_suggestions(&self, prefix: &str, limit: usize) -> Vec<SearchHistoryItem> {
+        if prefix.trim().is_empty() {
+            return Vec::new();
+        }
+        
+        let history = self.get_history().await;
+        let prefix_lower = prefix.to_lowercase();
+        
+        history
+            .into_iter()
+            .filter(|item| item.query.to_lowercase().starts_with(&prefix_lower))
+            .take(limit)
+            .collect()
     }
     
     /// 清空历史记录
@@ -124,4 +176,43 @@ impl SearchHistoryManager {
         
         Ok(())
     }
+}
+
+/// 计算搜索项的相关性得分
+/// 综合考虑：
+/// 1. 频率（使用次数）
+/// 2. 时效性（最近搜索时间）
+/// 3. 执行情况（是否被执行过）
+fn calculate_relevance_score(item: &SearchHistoryItem, now: &DateTime<Utc>) -> f64 {
+    // 基础分数：频率权重
+    let frequency_score = item.frequency as f64 * 10.0;
+    
+    // 时效性分数：最近搜索越近分数越高
+    let hours_since_search = (now.timestamp() - item.timestamp.timestamp()) as f64 / 3600.0;
+    let recency_score = if hours_since_search < 1.0 {
+        100.0
+    } else if hours_since_search < 24.0 {
+        50.0 / hours_since_search
+    } else if hours_since_search < 168.0 {  // 1周
+        20.0 / (hours_since_search / 24.0)
+    } else {
+        5.0 / (hours_since_search / 168.0)
+    };
+    
+    // 执行加成：如果被执行过，额外加分
+    let execution_bonus = if let Some(last_exec) = item.last_executed {
+        let hours_since_exec = (now.timestamp() - last_exec.timestamp()) as f64 / 3600.0;
+        if hours_since_exec < 24.0 {
+            50.0
+        } else if hours_since_exec < 168.0 {
+            20.0 / (hours_since_exec / 24.0)
+        } else {
+            5.0
+        }
+    } else {
+        0.0
+    };
+    
+    // 综合得分
+    frequency_score + recency_score + execution_bonus
 }
