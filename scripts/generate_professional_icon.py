@@ -9,162 +9,118 @@ import struct
 import io
 
 def create_modern_icon(size):
-    """创建现代化的 iLauncher 图标 - 专业手绘版"""
+    """创建简洁扁平科幻风格的 iLauncher 图标"""
     
-    # 创建高分辨率画布（2倍采样，最后缩小以获得抗锯齿效果）
+    # 创建高分辨率画布（2倍采样）
     render_size = size * 2
     img = Image.new('RGBA', (render_size, render_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
     center = render_size // 2
+    padding = render_size // 10
     
-    # === 1. 绘制渐变背景圆形 ===
-    # 创建紫蓝色渐变
-    for i in range(100):
-        ratio = i / 100
-        radius = int((render_size // 2 - render_size // 10) * (1 - ratio * 0.3))
+    # === 1. 扁平渐变背景圆形 - 科幻感蓝紫色 ===
+    # 使用简单的双色渐变
+    for i in range(50):
+        ratio = i / 50
+        radius = int((render_size // 2 - padding) * (1 - ratio * 0.15))
         
-        # 从深紫色到浅蓝紫色
-        r = int(102 + (139 - 102) * ratio)    # 102 -> 139
-        g = int(126 + (158 - 126) * ratio)    # 126 -> 158
-        b = int(234 + (250 - 234) * ratio)    # 234 -> 250
+        # 深空蓝到电光蓝
+        r = int(41 + (99 - 41) * ratio)      # #2952E8 -> #6366F1
+        g = int(82 + (102 - 82) * ratio)
+        b = int(232 + (241 - 232) * ratio)
         
         draw.ellipse(
             [center - radius, center - radius, center + radius, center + radius],
             fill=(r, g, b, 255)
         )
     
-    # === 2. 添加外发光效果 ===
-    glow_radius = render_size // 2 - render_size // 12
-    draw.ellipse(
-        [center - glow_radius, center - glow_radius, 
-         center + glow_radius, center + glow_radius],
-        outline=(255, 255, 255, 30),
-        width=6
-    )
+    # === 2. 极简搜索图标 - 细线条设计 ===
+    mag_radius = int(render_size * 0.20)
+    mag_thickness = max(5, render_size // 30)  # 更细的线条
     
-    # === 3. 绘制放大镜主体 ===
-    mag_offset_x = -render_size // 16
-    mag_offset_y = -render_size // 16
-    mag_center_x = center + mag_offset_x
-    mag_center_y = center + mag_offset_y
-    mag_radius = int(render_size * 0.22)
-    mag_thickness = max(6, render_size // 24)
-    
-    # 放大镜镜片外圈（深色边框）
+    # 放大镜圆圈（纯白，无装饰）
     draw.ellipse(
-        [mag_center_x - mag_radius - 2, mag_center_y - mag_radius - 2,
-         mag_center_x + mag_radius + 2, mag_center_y + mag_radius + 2],
-        outline=(200, 200, 200, 100),
-        width=2
-    )
-    
-    # 放大镜镜片主体
-    draw.ellipse(
-        [mag_center_x - mag_radius, mag_center_y - mag_radius,
-         mag_center_x + mag_radius, mag_center_y + mag_radius],
+        [center - mag_radius, center - mag_radius,
+         center + mag_radius, center + mag_radius],
         outline=(255, 255, 255, 255),
         width=mag_thickness
     )
     
-    # 镜片内部高光
-    highlight_r = mag_radius // 3
-    highlight_x = mag_center_x - mag_radius // 3
-    highlight_y = mag_center_y - mag_radius // 3
-    draw.ellipse(
-        [highlight_x - highlight_r, highlight_y - highlight_r,
-         highlight_x + highlight_r, highlight_y + highlight_r],
-        fill=(255, 255, 255, 100)
-    )
-    
-    # === 4. 绘制放大镜手柄 ===
+    # === 3. 极简手柄 ===
     import math
     angle = math.radians(45)
-    handle_start_x = mag_center_x + int(mag_radius * math.cos(angle))
-    handle_start_y = mag_center_y + int(mag_radius * math.sin(angle))
-    handle_length = int(render_size * 0.28)
+    handle_start_x = center + int(mag_radius * math.cos(angle))
+    handle_start_y = center + int(mag_radius * math.sin(angle))
+    handle_length = int(render_size * 0.24)
     handle_end_x = handle_start_x + int(handle_length * math.cos(angle))
     handle_end_y = handle_start_y + int(handle_length * math.sin(angle))
     
-    # 手柄阴影
-    draw.line(
-        [(handle_start_x + 3, handle_start_y + 3), 
-         (handle_end_x + 3, handle_end_y + 3)],
-        fill=(0, 0, 0, 50),
-        width=mag_thickness + 2
-    )
-    
-    # 手柄主体
+    # 手柄（纯白直线）
     draw.line(
         [(handle_start_x, handle_start_y), (handle_end_x, handle_end_y)],
         fill=(255, 255, 255, 255),
         width=mag_thickness
     )
     
-    # 手柄末端圆点
-    cap_radius = mag_thickness // 2 + 2
-    draw.ellipse(
-        [handle_end_x - cap_radius, handle_end_y - cap_radius,
-         handle_end_x + cap_radius, handle_end_y + cap_radius],
-        fill=(255, 255, 255, 255)
-    )
+    # === 4. 科幻点缀：扫描线效果（右上角） ===
+    scan_x = center + int(render_size * 0.28)
+    scan_y = center - int(render_size * 0.28)
+    scan_size = int(render_size * 0.12)
     
-    # === 5. 装饰性元素：星星 ===
-    # 右上角星星
-    star_x = center + int(render_size * 0.30)
-    star_y = center - int(render_size * 0.32)
-    star_size = render_size // 20
-    
-    # 绘制四角星
-    star_points = []
-    for i in range(8):
-        angle = math.radians(i * 45)
-        if i % 2 == 0:
-            r = star_size
-        else:
-            r = star_size // 3
-        x = star_x + int(r * math.cos(angle))
-        y = star_y + int(r * math.sin(angle))
-        star_points.append((x, y))
-    
-    draw.polygon(star_points, fill=(255, 215, 0, 220))  # 金色
-    
-    # 左上角小星星
-    small_star_x = center - int(render_size * 0.28)
-    small_star_y = center - int(render_size * 0.30)
-    small_star_size = render_size // 30
-    
-    star_points2 = []
-    for i in range(8):
-        angle = math.radians(i * 45)
-        if i % 2 == 0:
-            r = small_star_size
-        else:
-            r = small_star_size // 3
-        x = small_star_x + int(r * math.cos(angle))
-        y = small_star_y + int(r * math.sin(angle))
-        star_points2.append((x, y))
-    
-    draw.polygon(star_points2, fill=(255, 215, 0, 180))
-    
-    # === 6. 速度线条（右侧） ===
-    line_x = center + int(render_size * 0.25)
-    line_start_y = center - int(render_size * 0.08)
-    line_spacing = int(render_size * 0.08)
-    
+    # 绘制简洁的扫描圆环
     for i in range(3):
-        y = line_start_y + i * line_spacing
-        line_length = [50, 60, 45][i]
-        draw.line(
-            [(line_x, y), (line_x + line_length, y)],
-            fill=(255, 255, 255, 40),
-            width=6
+        ring_radius = scan_size - i * (scan_size // 4)
+        alpha = 180 - i * 60
+        draw.ellipse(
+            [scan_x - ring_radius, scan_y - ring_radius,
+             scan_x + ring_radius, scan_y + ring_radius],
+            outline=(100, 255, 218, alpha),  # 青色 #64FFDA
+            width=3
         )
     
-    # === 7. 应用轻微模糊以获得更柔和的效果 ===
-    img = img.filter(ImageFilter.SMOOTH)
+    # === 5. 科幻光点 ===
+    # 右下角光点
+    light_positions = [
+        (center + int(render_size * 0.32), center + int(render_size * 0.20)),
+        (center - int(render_size * 0.30), center - int(render_size * 0.32)),
+        (center + int(render_size * 0.10), center - int(render_size * 0.38)),
+    ]
     
-    # === 8. 缩小到目标尺寸（抗锯齿） ===
+    for x, y in light_positions:
+        dot_size = 4
+        # 发光效果（多层透明圆）
+        for j in range(3):
+            r = dot_size * (3 - j)
+            alpha = 100 // (j + 1)
+            draw.ellipse(
+                [x - r, y - r, x + r, y + r],
+                fill=(100, 255, 218, alpha)
+            )
+    
+    # === 6. 数字感装饰线 ===
+    # 左侧竖线
+    line_x = center - int(render_size * 0.34)
+    line_top = center - int(render_size * 0.15)
+    line_bottom = center + int(render_size * 0.15)
+    draw.line(
+        [(line_x, line_top), (line_x, line_bottom)],
+        fill=(255, 255, 255, 60),
+        width=2
+    )
+    
+    # 右侧短线组
+    for i in range(3):
+        line_x = center + int(render_size * 0.30)
+        line_y = center - int(render_size * 0.10) + i * int(render_size * 0.10)
+        line_length = 35 - i * 8
+        draw.line(
+            [(line_x, line_y), (line_x + line_length, line_y)],
+            fill=(255, 255, 255, 50),
+            width=2
+        )
+    
+    # === 7. 缩小到目标尺寸（抗锯齿） ===
     img = img.resize((size, size), Image.Resampling.LANCZOS)
     
     return img
