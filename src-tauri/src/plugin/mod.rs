@@ -21,6 +21,7 @@ pub mod ai_assistant;
 pub mod plugin_installer; // 插件安装器
 pub mod plugin_store;     // 插件商店
 pub mod workflow_engine;  // 工作流引擎
+pub mod smart_suggestion; // 智能建议
 
 use crate::core::types::*;
 use anyhow::Result;
