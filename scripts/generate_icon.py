@@ -7,86 +7,114 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 
 def create_ilauncher_icon(size):
-    """创建 iLauncher 图标
+    """创建 iLauncher 图标 - 极简现代风格
     
-    设计元素：
-    - 渐变蓝色圆形背景（象征搜索框）
-    - 白色放大镜图标（搜索功能）
-    - 火箭元素融入（快速启动）
+    设计理念：
+    - 简洁的渐变圆形背景
+    - 优雅的搜索图标
+    - 闪电符号代表快速
     """
     # 创建透明背景
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    # 计算中心和边距
     center = size // 2
-    padding = size // 8
+    padding = size // 10
     
-    # === 背景：渐变蓝色圆形 ===
-    # 主圆形（深蓝色到浅蓝色渐变效果通过多层实现）
-    circle_radius = size // 2 - padding
-    
-    # 外层光晕（浅蓝色）
-    draw.ellipse(
-        [center - circle_radius, center - circle_radius,
-         center + circle_radius, center + circle_radius],
-        fill=(66, 153, 225, 255)  # 明亮的蓝色 #4299E1
-    )
-    
-    # 内层阴影效果
-    inner_radius = circle_radius - size // 20
-    draw.ellipse(
-        [center - inner_radius, center - inner_radius,
-         center + inner_radius, center + inner_radius],
-        fill=(56, 178, 172, 255)  # 青色 #38B2AC
-    )
-    
-    # === 前景：搜索图标设计 ===
-    # 放大镜圆圈
-    mag_center_x = center - size // 12
-    mag_center_y = center - size // 12
-    mag_radius = size // 5
-    mag_thickness = max(2, size // 32)
-    
-    # 绘制放大镜圆圈（白色）
-    for i in range(mag_thickness):
+    # === 背景：现代渐变圆形 ===
+    # 创建从中心向外的径向渐变效果
+    for i in range(100, 0, -1):
+        ratio = i / 100
+        radius = int((size // 2 - padding) * ratio)
+        
+        # 从深蓝紫色渐变到亮蓝色
+        r = int(59 + (96 - 59) * (1 - ratio))      # 59 -> 96
+        g = int(130 + (165 - 130) * (1 - ratio))   # 130 -> 165
+        b = int(246 + (250 - 246) * (1 - ratio))   # 246 -> 250
+        alpha = 255
+        
         draw.ellipse(
-            [mag_center_x - mag_radius + i, mag_center_y - mag_radius + i,
-             mag_center_x + mag_radius - i, mag_center_y + mag_radius - i],
+            [center - radius, center - radius, center + radius, center + radius],
+            fill=(r, g, b, alpha)
+        )
+    
+    # === 主图标：优雅的搜索放大镜 ===
+    # 放大镜参数
+    mag_radius = int(size * 0.22)
+    mag_thickness = max(3, size // 24)
+    mag_center_offset = -int(size * 0.06)
+    
+    # 放大镜镜片（圆环）
+    for thickness in range(mag_thickness):
+        draw.ellipse(
+            [center + mag_center_offset - mag_radius + thickness,
+             center + mag_center_offset - mag_radius + thickness,
+             center + mag_center_offset + mag_radius - thickness,
+             center + mag_center_offset + mag_radius - thickness],
             outline=(255, 255, 255, 255),
             width=1
         )
     
-    # 绘制放大镜手柄（从右下角延伸）
-    handle_start_x = mag_center_x + int(mag_radius * 0.707)
-    handle_start_y = mag_center_y + int(mag_radius * 0.707)
-    handle_end_x = center + size // 5
-    handle_end_y = center + size // 5
+    # 放大镜手柄（圆角矩形）
+    handle_length = int(size * 0.25)
+    handle_width = mag_thickness
+    handle_start_angle = 45  # 45度角
     
+    import math
+    angle_rad = math.radians(handle_start_angle)
+    handle_start_x = center + mag_center_offset + int(mag_radius * math.cos(angle_rad))
+    handle_start_y = center + mag_center_offset + int(mag_radius * math.sin(angle_rad))
+    handle_end_x = handle_start_x + int(handle_length * math.cos(angle_rad))
+    handle_end_y = handle_start_y + int(handle_length * math.sin(angle_rad))
+    
+    # 绘制圆润的手柄
     draw.line(
-        [handle_start_x, handle_start_y, handle_end_x, handle_end_y],
+        [(handle_start_x, handle_start_y), (handle_end_x, handle_end_y)],
         fill=(255, 255, 255, 255),
-        width=mag_thickness
+        width=handle_width
     )
     
-    # === 点缀：小火箭元素（右上角） ===
-    rocket_size = size // 6
-    rocket_x = center + size // 4
-    rocket_y = center - size // 3
-    
-    # 火箭主体（三角形）
-    rocket_points = [
-        (rocket_x, rocket_y - rocket_size // 2),  # 顶部
-        (rocket_x - rocket_size // 4, rocket_y + rocket_size // 4),  # 左下
-        (rocket_x + rocket_size // 4, rocket_y + rocket_size // 4),  # 右下
-    ]
-    draw.polygon(rocket_points, fill=(255, 223, 0, 255))  # 金黄色 #FFDF00
-    
-    # 火箭尾焰（小圆点）
-    flame_y = rocket_y + rocket_size // 3
+    # 手柄末端圆点（圆润效果）
+    cap_radius = handle_width // 2
     draw.ellipse(
-        [rocket_x - 2, flame_y - 2, rocket_x + 2, flame_y + 2],
-        fill=(255, 107, 107, 255)  # 红色火焰
+        [handle_end_x - cap_radius, handle_end_y - cap_radius,
+         handle_end_x + cap_radius, handle_end_y + cap_radius],
+        fill=(255, 255, 255, 255)
+    )
+    
+    # === 点缀元素：闪电符号（代表快速） ===
+    lightning_size = int(size * 0.15)
+    lightning_x = center + int(size * 0.25)
+    lightning_y = center - int(size * 0.25)
+    
+    # 绘制简化的闪电图标
+    lightning_points = [
+        (lightning_x, lightning_y - lightning_size // 3),
+        (lightning_x - lightning_size // 4, lightning_y),
+        (lightning_x, lightning_y),
+        (lightning_x - lightning_size // 5, lightning_y + lightning_size // 3),
+    ]
+    
+    # 使用渐变金色
+    draw.polygon(
+        [
+            (lightning_x + 1, lightning_y - lightning_size // 2),
+            (lightning_x - lightning_size // 3, lightning_y + 2),
+            (lightning_x + 3, lightning_y + 2),
+            (lightning_x - lightning_size // 4, lightning_y + lightning_size // 2),
+        ],
+        fill=(255, 215, 0, 255)  # 金色 #FFD700
+    )
+    
+    # 添加高光效果（小白点）
+    highlight_size = max(2, size // 40)
+    highlight_x = center + mag_center_offset - int(mag_radius * 0.4)
+    highlight_y = center + mag_center_offset - int(mag_radius * 0.4)
+    
+    draw.ellipse(
+        [highlight_x - highlight_size, highlight_y - highlight_size,
+         highlight_x + highlight_size, highlight_y + highlight_size],
+        fill=(255, 255, 255, 180)
     )
     
     return img
