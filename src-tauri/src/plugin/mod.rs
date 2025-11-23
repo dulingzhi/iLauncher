@@ -16,6 +16,7 @@ pub mod system_commands;
 pub mod execution_history;
 pub mod window_manager;
 pub mod sandbox;
+pub mod audit;
 
 use crate::core::types::*;
 use anyhow::Result;

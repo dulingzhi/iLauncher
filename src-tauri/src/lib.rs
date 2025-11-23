@@ -90,6 +90,12 @@ pub fn run() {
             commands::update_sandbox_config,
             commands::get_plugin_permissions,
             commands::check_plugin_permission,
+            commands::audit::get_audit_log,
+            commands::audit::get_plugin_audit_log,
+            commands::audit::get_violations,
+            commands::audit::get_audit_statistics,
+            commands::audit::clear_audit_log,
+            commands::audit::export_audit_log,
         ])
         .setup(|app| {
             // 初始化存储管理器

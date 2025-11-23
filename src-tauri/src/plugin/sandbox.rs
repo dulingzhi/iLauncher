@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use super::audit::{AuditLogger, AuditEventType, AuditSeverity};
 
 /// 插件权限类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -171,12 +172,14 @@ impl SandboxConfig {
 /// 插件沙盒管理器
 pub struct SandboxManager {
     configs: Arc<RwLock<std::collections::HashMap<String, SandboxConfig>>>,
+    audit_logger: Arc<AuditLogger>,
 }
 
 impl SandboxManager {
     pub fn new() -> Self {
         Self {
             configs: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            audit_logger: Arc::new(AuditLogger::default()),
         }
     }
 
@@ -197,10 +200,20 @@ impl SandboxManager {
 
         // 如果沙盒未启用（系统插件），直接允许
         if !config.enabled {
+            // 记录审计日志
+            self.audit_logger.log(
+                AuditEventType::PermissionCheck {
+                    plugin_id: plugin_id.to_string(),
+                    permission: format!("{:?}", permission),
+                    allowed: true,
+                },
+                AuditSeverity::Info,
+            );
             return Ok(());
         }
 
         let effective_perms = config.effective_permissions();
+        let mut allowed = false;
 
         // 检查权限
         match permission {
@@ -211,38 +224,86 @@ impl SandboxManager {
                         PluginPermission::FileSystemRead(allowed_path) 
                         | PluginPermission::FileSystemWrite(allowed_path) => {
                             if path.starts_with(allowed_path) {
-                                return Ok(());
+                                allowed = true;
+                                break;
                             }
                         }
                         _ => {}
                     }
                 }
-                Err(anyhow!("Permission denied: {:?} for plugin '{}'", permission, plugin_id))
+                
+                // 记录文件访问审计
+                self.audit_logger.log(
+                    AuditEventType::FileAccess {
+                        plugin_id: plugin_id.to_string(),
+                        path: path.display().to_string(),
+                        write: matches!(permission, PluginPermission::FileSystemWrite(_)),
+                        allowed,
+                    },
+                    if allowed { AuditSeverity::Info } else { AuditSeverity::Warning },
+                );
+                
+                if !allowed {
+                    return Err(anyhow!("Permission denied: {:?} for plugin '{}'", permission, plugin_id));
+                }
             }
             PluginPermission::NetworkAccess(scope) => {
                 for perm in &effective_perms {
                     if let PluginPermission::NetworkAccess(allowed_scope) = perm {
                         match (scope, allowed_scope) {
-                            (_, NetworkScope::All) => return Ok(()),
-                            (NetworkScope::Domain(domain), NetworkScope::Domain(allowed)) => {
-                                if domain == allowed {
-                                    return Ok(());
+                            (_, NetworkScope::All) => {
+                                allowed = true;
+                                break;
+                            }
+                            (NetworkScope::Domain(domain), NetworkScope::Domain(allowed_domain)) => {
+                                if domain == allowed_domain {
+                                    allowed = true;
+                                    break;
                                 }
                             }
                             _ => {}
                         }
                     }
                 }
-                Err(anyhow!("Permission denied: {:?} for plugin '{}'", permission, plugin_id))
+                
+                // 记录网络访问审计
+                let domain = match scope {
+                    NetworkScope::All => "all".to_string(),
+                    NetworkScope::Domain(d) => d.clone(),
+                    NetworkScope::None => "none".to_string(),
+                };
+                self.audit_logger.log(
+                    AuditEventType::NetworkAccess {
+                        plugin_id: plugin_id.to_string(),
+                        domain,
+                        allowed,
+                    },
+                    if allowed { AuditSeverity::Info } else { AuditSeverity::Warning },
+                );
+                
+                if !allowed {
+                    return Err(anyhow!("Permission denied: {:?} for plugin '{}'", permission, plugin_id));
+                }
             }
             _ => {
-                if effective_perms.contains(permission) {
-                    Ok(())
-                } else {
-                    Err(anyhow!("Permission denied: {:?} for plugin '{}'", permission, plugin_id))
+                allowed = effective_perms.contains(permission);
+                
+                // 记录权限检查
+                self.audit_logger.log(
+                    AuditEventType::PermissionCheck {
+                        plugin_id: plugin_id.to_string(),
+                        permission: format!("{:?}", permission),
+                        allowed,
+                    },
+                    if allowed { AuditSeverity::Info } else { AuditSeverity::Warning },
+                );
+                
+                if !allowed {
+                    return Err(anyhow!("Permission denied: {:?} for plugin '{}'", permission, plugin_id));
                 }
             }
         }
+        Ok(())
     }
 
     /// 验证文件访问
@@ -277,8 +338,53 @@ impl SandboxManager {
 
     /// 更新插件配置
     pub fn update_config(&self, config: SandboxConfig) {
+        let old_config = self.configs.read().unwrap().get(&config.plugin_id).cloned();
+        
+        // 记录配置变更审计
+        if let Some(old) = old_config {
+            self.audit_logger.log(
+                AuditEventType::ConfigChange {
+                    plugin_id: config.plugin_id.clone(),
+                    old_level: format!("{:?}", old.security_level),
+                    new_level: format!("{:?}", config.security_level),
+                },
+                AuditSeverity::Info,
+            );
+        }
+        
         let mut configs = self.configs.write().unwrap();
         configs.insert(config.plugin_id.clone(), config);
+    }
+    
+    /// 获取审计日志
+    pub fn get_audit_entries(&self) -> Vec<super::audit::AuditLogEntry> {
+        self.audit_logger.get_entries()
+    }
+    
+    /// 获取指定插件的审计日志
+    pub fn get_plugin_audit_entries(&self, plugin_id: &str) -> Vec<super::audit::AuditLogEntry> {
+        self.audit_logger.get_plugin_entries(plugin_id)
+    }
+    
+    /// 获取所有违规尝试
+    pub fn get_violations(&self) -> Vec<super::audit::AuditLogEntry> {
+        self.audit_logger.get_violations()
+    }
+    
+    /// 获取审计统计信息
+    pub fn get_audit_statistics(&self) -> super::audit::AuditStatistics {
+        self.audit_logger.get_statistics()
+    }
+    
+    /// 清空审计日志
+    pub fn clear_audit_log(&self) {
+        self.audit_logger.clear();
+    }
+    
+    /// 导出审计日志为 JSON
+    pub fn export_audit_log(&self) -> Result<String> {
+        self.audit_logger.export_json()
+            .map_err(|e| anyhow!("Failed to export audit log: {}", e))
     }
 }
 
