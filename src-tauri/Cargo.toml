@@ -53,7 +53,7 @@ rustc-hash = "2"  # 高性能哈希
 rayon = "1.10"    # 并行计算
 
 # HTTP客户端
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 # 哈希和加密
 md5 = "0.7"

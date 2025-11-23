@@ -576,7 +576,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                   className="flex-1 p-3 rounded-lg border focus:outline-none transition-colors duration-150"
                   style={{
                     backgroundColor: 'var(--color-surface)',
-                    color: 'var(--color-text)',
+                    color: 'var(--color-text-primary)',
                     borderColor: 'var(--color-border)',
                   }}
                   onFocus={(e) => {

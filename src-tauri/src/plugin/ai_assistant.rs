@@ -107,7 +107,7 @@ impl AIAssistantPlugin {
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(60))
                 .build()
-                .unwrap(),
+                .expect("Failed to build HTTP client for AI Assistant"),
             matcher: SkimMatcherV2::default(),
         }
     }
