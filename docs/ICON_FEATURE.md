@@ -8,8 +8,8 @@ UI 搜索文件时，现在会显示真实的文件图标，而不是通用的 e
 
 ### 1. 图标提取（`icon_cache.rs`）
 - 使用 Windows Shell API (`SHGetFileInfoW`) 提取文件图标
-- 将 HICON 转换为 16x16 PNG 格式
-- 保存到临时目录 `%TEMP%\ilauncher_icons\`
+- 将 HICON 转换为 48x48 PNG 格式（高清晰度）
+- 直接返回 base64 编码的图标数据（内存缓存）
 
 ### 2. 智能缓存
 - **按扩展名缓存**：`.txt`、`.pdf`、`.exe` 等

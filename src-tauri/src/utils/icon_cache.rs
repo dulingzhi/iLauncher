@@ -80,7 +80,8 @@ fn extract_icon_as_base64(file_path: &str) -> Result<String> {
         .collect();
     
     unsafe {
-        // 🔥 使用 SHGFI_LARGEICON 获取 32x32 图标
+        // 🔥 使用 SHGFI_LARGEICON 获取 32x32 图标（系统标准大图标）
+        // 注意：Windows 系统图标有固定尺寸，我们在后续绘制时放大到 48x48
         let mut shfi: SHFILEINFOW = std::mem::zeroed();
         let result = SHGetFileInfoW(
             PCWSTR(wide_path.as_ptr()),
@@ -113,8 +114,8 @@ fn icon_to_base64(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Resu
     use windows::Win32::Graphics::Gdi::{CreateDIBSection, BITMAPINFO, BITMAPINFOHEADER};
     
     unsafe {
-        // 🔥 创建一个 32x32 的位图来绘制图标
-        let icon_size: u32 = 32;
+        // 🔥 创建一个 48x48 的位图来绘制图标（提升清晰度）
+        let icon_size: u32 = 48;
         
         // 创建设备上下文
         let hdc = CreateCompatibleDC(None);
