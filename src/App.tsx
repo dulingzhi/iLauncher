@@ -33,7 +33,7 @@ function App() {
   const [showWelcomeGuide, setShowWelcomeGuide] = useState(false);
   const results = useAppStore((state) => state.results);
   const selectedIndex = useAppStore((state) => state.selectedIndex);
-  const { config, loadConfig } = useConfigStore();
+  const { config, loadConfig, saveConfig } = useConfigStore();
   const { message, type, visible, hideToast } = useToast();
   const showPreview = config?.appearance.show_preview ?? true;
   
