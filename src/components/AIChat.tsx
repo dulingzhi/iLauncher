@@ -207,7 +207,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
         >
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Bot style={{ color: 'var(--color-accent)' }} className="w-5 h-5" />
-            <span style={{ color: 'var(--color-text)' }}>AI Chat</span>
+            <span style={{ color: 'var(--color-text-primary)' }}>AI Chat</span>
           </h2>
           <button
             onClick={createNewConversation}
@@ -250,7 +250,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
               }}
             >
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{conv.title}</div>
+                <div className="font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>{conv.title}</div>
                 <div
                   className="text-xs truncate"
                   style={{ color: 'var(--color-text-secondary)' }}
@@ -305,16 +305,13 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
         {showSettings ? (
           /* 设置面板 */
           <div className="p-6 overflow-y-auto">
-            <h3
-              className="text-xl font-bold mb-4"
-              style={{ color: 'var(--color-text)' }}
-            >
+            <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>
               AI Settings
             </h3>
 
             <div className="space-y-4 max-w-2xl">
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>Provider</label>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>Provider</label>
                 <select
                   value={config?.provider || 'openai'}
                   onChange={(e) =>
@@ -343,7 +340,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
                   API Key / Token
                 </label>
                 <input
@@ -359,7 +356,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     'sk-...'
                   }
                   disabled={config?.provider === 'ollama'}
-                  className="w-full p-2 rounded border font-mono text-sm"
+                  className="w-full p-2 rounded border text-sm font-mono"
                   style={{
                     backgroundColor: 'var(--color-surface)',
                     color: 'var(--color-text)',
@@ -379,7 +376,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
 
               {(config?.provider === 'custom' || config?.provider === 'ollama' || config?.provider === 'github') && (
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
                     Base URL
                   </label>
                   <input
@@ -393,7 +390,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                       config?.provider === 'github' ? 'https://api.githubcopilot.com' :
                       'https://api.your-endpoint.com'
                     }
-                    className="w-full p-2 rounded border font-mono text-sm"
+                    className="w-full p-2 rounded border text-sm font-mono"
                     style={{
                       backgroundColor: 'var(--color-surface)',
                       color: 'var(--color-text)',
@@ -404,7 +401,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
               )}
 
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>Model</label>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>Model</label>
                 <input
                   type="text"
                   value={config?.model || ''}
@@ -420,7 +417,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                     config?.provider === 'ollama' ? 'llama2 or mistral' :
                     'model-name'
                   }
-                  className="w-full p-2 rounded border font-mono text-sm"
+                  className="w-full p-2 rounded border text-sm font-mono"
                   style={{
                     backgroundColor: 'var(--color-surface)',
                     color: 'var(--color-text)',
@@ -434,7 +431,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
                     Temperature ({config?.temperature || 0.7})
                   </label>
                   <input
@@ -454,7 +451,7 @@ const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
                     Max Tokens
                   </label>
                   <input

@@ -566,13 +566,56 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
                 result={result}
                 isSelected={index === selectedIndex}
                 query={query}
-                onClick={() => {
-                  // 更新选中索引
-                  setSelectedIndex(index);
-                  // 延迟执行,确保选中状态已更新
-                  setTimeout(async () => {
-                    await handleExecute();
-                  }, 0);
+                onClick={async () => {
+                  // 直接使用当前 index 执行，避免 state 更新延迟导致的错误
+                  const clickedResult = displayResults[index];
+                  
+                  // 处理搜索建议
+                  if (clickedResult.plugin_id === 'search_history') {
+                    setQuery(clickedResult.title);
+                    if (inputRef.current) {
+                      inputRef.current.focus();
+                    }
+                    return;
+                  }
+                  
+                  // 记录搜索执行
+                  if (query.trim()) {
+                    try {
+                      await invoke('record_search_execution', { query: query.trim() });
+                    } catch (error) {
+                      console.error('Failed to record search execution:', error);
+                    }
+                  }
+                  
+                  // 检查内置功能
+                  if (clickedResult.id === 'settings') {
+                    onOpenSettings();
+                    return;
+                  }
+                  
+                  if (clickedResult.id === 'plugin_manager') {
+                    onOpenPlugins();
+                    return;
+                  }
+                  
+                  if (clickedResult.id === 'clipboard_history') {
+                    onOpenClipboard();
+                    return;
+                  }
+                  
+                  if (clickedResult.id === 'config' && clickedResult.plugin_id === 'ai_assistant') {
+                    onOpenAIChat();
+                    return;
+                  }
+                  
+                  // 执行默认操作
+                  const defaultAction = clickedResult.actions.find(a => a.is_default) || clickedResult.actions[0];
+                  if (defaultAction) {
+                    // 更新选中状态用于视觉反馈
+                    setSelectedIndex(index);
+                    await handleExecuteAction(defaultAction.id);
+                  }
                 }}
                 onContextMenu={(e) => handleContextMenu(e, result)}
               />
