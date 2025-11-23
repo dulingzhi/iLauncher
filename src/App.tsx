@@ -78,7 +78,7 @@ function App() {
     initialize();
   }, []);
 
-  // 当视图切换时，调整窗口尺寸并居中
+  // 当视图切换时，调整窗口尺寸、居中、设置置顶和任务栏显示
   useEffect(() => {
     const adjustWindowSize = async () => {
       const appWindow = getCurrentWindow();
@@ -97,7 +97,14 @@ function App() {
         // 禁止用户手动调整大小
         await appWindow.setResizable(false);
         
-        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height} (centered)`);
+        // 🔥 根据视图类型设置窗口置顶和任务栏显示
+        // 搜索视图：置顶 + 不显示任务栏图标
+        // 其他视图：不置顶 + 显示任务栏图标
+        const isSearchView = currentView === 'search';
+        await appWindow.setAlwaysOnTop(isSearchView);
+        await appWindow.setSkipTaskbar(isSearchView);
+        
+        console.log(`Window adjusted for ${currentView}: ${config.width}x${config.height} (centered, alwaysOnTop=${isSearchView}, skipTaskbar=${isSearchView})`);
       } catch (error) {
         console.error('Failed to adjust window:', error);
       }
