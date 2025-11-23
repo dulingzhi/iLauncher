@@ -87,16 +87,16 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       console.log(`[PluginManager] Toggling ${pluginId}, currently disabled: ${isCurrentlyDisabled}`);
       console.log('[PluginManager] Current disabled_plugins:', config.plugins.disabled_plugins);
       
-      const updatedConfig = { ...config };
-      if (isCurrentlyDisabled) {
-        // 启用插件：从禁用列表移除
-        updatedConfig.plugins.disabled_plugins = config.plugins.disabled_plugins.filter(
-          (id: string) => id !== pluginId
-        );
-      } else {
-        // 禁用插件：添加到禁用列表
-        updatedConfig.plugins.disabled_plugins = [...config.plugins.disabled_plugins, pluginId];
-      }
+      // 深拷贝配置对象
+      const updatedConfig = {
+        ...config,
+        plugins: {
+          ...config.plugins,
+          disabled_plugins: isCurrentlyDisabled
+            ? config.plugins.disabled_plugins.filter((id: string) => id !== pluginId)
+            : [...config.plugins.disabled_plugins, pluginId]
+        }
+      };
       
       console.log('[PluginManager] New disabled_plugins:', updatedConfig.plugins.disabled_plugins);
       await saveConfig(updatedConfig);
