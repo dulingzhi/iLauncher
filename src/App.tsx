@@ -8,6 +8,7 @@ import ClipboardHistory from "./components/ClipboardHistory";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { Toast } from "./components/Toast";
 import { HotkeyGuide } from "./components/HotkeyGuide";
+import { WelcomeGuide } from "./components/WelcomeGuide";
 import { useAppStore } from "./store/useAppStore";
 import { useConfigStore } from "./store/useConfigStore";
 import { useToast } from "./hooks/useToast";
@@ -27,6 +28,7 @@ function App() {
   const [currentView, setCurrentView] = useState<View>('search');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [showHotkeyGuide, setShowHotkeyGuide] = useState(false);
+  const [showWelcomeGuide, setShowWelcomeGuide] = useState(false);
   const results = useAppStore((state) => state.results);
   const selectedIndex = useAppStore((state) => state.selectedIndex);
   const { config, loadConfig } = useConfigStore();
@@ -59,6 +61,12 @@ function App() {
   useEffect(() => {
     const initialize = async () => {
       await loadConfig();
+      
+      // 检查是否是首次启动
+      const hasShownWelcome = localStorage.getItem('ilauncher_welcome_shown');
+      if (!hasShownWelcome) {
+        setShowWelcomeGuide(true);
+      }
       
       // 🔥 移除初始化时的居中逻辑，避免窗口闪现
       // 窗口会在首次通过热键显示时自动居中
@@ -166,6 +174,11 @@ function App() {
       {/* 快捷键指南 */}
       {showHotkeyGuide && (
         <HotkeyGuide onClose={() => setShowHotkeyGuide(false)} />
+      )}
+      
+      {/* 欢迎指南 */}
+      {showWelcomeGuide && (
+        <WelcomeGuide onClose={() => setShowWelcomeGuide(false)} />
       )}
       
       {currentView === 'search' ? (
