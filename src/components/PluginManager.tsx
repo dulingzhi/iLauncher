@@ -133,7 +133,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
     );
   }
 
-  const enabledCount = Array.from(pluginStatuses.values()).filter(Boolean).length;
+  const enabledCount = Object.values(pluginStatuses).filter(Boolean).length;
   const disabledCount = plugins.length - enabledCount;
 
   return (
