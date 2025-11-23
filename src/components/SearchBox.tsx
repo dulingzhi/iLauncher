@@ -71,20 +71,6 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
   const { results, loading, debouncedQuery } = useQuery();
   const executeAction = useExecuteAction();
   
-  // 本地导航函数
-  const selectNext = () => {
-    setSelectedIndex(prev => Math.min(prev + 1, displayResults.length - 1));
-  };
-  
-  const selectPrev = () => {
-    setSelectedIndex(prev => Math.max(prev - 1, 0));
-  };
-  
-  // 当显示结果改变时重置选中索引
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [displayResults.length]);
-  
   // 获取搜索建议
   useEffect(() => {
     const fetchSuggestions = async () => {
@@ -152,6 +138,20 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
     }
     return results;
   }, [results, suggestions, hasValidResults]);
+  
+  // 本地导航函数（定义在displayResults之后）
+  const selectNext = () => {
+    setSelectedIndex(prev => Math.min(prev + 1, displayResults.length - 1));
+  };
+  
+  const selectPrev = () => {
+    setSelectedIndex(prev => Math.max(prev - 1, 0));
+  };
+  
+  // 当显示结果改变时重置选中索引
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [displayResults.length]);
   
   useEffect(() => {
     debouncedQuery(query);
