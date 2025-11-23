@@ -84,6 +84,8 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
     
     try {
       const isCurrentlyDisabled = config.plugins.disabled_plugins.includes(pluginId);
+      console.log(`[PluginManager] Toggling ${pluginId}, currently disabled: ${isCurrentlyDisabled}`);
+      console.log('[PluginManager] Current disabled_plugins:', config.plugins.disabled_plugins);
       
       const updatedConfig = { ...config };
       if (isCurrentlyDisabled) {
@@ -96,7 +98,9 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
         updatedConfig.plugins.disabled_plugins = [...config.plugins.disabled_plugins, pluginId];
       }
       
+      console.log('[PluginManager] New disabled_plugins:', updatedConfig.plugins.disabled_plugins);
       await saveConfig(updatedConfig);
+      console.log('[PluginManager] Config saved successfully');
       
       // 更新本地状态
       const newStatuses = new Map(pluginStatuses);

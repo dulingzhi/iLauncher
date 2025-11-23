@@ -113,6 +113,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   saveConfig: async (config: AppConfig) => {
     try {
+      console.log('[useConfigStore] Saving config:', JSON.stringify(config, null, 2));
       await invoke('save_config', { config });
       console.log('✓ Config saved to backend');
       set({ config });
