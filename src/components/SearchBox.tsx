@@ -36,15 +36,17 @@ interface SearchBoxProps {
   onOpenSettings: () => void;
   onOpenPlugins: () => void;
   onOpenClipboard: () => void;
+  onOpenAIChat: () => void;
   onShowHotkeyGuide: () => void;
 }
 
-export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onShowHotkeyGuide }: SearchBoxProps) {
+export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOpenAIChat, onShowHotkeyGuide }: SearchBoxProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const lastNavigationTime = useRef<number>(0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -58,11 +60,8 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
   
   const {
     query,
-    selectedIndex,
     setQuery,
     setResults,
-    selectNext,
-    selectPrev,
     reset,
   } = useAppStore();
   
@@ -71,6 +70,20 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
   
   const { results, loading, debouncedQuery } = useQuery();
   const executeAction = useExecuteAction();
+  
+  // 本地导航函数
+  const selectNext = () => {
+    setSelectedIndex(prev => Math.min(prev + 1, displayResults.length - 1));
+  };
+  
+  const selectPrev = () => {
+    setSelectedIndex(prev => Math.max(prev - 1, 0));
+  };
+  
+  // 当显示结果改变时重置选中索引
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [displayResults.length]);
   
   // 获取搜索建议
   useEffect(() => {
@@ -297,7 +310,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
       }
     }
     
-    // 检查是否是 Settings 或 Plugin Manager 或 Clipboard
+    // 检查是否是 Settings 或 Plugin Manager 或 Clipboard 或 AI Chat
     if (result.id === 'settings') {
       onOpenSettings();
       return;
@@ -310,6 +323,12 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
     
     if (result.id === 'clipboard_history') {
       onOpenClipboard();
+      return;
+    }
+    
+    // AI助手的配置
+    if (result.id === 'config' && result.plugin_id === 'ai_assistant') {
+      onOpenAIChat();
       return;
     }
     
@@ -327,6 +346,12 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onSh
     const action = result.actions.find(a => a.id === actionId);
     
     if (!action) return;
+    
+    // 处理AI助手的open_settings动作
+    if (actionId === 'open_settings' && result.plugin_id === 'ai_assistant') {
+      onOpenAIChat();
+      return;
+    }
     
     await executeAction(result.id, actionId, result.plugin_id, result.title, result.subtitle, result.icon);
     

@@ -194,6 +194,7 @@ function App() {
               onOpenSettings={() => setCurrentView('settings')} 
               onOpenPlugins={() => setCurrentView('plugins')}
               onOpenClipboard={() => setCurrentView('clipboard')}
+              onOpenAIChat={() => setCurrentView('ai-chat')}
               onShowHotkeyGuide={() => setShowHotkeyGuide(true)}
             />
           </div>
