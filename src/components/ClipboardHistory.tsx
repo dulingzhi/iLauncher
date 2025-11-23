@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clipboard, Search, Trash2, Copy, Image, File, Type } from 'lucide-react';
+import { Clipboard, Search, Trash2, Copy, Image, File, Type, Star } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 interface ClipboardItem {
   id: string;
-  type: 'text' | 'image' | 'file';
+  type: 'text' | 'image' | 'rich_text';
   content: string;
   preview?: string;
   timestamp: number;
   favorite?: boolean;
+  file_path?: string;  // 图片文件路径
+  category?: string;
+  tags?: string[];
 }
 
 interface ClipboardHistoryProps {
@@ -21,10 +25,23 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'text' | 'image' | 'favorites'>('all');
+  const [stats, setStats] = useState({ total: 0, favorites: 0, text: 0, image: 0 });
 
   useEffect(() => {
     loadHistory();
-  }, []);
+    loadStats();
+    
+    // 监听剪贴板更新事件
+    const unlisten = listen('clipboard:updated', () => {
+      loadHistory();
+      loadStats();
+    });
+    
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, [filter]);
 
   // 监听 ESC 键关闭
   useEffect(() => {
@@ -41,8 +58,18 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
   const loadHistory = async () => {
     try {
       setLoading(true);
-      const history = await invoke<ClipboardItem[]>('get_clipboard_history');
-      setItems(history);
+      if (filter === 'favorites') {
+        const favorites = await invoke<ClipboardItem[]>('get_clipboard_favorites');
+        setItems(favorites);
+      } else {
+        const history = await invoke<ClipboardItem[]>('get_clipboard_history', {
+          limit: 100,
+          offset: 0
+        });
+        setItems(history.filter(item => 
+          filter === 'all' || item.type === filter
+        ));
+      }
     } catch (error) {
       console.error('Failed to load clipboard history:', error);
     } finally {
@@ -50,12 +77,22 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
     }
   };
 
+  const loadStats = async () => {
+    try {
+      const [total, favorites, text, image] = await invoke<[number, number, number, number]>('get_clipboard_stats');
+      setStats({ total, favorites, text, image });
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
+  };
+
   const copyToClipboard = async (item: ClipboardItem) => {
     try {
-      await invoke('copy_to_clipboard', { content: item.content });
-      // 更新时间戳到最新
-      await invoke('update_clipboard_timestamp', { id: item.id });
-      await loadHistory();
+      await invoke('copy_to_clipboard', { 
+        content: item.content,
+        contentType: item.type
+      });
+      if (onClose) onClose();  // 复制后关闭窗口
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
     }
@@ -65,6 +102,7 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
     try {
       await invoke('delete_clipboard_item', { id });
       setItems(items.filter(item => item.id !== id));
+      loadStats();
     } catch (error) {
       console.error('Failed to delete item:', error);
     }
@@ -74,6 +112,7 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
     try {
       await invoke('toggle_clipboard_favorite', { id });
       await loadHistory();
+      await loadStats();
     } catch (error) {
       console.error('Failed to toggle favorite:', error);
     }
@@ -84,28 +123,32 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
     try {
       await invoke('clear_clipboard_history');
       setItems([]);
+      await loadStats();
     } catch (error) {
       console.error('Failed to clear history:', error);
     }
   };
 
-  const filteredItems = items.filter(item => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return item.content.toLowerCase().includes(query) ||
-           item.preview?.toLowerCase().includes(query);
-  });
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'image': return <Image className="w-4 h-4" />;
-      case 'file': return <File className="w-4 h-4" />;
-      default: return <Type className="w-4 h-4" />;
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      await loadHistory();
+      return;
+    }
+    
+    try {
+      const results = await invoke<ClipboardItem[]>('search_clipboard', {
+        query,
+        limit: 50
+      });
+      setItems(results);
+    } catch (error) {
+      console.error('Failed to search:', error);
     }
   };
 
   const formatTimestamp = (timestamp: number) => {
-    const date = new Date(timestamp);
+    const date = new Date(timestamp * 1000); // 从秒转换为毫秒
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -117,6 +160,14 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
     if (diffHours < 24) return t('clipboard.hoursAgo', { count: diffHours });
     if (diffDays < 7) return t('clipboard.daysAgo', { count: diffDays });
     return date.toLocaleDateString();
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'image': return <Image className="w-4 h-4" />;
+      case 'rich_text': return <File className="w-4 h-4" />;
+      default: return <Type className="w-4 h-4" />;
+    }
   };
 
   return (
@@ -149,13 +200,37 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
           </button>
         </div>
 
+        {/* 过滤器 */}
+        <div className="flex gap-2 mb-3">
+          {[
+            { key: 'all', label: t('clipboard.all'), icon: Clipboard },
+            { key: 'text', label: t('clipboard.textOnly'), icon: Type },
+            { key: 'image', label: t('clipboard.imageOnly'), icon: Image },
+            { key: 'favorites', label: t('clipboard.favoritesOnly'), icon: Star },
+          ].map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key as typeof filter)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors"
+              style={{
+                backgroundColor: filter === key ? 'var(--color-accent)' : 'transparent',
+                color: filter === key ? 'white' : 'var(--color-text-secondary)',
+                border: `1px solid ${filter === key ? 'var(--color-accent)' : 'var(--color-border)'}`,
+              }}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+
         {/* 搜索框 */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: 'var(--color-text-secondary)' }} />
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
             placeholder={t('clipboard.search')}
             className="w-full pl-10 pr-4 py-2 border-0 rounded-md outline-none clipboard-search-input"
             style={{
@@ -178,14 +253,14 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
           <div className="flex items-center justify-center h-32">
             <div style={{ color: 'var(--color-text-secondary)' }}>{t('common.loading')}</div>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32" style={{ color: 'var(--color-text-secondary)' }}>
             <Clipboard className="w-12 h-12 mb-2 opacity-50" />
             <p>{searchQuery ? t('clipboard.noResults') : t('clipboard.empty')}</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {filteredItems.map(item => (
+            {items.map(item => (
               <div
                 key={item.id}
                 className="group rounded-lg transition-all cursor-pointer"
@@ -218,23 +293,54 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
                         </p>
                       ) : item.type === 'image' ? (
                         <div className="flex items-center gap-2">
-                          {item.preview && (
+                          {item.content && (
                             <img 
-                              src={item.preview} 
-                              alt="Preview" 
-                              className="w-16 h-16 object-cover rounded"
+                              src={item.content} 
+                              alt="Clipboard image" 
+                              className="w-20 h-20 object-cover rounded border"
+                              style={{ borderColor: 'var(--color-border)' }}
                             />
                           )}
-                          <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{t('clipboard.image')}</span>
+                          <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                            <div>{t('clipboard.image')}</div>
+                            {item.preview && <div className="text-xs">{item.preview}</div>}
+                          </div>
+                        </div>
+                      ) : item.type === 'rich_text' ? (
+                        <div className="text-sm" style={{ color: 'var(--color-text)' }}>
+                          <p className="line-clamp-2">{item.preview || item.content.substring(0, 100)}</p>
+                          <span className="text-xs" style={{ color: 'var(--color-accent)' }}>Rich Text</span>
                         </div>
                       ) : (
                         <div className="text-sm" style={{ color: 'var(--color-text)' }}>
                           <span className="font-mono">{item.content}</span>
                         </div>
                       )}
-                      <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-                        {formatTimestamp(item.timestamp)}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                          {formatTimestamp(item.timestamp)}
+                        </p>
+                        {item.category && (
+                          <span className="text-xs px-2 py-0.5 rounded" style={{
+                            backgroundColor: 'var(--color-accent)',
+                            color: 'white'
+                          }}>
+                            {item.category}
+                          </span>
+                        )}
+                        {item.tags && item.tags.length > 0 && (
+                          <div className="flex gap-1">
+                            {item.tags.map((tag, idx) => (
+                              <span key={idx} className="text-xs px-1.5 py-0.5 rounded" style={{
+                                backgroundColor: 'var(--color-hover)',
+                                color: 'var(--color-text-secondary)'
+                              }}>
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* 操作按钮 */}
@@ -257,9 +363,7 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
                         }}
                         title={t('clipboard.favorite')}
                       >
-                        <svg className="w-4 h-4" fill={item.favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                        </svg>
+                        <Star className={`w-4 h-4 ${item.favorite ? 'fill-current' : ''}`} />
                       </button>
                       <button
                         onClick={(e) => {
@@ -317,9 +421,12 @@ const ClipboardHistory: React.FC<ClipboardHistoryProps> = ({ onClose }) => {
         backgroundColor: 'var(--color-surface)', 
         borderTop: '1px solid var(--color-border)' 
       }}>
-        <p className="text-xs text-center" style={{ color: 'var(--color-text-secondary)' }}>
-          {t('clipboard.total', { count: items.length })}
-        </p>
+        <div className="flex justify-center gap-6 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <span>{t('clipboard.total')}: {stats.total}</span>
+          <span>{t('clipboard.favorites')}: {stats.favorites}</span>
+          <span>{t('clipboard.text')}: {stats.text}</span>
+          <span>{t('clipboard.images')}: {stats.image}</span>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,7 @@
 // 持久化存储模块
 
+pub mod clipboard_db;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

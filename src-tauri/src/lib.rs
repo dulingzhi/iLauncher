@@ -72,11 +72,15 @@ pub fn run() {
             commands::clear_statistics,
             commands::read_file_preview,
             commands::get_clipboard_history,
+            commands::search_clipboard,
+            commands::get_clipboard_favorites,
             commands::copy_to_clipboard,
-            commands::update_clipboard_timestamp,
             commands::delete_clipboard_item,
             commands::toggle_clipboard_favorite,
+            commands::set_clipboard_category,
+            commands::add_clipboard_tag,
             commands::clear_clipboard_history,
+            commands::get_clipboard_stats,
             commands::enable_autostart,
             commands::disable_autostart,
             commands::is_autostart_enabled,
@@ -222,12 +226,14 @@ pub fn run() {
             app.manage(search_history);
             
             // 初始化剪贴板管理器
-            let clipboard_manager = clipboard::ClipboardManager::new();
-            app.manage(clipboard_manager);
+            let clipboard_manager = clipboard::ClipboardManager::new()
+                .expect("Failed to create clipboard manager");
             
             // 启动剪贴板监听
-            let app_handle = app.handle().clone();
-            clipboard::ClipboardManager::start_monitoring(app_handle);
+            let app_handle_for_clipboard = app.handle().clone();
+            clipboard_manager.start_monitoring(app_handle_for_clipboard);
+            
+            app.manage(clipboard_manager);
             
             // 初始化插件管理器（阻塞等待异步初始化）
             // 🔥 传入实际的 MFT 状态（启动失败则强制为 false）

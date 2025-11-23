@@ -451,27 +451,43 @@ pub async fn read_file_preview(path: String) -> Result<preview::FilePreview, Str
 /// 获取剪贴板历史
 #[tauri::command]
 pub async fn get_clipboard_history(
+    limit: Option<usize>,
+    offset: Option<usize>,
     clipboard: State<'_, ClipboardManager>,
 ) -> Result<Vec<crate::clipboard::ClipboardItem>, String> {
-    Ok(clipboard.get_history())
+    clipboard.get_history(limit.unwrap_or(100), offset.unwrap_or(0))
+        .map_err(|e| e.to_string())
+}
+
+/// 搜索剪贴板
+#[tauri::command]
+pub async fn search_clipboard(
+    query: String,
+    limit: Option<usize>,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<Vec<crate::clipboard::ClipboardItem>, String> {
+    clipboard.search(&query, limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
+}
+
+/// 获取收藏的剪贴板项
+#[tauri::command]
+pub async fn get_clipboard_favorites(
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<Vec<crate::clipboard::ClipboardItem>, String> {
+    clipboard.get_favorites()
+        .map_err(|e| e.to_string())
 }
 
 /// 复制到剪贴板
 #[tauri::command]
 pub async fn copy_to_clipboard(
     content: String,
+    content_type: Option<String>,
     clipboard: State<'_, ClipboardManager>,
 ) -> Result<(), String> {
-    clipboard.copy_to_clipboard(&content)
-}
-
-/// 更新剪贴板项时间戳
-#[tauri::command]
-pub async fn update_clipboard_timestamp(
-    id: String,
-    clipboard: State<'_, ClipboardManager>,
-) -> Result<bool, String> {
-    Ok(clipboard.update_timestamp(&id))
+    clipboard.copy_to_clipboard(&content, &content_type.unwrap_or("text".to_string()))
+        .map_err(|e| e.to_string())
 }
 
 /// 删除剪贴板项
@@ -479,8 +495,9 @@ pub async fn update_clipboard_timestamp(
 pub async fn delete_clipboard_item(
     id: String,
     clipboard: State<'_, ClipboardManager>,
-) -> Result<bool, String> {
-    Ok(clipboard.delete_item(&id))
+) -> Result<(), String> {
+    clipboard.delete_item(&id)
+        .map_err(|e| e.to_string())
 }
 
 /// 切换收藏状态
@@ -489,7 +506,30 @@ pub async fn toggle_clipboard_favorite(
     id: String,
     clipboard: State<'_, ClipboardManager>,
 ) -> Result<bool, String> {
-    Ok(clipboard.toggle_favorite(&id))
+    clipboard.toggle_favorite(&id)
+        .map_err(|e| e.to_string())
+}
+
+/// 设置剪贴板项分类
+#[tauri::command]
+pub async fn set_clipboard_category(
+    id: String,
+    category: Option<String>,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<(), String> {
+    clipboard.set_category(&id, category.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// 添加剪贴板项标签
+#[tauri::command]
+pub async fn add_clipboard_tag(
+    id: String,
+    tag: String,
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<(), String> {
+    clipboard.add_tag(&id, &tag)
+        .map_err(|e| e.to_string())
 }
 
 /// 清空剪贴板历史
@@ -497,8 +537,17 @@ pub async fn toggle_clipboard_favorite(
 pub async fn clear_clipboard_history(
     clipboard: State<'_, ClipboardManager>,
 ) -> Result<(), String> {
-    clipboard.clear();
-    Ok(())
+    clipboard.clear()
+        .map_err(|e| e.to_string())
+}
+
+/// 获取剪贴板统计
+#[tauri::command]
+pub async fn get_clipboard_stats(
+    clipboard: State<'_, ClipboardManager>,
+) -> Result<(usize, usize, usize, usize), String> {
+    clipboard.get_stats()
+        .map_err(|e| e.to_string())
 }
 
 /// 启用开机自启

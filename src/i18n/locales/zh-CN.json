@@ -185,7 +185,14 @@
     "minutesAgo": "{{count}} 分钟前",
     "hoursAgo": "{{count}} 小时前",
     "daysAgo": "{{count}} 天前",
-    "history": "剪贴板历史"
+    "history": "剪贴板历史",
+    "all": "全部",
+    "textOnly": "仅文本",
+    "imageOnly": "仅图片",
+    "favoritesOnly": "仅收藏",
+    "favorites": "收藏",
+    "text": "文本",
+    "images": "图片"
   },
   "common": {
     "yes": "是",
