@@ -357,6 +357,24 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
     if (actionId === 'execute' && result.plugin_id === 'execution-history') {
       const contextData = result.context_data as any;
       if (contextData && contextData.original_id && contextData.plugin_id && contextData.action_id) {
+        // 特殊处理：内置功能项
+        if (contextData.original_id === 'settings') {
+          onOpenSettings();
+          return;
+        }
+        if (contextData.original_id === 'plugin_manager') {
+          onOpenPlugins();
+          return;
+        }
+        if (contextData.original_id === 'clipboard_history') {
+          onOpenClipboard();
+          return;
+        }
+        if (contextData.original_id === 'config' && contextData.plugin_id === 'ai_assistant') {
+          onOpenAIChat();
+          return;
+        }
+        
         await executeAction(
           contextData.original_id,
           contextData.action_id,
@@ -405,6 +423,28 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
     if (actionId === 'execute' && contextMenu.pluginId === 'execution-history' && result) {
       const contextData = result.context_data as any;
       if (contextData && contextData.original_id && contextData.plugin_id && contextData.action_id) {
+        // 特殊处理：内置功能项
+        if (contextData.original_id === 'settings') {
+          onOpenSettings();
+          setContextMenu(null);
+          return;
+        }
+        if (contextData.original_id === 'plugin_manager') {
+          onOpenPlugins();
+          setContextMenu(null);
+          return;
+        }
+        if (contextData.original_id === 'clipboard_history') {
+          onOpenClipboard();
+          setContextMenu(null);
+          return;
+        }
+        if (contextData.original_id === 'config' && contextData.plugin_id === 'ai_assistant') {
+          onOpenAIChat();
+          setContextMenu(null);
+          return;
+        }
+        
         await executeAction(
           contextData.original_id,
           contextData.action_id,
