@@ -3,6 +3,7 @@
 pub mod audit;
 pub mod ai;
 pub mod plugin_market; // 插件市场
+pub mod suggestion;    // 智能推荐
 pub mod workflow;      // 工作流
 
 use crate::clipboard::ClipboardManager;

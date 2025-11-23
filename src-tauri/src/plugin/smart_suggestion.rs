@@ -3,10 +3,12 @@ use crate::statistics::StatisticsManager;
 use anyhow::Result;
 use chrono::{DateTime, Utc, Timelike};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// 智能建议引擎
 pub struct SmartSuggestionEngine {
-    stats_manager: std::sync::Arc<StatisticsManager>,
+    stats_manager: Arc<RwLock<StatisticsManager>>,
 }
 
 /// 建议项
@@ -20,12 +22,12 @@ pub struct Suggestion {
 }
 
 impl SmartSuggestionEngine {
-    pub fn new(stats_manager: std::sync::Arc<StatisticsManager>) -> Self {
+    pub fn new(stats_manager: Arc<RwLock<StatisticsManager>>) -> Self {
         Self { stats_manager }
     }
 
     /// 获取智能建议
-    pub async fn get_suggestions(&self, context: &SuggestionContext) -> Result<Vec<Suggestion>> {
+    pub async fn get_suggestions(&self, context: &SuggestionContext, limit: usize) -> Result<Vec<Suggestion>> {
         let mut suggestions = Vec::new();
 
         // 1. 基于使用频率的建议
@@ -33,7 +35,7 @@ impl SmartSuggestionEngine {
         suggestions.extend(frequent);
 
         // 2. 基于时间段的建议（例如：早上推荐打开IDE，晚上推荐关闭应用）
-        let time_based = self.get_time_based_suggestions(context).await?;
+        let time_based = self.get_time_based_suggestions(&context.current_time, 5).await?;
         suggestions.extend(time_based);
 
         // 3. 基于最近使用的建议
@@ -53,14 +55,14 @@ impl SmartSuggestionEngine {
 
         let mut result: Vec<Suggestion> = suggestion_map.into_values().collect();
         result.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-        result.truncate(10);
+        result.truncate(limit);
 
         Ok(result)
     }
 
     /// 基于使用频率的建议
-    async fn get_frequent_suggestions(&self, limit: usize) -> Result<Vec<Suggestion>> {
-        let top_results = self.stats_manager.get_top_results(limit).await?;
+    pub async fn get_frequent_suggestions(&self, limit: usize) -> Result<Vec<Suggestion>> {
+        let top_results = self.stats_manager.read().await.get_top_results(limit).await?;
         
         Ok(top_results
             .into_iter()
@@ -76,8 +78,8 @@ impl SmartSuggestionEngine {
     }
 
     /// 基于时间段的建议
-    async fn get_time_based_suggestions(&self, context: &SuggestionContext) -> Result<Vec<Suggestion>> {
-        let hour = context.current_time.hour();
+    pub async fn get_time_based_suggestions(&self, current_time: &DateTime<Utc>, limit: usize) -> Result<Vec<Suggestion>> {
+        let hour = current_time.hour();
         
         let suggestions = match hour {
             6..=9 => vec![
@@ -114,8 +116,8 @@ impl SmartSuggestionEngine {
     }
 
     /// 基于最近使用的建议
-    async fn get_recent_suggestions(&self, limit: usize) -> Result<Vec<Suggestion>> {
-        let recent = self.stats_manager.get_top_results(limit * 2).await?;
+    pub async fn get_recent_suggestions(&self, limit: usize) -> Result<Vec<Suggestion>> {
+        let recent = self.stats_manager.read().await.get_top_results(limit * 2).await?;
         
         Ok(recent
             .into_iter()

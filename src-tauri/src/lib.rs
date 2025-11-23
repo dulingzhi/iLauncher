@@ -128,6 +128,10 @@ pub fn run() {
             commands::workflow::delete_workflow,
             commands::workflow::execute_workflow,
             commands::workflow::find_workflows_by_keyword,
+            commands::suggestion::get_smart_suggestions,
+            commands::suggestion::get_frequent_suggestions,
+            commands::suggestion::get_time_based_suggestions,
+            commands::suggestion::get_recent_suggestions,
         ])
         .setup(|app| {
             // 初始化存储管理器
