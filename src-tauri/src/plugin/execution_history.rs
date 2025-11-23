@@ -166,12 +166,28 @@ impl Plugin for ExecutionHistoryPlugin {
     }
     
     async fn query(&self, ctx: &QueryContext) -> Result<Vec<QueryResult>> {
+        // 加载配置以获取禁用的插件列表
+        let disabled_plugins = match crate::storage::StorageManager::new() {
+            Ok(storage) => {
+                match storage.load_config().await {
+                    Ok(config) => config.plugins.disabled_plugins,
+                    Err(_) => Vec::new(),
+                }
+            }
+            Err(_) => Vec::new(),
+        };
+        
         let search = ctx.search.trim().to_lowercase();
         let history = self.history.read().await;
         
         let mut results = Vec::new();
         
         for record in history.iter() {
+            // 跳过禁用插件的历史记录
+            if disabled_plugins.contains(&record.plugin_id) {
+                continue;
+            }
+            
             // 如果有搜索词，进行过滤
             if !search.is_empty() {
                 let title_lower = record.title.to_lowercase();
