@@ -52,17 +52,8 @@ impl PluginManager {
         // 初始化沙盒管理器
         let sandbox_manager = Arc::new(sandbox::SandboxManager::new());
         
-        // 注册内置插件的沙盒配置（系统级，无限制）
-        let builtin_plugins = vec![
-            "calculator", "web_search", "unit_converter", "settings",
-            "plugin_manager", "system_commands", "window_manager",
-            "execution-history", "clipboard", "app_search", "browser",
-            "process", "translator", "devtools", "git_projects", "file_search"
-        ];
-        
-        for plugin_id in builtin_plugins {
-            sandbox_manager.register(sandbox::SandboxConfig::system(plugin_id));
-        }
+        // 🔒 配置插件沙盒权限
+        Self::configure_sandbox_permissions(&sandbox_manager);
         
         // 加载插件配置（从存储管理器）
         let storage = match crate::storage::StorageManager::new() {
@@ -272,5 +263,183 @@ impl PluginManager {
     /// 验证插件权限
     pub fn validate_permission(&self, plugin_id: &str, permission: &sandbox::PluginPermission) -> Result<()> {
         self.sandbox_manager.check_permission(plugin_id, permission)
+    }
+    
+    /// 配置所有插件的沙盒权限
+    fn configure_sandbox_permissions(sandbox_manager: &Arc<sandbox::SandboxManager>) {
+        use sandbox::{SandboxConfig, PluginPermission, NetworkScope};
+        use std::path::PathBuf;
+        
+        tracing::info!("🔒 Configuring plugin sandbox permissions...");
+        
+        // ===== 系统级插件 (完全信任) =====
+        
+        // 1. 文件搜索 - 需要全盘访问
+        sandbox_manager.register(
+            SandboxConfig::system("file_search")
+        );
+        
+        // 2. 应用搜索 - 需要执行程序
+        sandbox_manager.register(
+            SandboxConfig::system("app_search")
+        );
+        
+        // 3. 系统命令 - 需要系统级权限
+        sandbox_manager.register(
+            SandboxConfig::system("system_commands")
+        );
+        
+        // 4. 进程管理器 - 需要进程管理权限
+        sandbox_manager.register(
+            SandboxConfig::system("process")
+        );
+        
+        // 5. 窗口管理器 - 需要窗口管理权限
+        sandbox_manager.register(
+            SandboxConfig::system("window_manager")
+        );
+        
+        // 6. 剪贴板历史 - 需要监控剪贴板
+        sandbox_manager.register(
+            SandboxConfig::system("clipboard")
+        );
+        
+        // 7. 设置插件 - 需要修改配置
+        sandbox_manager.register(
+            SandboxConfig::system("settings")
+        );
+        
+        // 8. 插件管理器 - 需要管理其他插件
+        sandbox_manager.register(
+            SandboxConfig::system("plugin_manager")
+        );
+        
+        // 9. 执行历史 - 需要读写历史文件
+        sandbox_manager.register(
+            SandboxConfig::system("execution-history")
+        );
+        
+        // ===== 受信任级插件 =====
+        
+        // 10. 浏览器数据搜索 - 需要读取浏览器配置目录
+        let home_dir = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| String::from("."));
+        
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "browser".to_string(),
+                security_level: sandbox::SecurityLevel::Trusted,
+                custom_permissions: Some(vec![
+                    PluginPermission::FileSystemRead(PathBuf::from(&home_dir)),
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(10000), // 10秒超时（数据库查询可能较慢）
+                max_memory_mb: Some(200),
+            }
+        );
+        
+        // 11. Git 项目搜索 - 需要扫描项目目录
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "git_projects".to_string(),
+                security_level: sandbox::SecurityLevel::Trusted,
+                custom_permissions: Some(vec![
+                    PluginPermission::FileSystemRead(PathBuf::from(&home_dir)),
+                    PluginPermission::ExecuteProgram, // 打开 VSCode
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(5000),
+                max_memory_mb: Some(150),
+            }
+        );
+        
+        // ===== 受限级插件 (默认第三方插件级别) =====
+        
+        // 12. 翻译插件 - 需要网络访问
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "translator".to_string(),
+                security_level: sandbox::SecurityLevel::Restricted,
+                custom_permissions: Some(vec![
+                    PluginPermission::NetworkAccess(NetworkScope::Domain("translate.google.com".to_string())),
+                    PluginPermission::NetworkAccess(NetworkScope::Domain("translate.googleapis.com".to_string())),
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(8000), // 网络请求可能较慢
+                max_memory_mb: Some(100),
+            }
+        );
+        
+        // 13. 网页搜索 - 需要网络访问
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "web_search".to_string(),
+                security_level: sandbox::SecurityLevel::Restricted,
+                custom_permissions: Some(vec![
+                    PluginPermission::NetworkAccess(NetworkScope::All), // 搜索多个引擎
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(3000),
+                max_memory_mb: Some(50),
+            }
+        );
+        
+        // ===== 沙盒级插件 (最小权限) =====
+        
+        // 14. 计算器 - 纯本地计算，无需额外权限
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "calculator".to_string(),
+                security_level: sandbox::SecurityLevel::Sandboxed,
+                custom_permissions: Some(vec![
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(1000),
+                max_memory_mb: Some(50),
+            }
+        );
+        
+        // 15. 单位转换 - 纯本地计算
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "unit_converter".to_string(),
+                security_level: sandbox::SecurityLevel::Sandboxed,
+                custom_permissions: Some(vec![
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(1000),
+                max_memory_mb: Some(50),
+            }
+        );
+        
+        // 16. 开发工具 - 本地工具（JSON、Base64、Hash等）
+        sandbox_manager.register(
+            SandboxConfig {
+                plugin_id: "devtools".to_string(),
+                security_level: sandbox::SecurityLevel::Sandboxed,
+                custom_permissions: Some(vec![
+                    PluginPermission::ClipboardAccess,
+                    PluginPermission::SystemInfoRead,
+                ].into_iter().collect()),
+                enabled: true,
+                timeout_ms: Some(2000),
+                max_memory_mb: Some(50),
+            }
+        );
+        
+        tracing::info!("✅ Configured sandbox permissions for {} plugins", 16);
     }
 }
