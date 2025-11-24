@@ -1,5 +1,5 @@
 // 工作流管理器组件（简化版）
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 interface Workflow {
@@ -14,7 +14,7 @@ interface Workflow {
 export function WorkflowManager() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadWorkflows();

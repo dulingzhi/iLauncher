@@ -29,7 +29,7 @@ interface AIChatProps {
 }
 
 const AIChat: React.FC<AIChatProps> = ({ onClose }) => {
-  const { t } = useTranslation();
+  const { t: _t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConvId, setCurrentConvId] = useState<string | null>(null);
   const [input, setInput] = useState('');

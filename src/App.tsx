@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchBox } from "./components/SearchBox";
 import { Settings } from "./components/Settings";
@@ -108,7 +108,7 @@ function App() {
           const savedPosition = savedPositions?.[viewKey];
           
           if (savedPosition && savedPosition.x !== undefined && savedPosition.y !== undefined) {
-            await appWindow.setPosition({ type: 'Physical', x: savedPosition.x, y: savedPosition.y });
+            await appWindow.setPosition(new PhysicalPosition(savedPosition.x, savedPosition.y));
             console.log(`Window position restored for ${currentView}: (${savedPosition.x}, ${savedPosition.y})`);
           } else {
             await appWindow.center();
@@ -133,7 +133,7 @@ function App() {
     if (currentView === 'search') return;
     
     const appWindow = getCurrentWindow();
-    let saveTimeout: NodeJS.Timeout;
+    let saveTimeout: ReturnType<typeof setTimeout>;
     
     const setupPositionListener = async () => {
       const unlisten = await appWindow.listen('tauri://move', async () => {

@@ -61,7 +61,7 @@ export function SearchBox({ onOpenSettings, onOpenPlugins, onOpenClipboard, onOp
   const {
     query,
     setQuery,
-    setResults,
+    setResults: _setResults,
     reset,
   } = useAppStore();
   

@@ -1,5 +1,5 @@
 // 插件市场组件（简化版）
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 interface PluginListItem {

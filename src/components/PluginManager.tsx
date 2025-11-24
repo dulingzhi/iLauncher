@@ -131,7 +131,7 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ onClose }) => {
       // 保存失败时回滚状态
       setPluginStatuses({
         ...pluginStatuses,
-        [pluginId]: !(!isCurrentlyDisabled)
+        [pluginId]: pluginStatuses[pluginId]
       });
       alert('Failed to toggle plugin: ' + error);
     }
