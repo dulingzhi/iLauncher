@@ -188,6 +188,8 @@ struct DeltaIndex {
 impl IndexQuery {
     /// 打开索引（零拷贝加载）
     pub fn open(drive_letter: char, output_dir: &str) -> Result<Self> {
+        let open_start = std::time::Instant::now();
+        
         let fst_file = format!("{}\\{}_index.fst", output_dir, drive_letter);
         let bitmap_file = format!("{}\\{}_bitmaps.dat", output_dir, drive_letter);
         
@@ -210,14 +212,71 @@ impl IndexQuery {
         // 读取当前版本号
         let loaded_version = Self::read_version(drive_letter, output_dir);
         
-        Ok(Self {
+        let mut query = Self {
             drive_letter,
             output_dir: output_dir.to_string(),
             fst_map,
             bitmap_mmap,
             delta_index,
             loaded_version,
-        })
+        };
+        
+        // 🔥 预热 mmap 数据 (触发 OS 加载页表到物理内存)
+        query.warmup_mmap()?;
+        
+        tracing::info!("✓ Index opened for drive {} in {:.2}ms", drive_letter, open_start.elapsed().as_secs_f64() * 1000.0);
+        
+        Ok(query)
+    }
+    
+    /// 预热 mmap 映射的数据（强制 OS 加载到物理内存）
+    fn warmup_mmap(&self) -> Result<()> {
+        let warmup_start = std::time::Instant::now();
+        
+        // 🔥 方法 1: 顺序访问 mmap 数据 (每 4KB 读取一个字节)
+        // 这会触发页表加载，避免首次查询时的缺页中断
+        
+        // 预热 FST (通常 < 10MB)
+        let fst_bytes = self.fst_map.as_fst().as_bytes();
+        let fst_len = fst_bytes.len();
+        let mut fst_sum: u64 = 0;
+        
+        // 每隔 4KB (页大小) 访问一次
+        const PAGE_SIZE: usize = 4096;
+        for offset in (0..fst_len).step_by(PAGE_SIZE) {
+            fst_sum = fst_sum.wrapping_add(fst_bytes[offset] as u64);
+        }
+        
+        // 预热 Bitmap (可能较大，采样访问避免过慢)
+        let bitmap_len = self.bitmap_mmap.len();
+        let mut bitmap_sum: u64 = 0;
+        
+        // 🔥 优化：大文件只采样前 50MB（避免启动时过慢）
+        const MAX_WARMUP_SIZE: usize = 50 * 1024 * 1024; // 50MB
+        let warmup_len = bitmap_len.min(MAX_WARMUP_SIZE);
+        
+        for offset in (0..warmup_len).step_by(PAGE_SIZE) {
+            bitmap_sum = bitmap_sum.wrapping_add(self.bitmap_mmap[offset] as u64);
+        }
+        
+        // 防止编译器优化掉这些访问
+        std::hint::black_box(fst_sum);
+        std::hint::black_box(bitmap_sum);
+        
+        let warmup_elapsed = warmup_start.elapsed().as_secs_f64() * 1000.0;
+        
+        if warmup_elapsed > 100.0 {
+            tracing::info!(
+                "🔥 Warmup for drive {}: FST={:.2}MB, Bitmap={:.2}MB (sampled {:.2}MB) in {:.2}ms",
+                self.drive_letter,
+                fst_len as f64 / 1_048_576.0,
+                bitmap_len as f64 / 1_048_576.0,
+                warmup_len as f64 / 1_048_576.0,
+                warmup_elapsed
+            );
+        }
+        
+        Ok(())
     }
     
     /// 读取索引版本号
@@ -262,6 +321,9 @@ impl IndexQuery {
         
         // 更新版本号
         self.loaded_version = Self::read_version(self.drive_letter, &self.output_dir);
+        
+        // 🔥 预热新加载的 mmap 数据
+        self.warmup_mmap()?;
         
         tracing::info!("✓ Index reloaded (version: {})", self.loaded_version);
         
