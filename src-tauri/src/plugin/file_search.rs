@@ -814,11 +814,34 @@ impl FileSearchPlugin {
             if let Some(cached) = cache.get_mut(&drive) {
                 // 🔥 检查索引版本是否需要重新加载
                 if cached.query.needs_reload() {
-                    tracing::info!("🔄 Detected index version change for drive {}, reloading...", drive);
-                    if let Err(e) = cached.query.reload() {
-                        tracing::error!("❌ Failed to reload index for drive {}: {:#}", drive, e);
-                        continue;
-                    }
+                    tracing::info!("🔄 Detected index version change for drive {}, will reload after this query...", drive);
+                    
+                    // 🔥 异步重新加载（不阻塞当前查询）
+                    let drive_clone = drive;
+                    let output_dir_clone = output_dir.clone();
+                    let mft_cache_clone = self.mft_cache.clone();
+                    
+                    tokio::spawn(async move {
+                        tracing::info!("🔄 Starting async reload for drive {}...", drive_clone);
+                        
+                        // 重新构建索引（包含预热）
+                        match (IndexQuery::open(drive_clone, &output_dir_clone), PathReader::open(drive_clone, &output_dir_clone)) {
+                            (Ok(new_query), Ok(new_path_reader)) => {
+                                // 替换旧索引
+                                let mut cache = mft_cache_clone.write().await;
+                                cache.insert(drive_clone, MftIndexCache { 
+                                    query: new_query, 
+                                    path_reader: new_path_reader 
+                                });
+                                tracing::info!("✓ Async reload completed for drive {}", drive_clone);
+                            }
+                            (Err(e), _) | (_, Err(e)) => {
+                                tracing::error!("❌ Failed to reload index for drive {}: {:#}", drive_clone, e);
+                            }
+                        }
+                    });
+                    
+                    // 继续使用旧索引完成本次查询
                 }
                 
                 // 执行查询（每个驱动器限制 20 条，总共最多 50 条）
