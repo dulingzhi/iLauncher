@@ -2,7 +2,7 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 
 /// 插件商店配置
@@ -96,14 +96,6 @@ impl PluginStore {
     pub fn new(cache_dir: PathBuf) -> Self {
         Self {
             config: PluginStoreConfig::default(),
-            client: Client::new(),
-            cache_dir,
-        }
-    }
-    
-    pub fn with_config(config: PluginStoreConfig, cache_dir: PathBuf) -> Self {
-        Self {
-            config,
             client: Client::new(),
             cache_dir,
         }
@@ -276,9 +268,11 @@ impl PluginStore {
 
 /// 模拟插件商店（用于开发测试）
 #[cfg(debug_assertions)]
+#[allow(dead_code)]
 pub struct MockPluginStore;
 
 #[cfg(debug_assertions)]
+#[allow(dead_code)]
 impl MockPluginStore {
     pub fn get_mock_plugins() -> Vec<PluginListItem> {
         vec![

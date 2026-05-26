@@ -103,11 +103,6 @@ impl Action {
         self.is_default = true;
         self
     }
-
-    pub fn prevent_hide(mut self) -> Self {
-        self.prevent_hide = true;
-        self
-    }
 }
 
 /// 图标类型
@@ -125,14 +120,6 @@ pub enum WoxImage {
 impl WoxImage {
     pub fn emoji(emoji: impl Into<String>) -> Self {
         Self::Emoji(emoji.into())
-    }
-
-    pub fn file(path: impl Into<String>) -> Self {
-        Self::File(path.into())
-    }
-
-    pub fn url(url: impl Into<String>) -> Self {
-        Self::Url(url.into())
     }
 }
 

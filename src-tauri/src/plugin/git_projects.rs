@@ -131,36 +131,6 @@ impl GitProjectsPlugin {
         }
     }
 
-    fn get_scan_directories(&self) -> Vec<PathBuf> {
-        let mut dirs = Vec::new();
-
-        // 获取用户目录
-        if let Some(home) = dirs::home_dir() {
-            // Documents/Projects
-            dirs.push(home.join("Documents"));
-            dirs.push(home.join("Projects"));
-            dirs.push(home.join("Code"));
-            dirs.push(home.join("dev"));
-            dirs.push(home.join("workspace"));
-            
-            // OneDrive 同步目录
-            dirs.push(home.join("OneDrive").join("Projects"));
-            dirs.push(home.join("OneDrive").join("Code"));
-        }
-
-        // Windows 常用开发目录
-        #[cfg(target_os = "windows")]
-        {
-            dirs.push(PathBuf::from("D:\\Projects"));
-            dirs.push(PathBuf::from("E:\\Projects"));
-            dirs.push(PathBuf::from("D:\\Code"));
-            dirs.push(PathBuf::from("E:\\Code"));
-            dirs.push(PathBuf::from("C:\\Projects"));
-        }
-
-        dirs
-    }
-
     fn find_vscode_path(&self) -> Option<PathBuf> {
         // 尝试找到 VSCode 可执行文件
         #[cfg(target_os = "windows")]

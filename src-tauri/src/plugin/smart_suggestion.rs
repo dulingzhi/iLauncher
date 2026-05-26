@@ -78,7 +78,7 @@ impl SmartSuggestionEngine {
     }
 
     /// 基于时间段的建议
-    pub async fn get_time_based_suggestions(&self, current_time: &DateTime<Utc>, limit: usize) -> Result<Vec<Suggestion>> {
+    pub async fn get_time_based_suggestions(&self, current_time: &DateTime<Utc>, _limit: usize) -> Result<Vec<Suggestion>> {
         let hour = current_time.hour();
         
         let suggestions = match hour {
@@ -137,7 +137,9 @@ impl SmartSuggestionEngine {
 #[derive(Debug, Clone)]
 pub struct SuggestionContext {
     pub current_time: DateTime<Utc>,
+    #[allow(dead_code)]
     pub query: Option<String>,
+    #[allow(dead_code)]
     pub recent_queries: Vec<String>,
 }
 

@@ -1,7 +1,7 @@
 // 智能排序算法模块
 // 基于多维度因素计算结果相关性分数
 
-use crate::core::types::{QueryResult, WoxImage};
+use crate::core::types::QueryResult;
 use chrono::{DateTime, Utc, Duration};
 
 /// 排序因素权重配置
@@ -41,10 +41,6 @@ impl IntelligentRanker {
         Self {
             weights: RankingWeights::default(),
         }
-    }
-    
-    pub fn with_weights(weights: RankingWeights) -> Self {
-        Self { weights }
     }
     
     /// 计算综合排序分数
@@ -277,6 +273,7 @@ impl Default for IntelligentRanker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::types::WoxImage;
     
     #[test]
     fn test_text_match_score() {

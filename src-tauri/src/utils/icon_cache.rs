@@ -191,17 +191,6 @@ fn icon_to_base64(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Resu
             ])
         });
         
-        // 转换为 RGBA 格式（Windows 是 BGRA）
-        let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_fn(icon_size, icon_size, |x, y| {
-            let idx = ((y * icon_size + x) * 4) as usize;
-            Rgba([
-                pixels[idx + 2], // B -> R
-                pixels[idx + 1], // G
-                pixels[idx],     // R -> B
-                pixels[idx + 3], // A
-            ])
-        });
-        
         // 🔥 将图片编码为 PNG 并转换为 base64
         let mut png_data = Vec::new();
         let encoder = image::codecs::png::PngEncoder::new(&mut png_data);
@@ -216,15 +205,6 @@ fn icon_to_base64(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Resu
         
         Ok(base64_data)
     }
-}
-
-/// 清理图标缓存（清空内存缓存）
-#[cfg(target_os = "windows")]
-pub fn clear_icon_cache() -> Result<()> {
-    if let Ok(mut cache) = ICON_CACHE.lock() {
-        cache.clear();
-    }
-    Ok(())
 }
 
 /// 预热常见文件类型的图标缓存

@@ -13,19 +13,10 @@ use windows::Win32::System::IO::DeviceIoControl;
 
 use super::types::*;
 
-/// FileRecord - 不存储完整路径，只存储文件名引用和父目录ID
-struct FileRecord {
-    name: String,        // 文件名（从 Arena 复制）
-    parent_frn: u64,     // 父目录 FRN
-    size: u64,
-    is_dir: bool,
-}
-
 /// 流式构建器 - 内存占用极低
 pub struct StreamingBuilder {
     drive_letter: char,
     arena: Bump,                                // 内存池（分块释放）
-    temp_records: Vec<FileRecord>,              // 临时记录（批量处理）
     parent_cache: FxHashMap<u64, String>,       // FRN -> 完整路径缓存
     path_writer: BufWriter<File>,               // 流式写入路径
     index_writer: BufWriter<File>,              // 流式写入索引
@@ -52,7 +43,6 @@ impl StreamingBuilder {
         Ok(Self {
             drive_letter,
             arena: Bump::with_capacity(256 * 1024 * 1024), // 预分配 256MB
-            temp_records: Vec::with_capacity(100_000),     // 10万条批量
             parent_cache: FxHashMap::default(),
             path_writer: BufWriter::with_capacity(
                 32 * 1024 * 1024,

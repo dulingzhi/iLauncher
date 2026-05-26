@@ -13,6 +13,7 @@ pub struct SystemCommandPlugin {
 
 #[derive(Clone)]
 struct SystemCommand {
+    #[allow(dead_code)]
     id: String,
     name: String,
     description: String,

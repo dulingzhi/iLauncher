@@ -21,6 +21,7 @@ impl CodeHighlighter {
     }
 
     /// 高亮代码文件
+    #[allow(dead_code)]
     pub fn highlight_file(&self, file_path: &Path) -> Result<String> {
         let content = fs::read_to_string(file_path)?;
         let extension = file_path
@@ -90,6 +91,7 @@ impl CodeHighlighter {
     }
 
     /// 获取支持的语言列表
+    #[allow(dead_code)]
     pub fn supported_languages(&self) -> Vec<String> {
         self.syntax_set
             .syntaxes()
@@ -99,6 +101,7 @@ impl CodeHighlighter {
     }
 
     /// 检测文件是否支持高亮
+    #[allow(dead_code)]
     pub fn is_supported(&self, extension: &str) -> bool {
         self.syntax_set.find_syntax_by_extension(extension).is_some()
     }

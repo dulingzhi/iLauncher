@@ -11,6 +11,7 @@ pub struct ClipboardRecord {
     pub id: i64,
     pub content_type: String, // text, image, rich_text
     pub content: String,       // 文本内容或图片base64
+    #[allow(dead_code)]
     pub plain_text: Option<String>, // 富文本的纯文本版本，用于搜索
     pub preview: Option<String>,    // 预览文本
     pub timestamp: DateTime<Local>,

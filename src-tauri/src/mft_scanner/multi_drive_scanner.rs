@@ -139,19 +139,6 @@ impl MultiDriveScanner {
         DiskType::Unknown
     }
     
-    /// 计算并行度
-    fn calculate_parallelism(&self) -> usize {
-        let ssd_count = self.disk_types.values().filter(|&&t| t == DiskType::SSD).count();
-        let hdd_count = self.disk_types.values().filter(|&&t| t == DiskType::HDD).count();
-        
-        // SSD 可并行，HDD 必须串行
-        let parallelism = ssd_count.max(1) + if hdd_count > 0 { 1 } else { 0 };
-        
-        info!("💡 Parallelism: {} threads ({} SSD, {} HDD)", parallelism, ssd_count, hdd_count);
-        
-        parallelism
-    }
-    
     /// 扫描所有驱动器
     pub fn scan_all(&self) -> Result<()> {
         info!("╔═══════════════════════════════════════════╗");

@@ -140,6 +140,7 @@ impl SandboxConfig {
     }
 
     /// 创建受限级配置（默认）
+    #[allow(dead_code)]
     pub fn restricted(plugin_id: impl Into<String>) -> Self {
         Self {
             plugin_id: plugin_id.into(),
@@ -161,6 +162,7 @@ impl SandboxConfig {
     }
 
     /// 添加权限
+    #[allow(dead_code)]
     pub fn with_permission(mut self, permission: PluginPermission) -> Self {
         let mut perms = self.effective_permissions();
         perms.insert(permission);
@@ -192,6 +194,7 @@ impl SandboxManager {
     }
 
     /// 检查权限
+    #[allow(dead_code)]
     pub fn check_permission(&self, plugin_id: &str, permission: &PluginPermission) -> Result<()> {
         let configs = self.configs.read().unwrap();
         
@@ -307,6 +310,7 @@ impl SandboxManager {
     }
 
     /// 验证文件访问
+    #[allow(dead_code)]
     pub fn validate_file_access(&self, plugin_id: &str, path: &Path, write: bool) -> Result<()> {
         let permission = if write {
             PluginPermission::FileSystemWrite(path.to_path_buf())
@@ -318,6 +322,7 @@ impl SandboxManager {
     }
 
     /// 验证网络访问
+    #[allow(dead_code)]
     pub fn validate_network_access(&self, plugin_id: &str, domain: &str) -> Result<()> {
         self.check_permission(
             plugin_id,
@@ -326,6 +331,7 @@ impl SandboxManager {
     }
 
     /// 验证程序执行
+    #[allow(dead_code)]
     pub fn validate_program_execution(&self, plugin_id: &str) -> Result<()> {
         self.check_permission(plugin_id, &PluginPermission::ExecuteProgram)
     }
@@ -395,6 +401,7 @@ impl Default for SandboxManager {
 }
 
 /// 沙盒执行包装器
+#[allow(dead_code)]
 pub struct SandboxedExecution<T> {
     plugin_id: String,
     manager: Arc<SandboxManager>,
@@ -402,6 +409,7 @@ pub struct SandboxedExecution<T> {
 }
 
 impl<T> SandboxedExecution<T> {
+    #[allow(dead_code)]
     pub fn new(plugin_id: String, manager: Arc<SandboxManager>) -> Self {
         Self {
             plugin_id,
@@ -411,6 +419,7 @@ impl<T> SandboxedExecution<T> {
     }
 
     /// 在沙盒环境中执行函数
+    #[allow(dead_code)]
     pub async fn execute<F, Fut>(&self, func: F) -> Result<T>
     where
         F: FnOnce() -> Fut,

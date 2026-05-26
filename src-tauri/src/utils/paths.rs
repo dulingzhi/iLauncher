@@ -58,19 +58,6 @@ pub fn get_cache_dir() -> Result<PathBuf> {
     Ok(cache_dir)
 }
 
-/// 获取配置目录 (AppData\Local\iLauncher\config)
-pub fn get_config_dir() -> Result<PathBuf> {
-    let app_dir = get_app_data_dir()?;
-    let config_dir = app_dir.join("config");
-    
-    if !config_dir.exists() {
-        std::fs::create_dir_all(&config_dir)
-            .context("Failed to create config directory")?;
-    }
-    
-    Ok(config_dir)
-}
-
 /// 获取数据目录 (AppData\Local\iLauncher\data)
 pub fn get_data_dir() -> Result<PathBuf> {
     let app_dir = get_app_data_dir()?;

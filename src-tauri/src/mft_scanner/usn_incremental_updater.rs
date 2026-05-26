@@ -744,17 +744,6 @@ impl UsnIncrementalUpdater {
     }
 
     /// 拆分为 3-gram
-    fn split_to_3grams(&self, text: &str) -> Vec<String> {
-        if text.len() < 3 {
-            return vec![text.to_string()];
-        }
-        
-        let chars: Vec<char> = text.chars().collect();
-        chars.windows(3)
-            .map(|w| w.iter().collect())
-            .collect()
-    }
-    
     /// 打开卷句柄
     fn open_volume(&self) -> Result<HANDLE> {
         use std::ffi::OsStr;

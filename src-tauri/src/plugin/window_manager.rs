@@ -22,6 +22,7 @@ struct WindowInfo {
     hwnd: isize,
     title: String,
     process_name: String,
+    #[allow(dead_code)]
     is_visible: bool,
 }
 
@@ -59,7 +60,6 @@ impl WindowManagerPlugin {
     #[cfg(target_os = "windows")]
     fn list_windows(&self) -> Result<Vec<WindowInfo>> {
         use std::sync::Mutex;
-        use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
 
         let windows: std::sync::Arc<Mutex<Vec<WindowInfo>>> = std::sync::Arc::new(Mutex::new(Vec::new()));
         let windows_clone = windows.clone();

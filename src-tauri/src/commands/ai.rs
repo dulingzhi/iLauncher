@@ -1,6 +1,6 @@
 // AI 助手相关命令
 
-use crate::plugin::ai_assistant::{AIAssistantPlugin, AIConfig, Conversation};
+use crate::plugin::ai_assistant::{AIConfig, Conversation};
 use crate::plugin::PluginManager;
 use tauri::State;
 

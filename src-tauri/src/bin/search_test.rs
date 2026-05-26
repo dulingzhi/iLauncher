@@ -574,7 +574,7 @@ impl DriveIndex {
             HashMap::new()
         };
 
-        let mut idx = DriveIndex {
+        let idx = DriveIndex {
             drive,
             fst_map,
             bitmap_mmap,

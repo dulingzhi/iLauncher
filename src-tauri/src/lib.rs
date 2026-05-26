@@ -535,7 +535,7 @@ pub fn run_mft_service(args: &[String]) {
         info!("╚═══════════════════════════════════════════╝");
         info!("");
         
-        let scan_start = std::time::Instant::now();
+        let _scan_start = std::time::Instant::now();
         
         // 🔥 使用新的 MultiDriveScanner（基于 prompt.txt）
         let mut scan_config = config.clone();

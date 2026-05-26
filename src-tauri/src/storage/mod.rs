@@ -303,40 +303,6 @@ impl StorageManager {
         Ok(())
     }
 
-    /// 保存缓存数据
-    pub async fn save_cache(&self, key: &str, data: &[u8]) -> Result<()> {
-        let cache_file = self.cache_dir.join(format!("{}.cache", key));
-        fs::write(&cache_file, data).await?;
-        Ok(())
-    }
-
-    /// 加载缓存数据
-    pub async fn load_cache(&self, key: &str) -> Result<Vec<u8>> {
-        let cache_file = self.cache_dir.join(format!("{}.cache", key));
-        if cache_file.exists() {
-            Ok(fs::read(&cache_file).await?)
-        } else {
-            Ok(Vec::new())
-        }
-    }
-
-    /// 保存数据文件
-    pub async fn save_data(&self, filename: &str, data: &str) -> Result<()> {
-        let data_file = self.data_dir.join(filename);
-        fs::write(&data_file, data).await?;
-        Ok(())
-    }
-
-    /// 加载数据文件
-    pub async fn load_data(&self, filename: &str) -> Result<String> {
-        let data_file = self.data_dir.join(filename);
-        if data_file.exists() {
-            Ok(fs::read_to_string(&data_file).await?)
-        } else {
-            Ok(String::new())
-        }
-    }
-
     /// 清除所有缓存
     pub async fn clear_cache(&self) -> Result<()> {
         if self.cache_dir.exists() {

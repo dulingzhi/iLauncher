@@ -48,10 +48,6 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    pub async fn new() -> Self {
-        Self::new_with_mft_override(None).await
-    }
-    
     /// 创建插件管理器（可选覆盖 MFT 状态）
     pub async fn new_with_mft_override(mft_override: Option<bool>) -> Self {
         // 初始化沙盒管理器
@@ -299,11 +295,6 @@ impl PluginManager {
     /// 获取沙盒管理器
     pub fn sandbox_manager(&self) -> &Arc<sandbox::SandboxManager> {
         &self.sandbox_manager
-    }
-    
-    /// 验证插件权限
-    pub fn validate_permission(&self, plugin_id: &str, permission: &sandbox::PluginPermission) -> Result<()> {
-        self.sandbox_manager.check_permission(plugin_id, permission)
     }
     
     /// 配置所有插件的沙盒权限

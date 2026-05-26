@@ -19,6 +19,7 @@ struct ClipboardItem {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum ClipboardType {
     Text,
     Image,
@@ -29,7 +30,6 @@ pub struct ClipboardPlugin {
     metadata: PluginMetadata,
     history: Arc<RwLock<Vec<ClipboardItem>>>,
     matcher: SkimMatcherV2,
-    max_history: usize,
 }
 
 impl ClipboardPlugin {
@@ -50,7 +50,6 @@ impl ClipboardPlugin {
             },
             history: Arc::new(RwLock::new(Vec::new())),
             matcher: SkimMatcherV2::default(),
-            max_history: 100,
         }
     }
 
@@ -58,32 +57,6 @@ impl ClipboardPlugin {
         tracing::info!("Clipboard plugin initialized (history tracking disabled for now)");
         // TODO: 实现剪贴板监听
         // 由于跨平台剪贴板监听比较复杂，这里先提供查询接口
-    }
-
-    /// 添加剪贴板项
-    pub async fn add_item(&self, content: String, item_type: ClipboardType) {
-        let mut history = self.history.write().await;
-        
-        // 检查是否重复
-        if let Some(last) = history.first() {
-            if last.content == content {
-                return;
-            }
-        }
-        
-        let item = ClipboardItem {
-            id: uuid::Uuid::new_v4().to_string(),
-            content,
-            timestamp: Local::now(),
-            item_type,
-        };
-        
-        history.insert(0, item);
-        
-        // 限制历史记录数量
-        if history.len() > self.max_history {
-            history.truncate(self.max_history);
-        }
     }
 
     /// 复制到剪贴板

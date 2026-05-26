@@ -83,15 +83,6 @@ impl HotkeyManager {
         }
     }
 
-    /// 取消注册热键
-    pub fn unregister(&mut self) -> Result<()> {
-        if let Some(hotkey) = self.main_hotkey {
-            self.manager.unregister(hotkey)?;
-            self.main_hotkey = None;
-        }
-        Ok(())
-    }
-
     /// 解析热键字符串 (例如: "Alt+Space", "Ctrl+Shift+A")
     pub fn parse_hotkey(hotkey_str: &str) -> Result<HotKey> {
         let parts: Vec<&str> = hotkey_str.split('+').map(|s| s.trim()).collect();
@@ -181,22 +172,6 @@ impl HotkeyManager {
         Ok(HotKey::new(modifier_opt, code))
     }
 
-    /// 更新热键
-    pub fn update_hotkey(&mut self, hotkey_str: &str) -> Result<()> {
-        // 先取消注册旧热键
-        self.unregister()?;
-        
-        // 解析新热键
-        let hotkey = Self::parse_hotkey(hotkey_str)?;
-        
-        // 注册新热键
-        self.manager.register(hotkey)?;
-        self.main_hotkey = Some(hotkey);
-        
-        tracing::info!("Updated hotkey to: {:?}", hotkey);
-        Ok(())
-    }
-
     /// 监听热键事件
     pub fn start_listener(app_handle: AppHandle) {
         std::thread::spawn(move || {
@@ -247,9 +222,9 @@ impl HotkeyManager {
                                                         keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
                                                         
                                                         // 激活窗口
-                                                        ShowWindow(hwnd, SW_SHOW);
-                                                        BringWindowToTop(hwnd);
-                                                        SetForegroundWindow(hwnd);
+                                                        let _ = ShowWindow(hwnd, SW_SHOW);
+                                                        let _ = BringWindowToTop(hwnd);
+                                                        let _ = SetForegroundWindow(hwnd);
                                                         
                                                         std::thread::sleep(std::time::Duration::from_millis(10));
                                                     }

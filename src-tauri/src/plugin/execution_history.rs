@@ -119,18 +119,6 @@ impl ExecutionHistoryPlugin {
         Ok(())
     }
     
-    /// 获取历史记录
-    pub async fn get_history(&self) -> Vec<ExecutionRecord> {
-        self.history.read().await.clone()
-    }
-    
-    /// 清空历史
-    pub async fn clear(&self) -> Result<()> {
-        self.history.write().await.clear();
-        self.save().await?;
-        Ok(())
-    }
-    
     /// 删除指定记录
     pub async fn remove(&self, id: &str, action_id: &str) -> Result<()> {
         let mut history = self.history.write().await;

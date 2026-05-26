@@ -179,11 +179,6 @@ impl ClipboardManager {
         });
     }
 
-    /// 停止监控
-    pub fn stop_monitoring(&self) {
-        *self.monitoring.write() = false;
-    }
-
     /// 保存图片到文件并返回 base64 数据
     fn save_image(image: &ImageData, image_dir: &PathBuf) -> Result<(String, PathBuf)> {
         use image::{ImageBuffer, RgbaImage};
