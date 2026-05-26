@@ -286,22 +286,28 @@ impl MultiDriveScanner {
         
         info!("🚀 Scanning drive {}:", drive);
         
-        // 🔥 步骤 1: 流式构建（MFT -> 路径文件）
+        // 🔥 步骤 1: 流式构建（MFT -> 路径文件，同时收集 filename_entries + offset_index）
         let mut builder = StreamingBuilder::new(drive, &self.output_dir)?;
         builder.scan_mft_streaming()?;
-        builder.finalize(&self.output_dir)?;
         
         let scan_elapsed = drive_start.elapsed();
         info!("   ✓ MFT scan: {:.2}s", scan_elapsed.as_secs_f32());
         
-        // 🔥 步骤 2: 构建 3-gram 索引
+        // 🔥 步骤 2: 构建 3-gram 索引（Pipeline：直接用内存中的文件名，无需重读 paths.dat）
         let index_start = Instant::now();
         let mut index_builder = IndexBuilder::new(drive);
-        index_builder.build_from_paths(&self.output_dir)?;
+        index_builder.build_from_entries(
+            &builder.filename_entries,
+            &builder.offset_index,
+            &self.output_dir,
+        )?;
         index_builder.save_index(&self.output_dir)?;
         
         let index_elapsed = index_start.elapsed();
         info!("   ✓ Index build: {:.2}s", index_elapsed.as_secs_f32());
+        
+        // 步骤 3: Finalize（重命名临时文件 → 最终文件）
+        builder.finalize(&self.output_dir)?;
         
         let total_elapsed = drive_start.elapsed();
         info!("✅ Drive {} completed in {:.2}s", drive, total_elapsed.as_secs_f32());

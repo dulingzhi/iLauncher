@@ -38,7 +38,7 @@ pub use config::load_config;
 pub use streaming_builder::StreamingBuilder;
 
 #[cfg(target_os = "windows")]
-pub use index_builder::{IndexBuilder, IndexQuery, PathReader};
+pub use index_builder::{IndexBuilder, IndexQuery, PathReader, DeltaState};
 
 #[cfg(target_os = "windows")]
 pub use multi_drive_scanner::{MultiDriveScanner, DiskType};

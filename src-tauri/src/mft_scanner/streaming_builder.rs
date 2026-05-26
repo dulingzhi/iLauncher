@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use bumpalo::Bump;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use tracing::{info, debug};
@@ -31,6 +31,12 @@ pub struct StreamingBuilder {
     index_writer: BufWriter<File>,              // 流式写入索引
     current_path_id: u32,
     total_files: u64,
+    /// 每个写入文件的小写文件名字节（pipeline 用）
+    pub filename_entries: Vec<Vec<u8>>,
+    /// 每个文件在 paths.tmp 中的字节偏移（pipeline 用）
+    pub offset_index: Vec<usize>,
+    /// 当前已写入字节数
+    current_path_offset: usize,
 }
 
 impl StreamingBuilder {
@@ -58,6 +64,9 @@ impl StreamingBuilder {
             ),
             current_path_id: 0,
             total_files: 0,
+            filename_entries: Vec::with_capacity(2_200_000),
+            offset_index: Vec::with_capacity(2_200_000),
+            current_path_offset: 0,
         })
     }
     
@@ -226,46 +235,88 @@ impl StreamingBuilder {
         String::from_utf16_lossy(name_slice)
     }
     
-    /// 🔥 流式重建路径并写入磁盘（内存占用极低）
+    /// 🔥 BFS 流式重建路径并写入磁盘（父路径 100% 缓存命中）
     fn stream_paths_to_disk(&mut self, frn_map: &FxHashMap<u64, ParentInfo>) -> Result<()> {
-        const BATCH_SIZE: usize = 10_000;  // 🔥 从 50K 提升到 100K
-        
-        // 重用 buffer
-        let mut path_buffer = String::with_capacity(512);
-        
+        // ── 步骤 1: 构建 children map (parent_frn → Vec<child_frn>)
+        let mut children: FxHashMap<u64, Vec<u64>> =
+            FxHashMap::with_capacity_and_hasher(frn_map.len() / 2 + 1, Default::default());
         for (frn, parent_info) in frn_map.iter() {
-            path_buffer.clear();
-            
-            // 🔹 延迟构建完整路径
-            if let Ok(full_path) = self.build_path_recursive(*frn, frn_map, &mut path_buffer) {
-                // 过滤系统路径
-                if self.should_ignore(&full_path) {
-                    continue;
+            children.entry(parent_info.parent_frn).or_default().push(*frn);
+        }
+
+        // ── 步骤 2: BFS 从根 FRN=5 (卷根目录) 开始遍历
+        let root_path = format!("{}:", self.drive_letter);
+        self.parent_cache.insert(5u64, root_path);
+
+        let mut visited: FxHashSet<u64> =
+            FxHashSet::with_capacity_and_hasher(frn_map.len() + 1, Default::default());
+        visited.insert(5u64);
+
+        let mut queue: std::collections::VecDeque<u64> = std::collections::VecDeque::new();
+        queue.push_back(5u64);
+
+        while let Some(parent_frn) = queue.pop_front() {
+            let parent_path = match self.parent_cache.get(&parent_frn) {
+                Some(p) => p.clone(),
+                None => continue,
+            };
+            let Some(child_frns) = children.get(&parent_frn) else {
+                continue;
+            };
+            for &child_frn in child_frns {
+                if !visited.insert(child_frn) {
+                    continue; // 已访问
                 }
-                
-                // 计算优先级
-                let priority = self.calculate_priority(&full_path, parent_info);
-                
-                // 流式写入路径
-                self.write_path_entry(&full_path, priority)?;
-                
+                let Some(parent_info) = frn_map.get(&child_frn) else {
+                    continue;
+                };
+                let child_path = format!("{}\\{}", parent_path, parent_info.filename);
+
+                if self.should_ignore(&child_path) {
+                    continue; // 跳过整个子树
+                }
+
+                // 如果该节点有子节点，缓存路径且入队
+                if children.contains_key(&child_frn) {
+                    self.parent_cache.insert(child_frn, child_path.clone());
+                    queue.push_back(child_frn);
+                }
+
+                let priority = self.calculate_priority(&child_path, parent_info);
+                self.write_path_entry(&child_path, priority)?;
                 self.total_files += 1;
-                
-                // 批量刷新
-                if self.total_files % BATCH_SIZE as u64 == 0 {
+
+                if self.total_files % 10_000 == 0 {
                     self.flush_buffers()?;
-                    
-                    // 🔥 减少日志频率（从 50K 提升到 200K）
                     if self.total_files % 200_000 == 0 {
                         info!("   Progress: {} files written", self.total_files);
                     }
                 }
             }
         }
-        
-        // 刷新剩余数据
+
+        // ── 步骤 3: 处理孤立节点（BFS 未访问到的 FRN）
+        let mut orphan_count = 0u64;
+        let mut path_buffer = String::with_capacity(512);
+        for (frn, parent_info) in frn_map.iter() {
+            if visited.contains(frn) {
+                continue;
+            }
+            path_buffer.clear();
+            if let Ok(full_path) = self.build_path_recursive(*frn, frn_map, &mut path_buffer) {
+                if !self.should_ignore(&full_path) {
+                    let priority = self.calculate_priority(&full_path, parent_info);
+                    self.write_path_entry(&full_path, priority)?;
+                    self.total_files += 1;
+                    orphan_count += 1;
+                }
+            }
+        }
+        if orphan_count > 0 {
+            debug!("   Orphan entries: {}", orphan_count);
+        }
+
         self.flush_buffers()?;
-        
         Ok(())
     }
     
@@ -341,22 +392,32 @@ impl StreamingBuilder {
         path_lower.contains("\\temp\\")
     }
     
-    /// 写入路径条目
+    /// 写入路径条目（同时收集 offset_index + filename_entries 供 pipeline 使用）
     fn write_path_entry(&mut self, path: &str, priority: i32) -> Result<()> {
-        // 写入路径长度（4字节）
         let path_bytes = path.as_bytes();
-        let len = (path_bytes.len() as u32).to_le_bytes();
+        let path_len = path_bytes.len();
+
+        // 记录本条目在 paths.tmp 中的字节偏移
+        self.offset_index.push(self.current_path_offset);
+        self.current_path_offset += 4 + path_len;
+
+        // 提取小写文件名（pipeline 用）
+        let filename = path.rsplit('\\').next().unwrap_or(path);
+        self.filename_entries.push(filename.to_lowercase().into_bytes());
+
+        // 写入路径长度（4字节）
+        let len = (path_len as u32).to_le_bytes();
         self.path_writer.write_all(&len)?;
-        
+
         // 写入路径内容
         self.path_writer.write_all(path_bytes)?;
-        
+
         // 写入优先级（4字节）
         let priority_bytes = priority.to_le_bytes();
         self.index_writer.write_all(&priority_bytes)?;
-        
+
         self.current_path_id += 1;
-        
+
         Ok(())
     }
     

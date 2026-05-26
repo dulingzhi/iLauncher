@@ -4,6 +4,8 @@
 // 2. 增量追加新路径到 _paths.dat
 // 3. 增量更新 3-gram 索引（FST + RoaringBitmap）
 // 4. 处理文件创建/删除/重命名
+// 5. FRN Map 持久化（跨重启恢复，避免重建）
+// 6. 删除 bitmap 持久化（{drive}_deleted.dat）
 
 use anyhow::Result;
 use roaring::RoaringBitmap;
@@ -13,9 +15,11 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Write, Read, Seek, SeekFrom, BufWriter, BufReader};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tracing::{info, debug, error};
+use tracing::{info, debug, error, warn};
+
+use super::index_builder::DeltaState;
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::System::IO::DeviceIoControl;
@@ -29,6 +33,10 @@ struct ParentInfo {
     filename: SmartString,  // 🔥 小字符串 (<23 bytes) 无堆分配
 }
 
+/// FRN Map 磁盘记录格式（定长，便于 mmap）
+/// 每条记录 = 8(frn) + 8(parent_frn) + 2(name_len) + N(name_bytes) 
+/// 实际存储为紧凑变长格式
+
 /// USN 增量更新器
 pub struct UsnIncrementalUpdater {
     drive_letter: char,
@@ -38,8 +46,13 @@ pub struct UsnIncrementalUpdater {
     // 🔥 核心数据结构
     frn_map: FxHashMap<u64, ParentInfo>,         // FRN -> (parent_frn, filename)
     file_id_counter: u32,                         // 当前最大 file_id
-    index_cache: HashMap<String, RoaringBitmap>,  // gram -> bitmap 缓存
-    deleted_files: FxHashMap<u64, u32>,          // deleted_frn -> old_file_id
+    index_cache: FxHashMap<Vec<u8>, RoaringBitmap>,  // gram -> bitmap 缓存（字节一致）
+    deleted_file_ids: RoaringBitmap,             // 🔥 已删除的 file_id 集合
+    frn_to_file_id: FxHashMap<u64, u32>,         // 🔥 FRN -> file_id 反向映射（支持删除）
+    
+    // 🔥 热更新共享句柄（可选）
+    delta_state: Option<Arc<RwLock<DeltaState>>>,
+    delta_paths: Option<Arc<RwLock<HashMap<u32, String>>>>,
     
     // 文件句柄
     paths_writer: Option<BufWriter<File>>,
@@ -54,17 +67,33 @@ impl UsnIncrementalUpdater {
             last_usn: 0,
             frn_map: FxHashMap::default(),
             file_id_counter: 0,
-            index_cache: HashMap::new(),
-            deleted_files: FxHashMap::default(),
+            index_cache: FxHashMap::default(),
+            deleted_file_ids: RoaringBitmap::new(),
+            frn_to_file_id: FxHashMap::default(),
+            delta_state: None,
+            delta_paths: None,
             paths_writer: None,
             paths_offset: 0,
         }
     }
     
+    /// 绑定 IndexQuery 和 PathReader 的共享句柄（热更新核心）
+    ///
+    /// 调用后，每次 flush_index_cache() 或删除事件都会立即更新内存中的索引，
+    /// 查询侧持有相同的 Arc 引用，无需重启即可看到新内容。
+    pub fn attach_index(
+        &mut self,
+        delta_state: Arc<RwLock<DeltaState>>,
+        delta_paths: Arc<RwLock<HashMap<u32, String>>>,
+    ) {
+        self.delta_state = Some(delta_state);
+        self.delta_paths = Some(delta_paths);
+        info!("🔗 Attached hot-update handles for drive {}", self.drive_letter);
+    }
+
     /// 初始化 USN（读取当前位置 + 加载现有 FRN Map）
     pub fn initialize(&mut self) -> Result<()> {
         info!("🔧 Initializing USN updater for drive {}:", self.drive_letter);
-        
         // 1. 读取 USN Journal 当前位置
         let volume_handle = self.open_volume()?;
         
@@ -90,20 +119,52 @@ impl UsnIncrementalUpdater {
         
         info!("✓ USN initialized at: {}", self.last_usn);
         
-        // 2. 从现有索引文件加载 FRN Map（如果存在）
+        // 2. 从持久化文件恢复 FRN Map（如果存在）
         self.load_frn_map_from_index()?;
         
-        // 3. 打开路径文件用于追加
+        // 3. 加载删除 bitmap
+        self.load_deleted_bitmap()?;
+        
+        // 4. 打开路径文件用于追加
         self.open_paths_file_for_append()?;
         
-        info!("✓ USN updater initialized: {} FRNs cached", self.frn_map.len());
+        info!("✓ USN updater initialized: {} FRNs cached, {} deleted", 
+              self.frn_map.len(), self.deleted_file_ids.len());
         
+        Ok(())
+    }
+    
+    /// 加载删除 bitmap（跨重启恢复已删除文件集合）
+    fn load_deleted_bitmap(&mut self) -> Result<()> {
+        let deleted_file = format!("{}\\{}_deleted.dat", self.output_dir, self.drive_letter);
+        if !std::path::Path::new(&deleted_file).exists() {
+            return Ok(());
+        }
+        let bytes = std::fs::read(&deleted_file)?;
+        match RoaringBitmap::deserialize_from(&bytes[..]) {
+            Ok(bmp) => {
+                info!("✓ Loaded deleted bitmap: {} deleted file IDs", bmp.len());
+                self.deleted_file_ids = bmp;
+            }
+            Err(e) => {
+                warn!("⚠  Failed to load deleted bitmap (will reset): {e:#}");
+            }
+        }
+        Ok(())
+    }
+    
+    /// 持久化删除 bitmap 到磁盘
+    fn save_deleted_bitmap(&self) -> Result<()> {
+        let deleted_file = format!("{}\\{}_deleted.dat", self.output_dir, self.drive_letter);
+        let mut bytes = Vec::new();
+        self.deleted_file_ids.serialize_into(&mut bytes)?;
+        std::fs::write(&deleted_file, &bytes)?;
         Ok(())
     }
     
     /// 从现有索引文件加载 FRN Map（改为按需加载策略）
     fn load_frn_map_from_index(&mut self) -> Result<()> {
-        // � 优化：不再预加载整个 FRN Map（避免 800MB 内存占用）
+        // 优化：不再预加载整个 FRN Map（避免 800MB 内存占用）
         // 新策略：
         // 1. Monitor 模式下只在需要时通过 USN 事件逐步构建 FRN Map
         // 2. 对于现有文件，首次访问时通过 MFT 查询补充到缓存
@@ -293,6 +354,11 @@ impl UsnIncrementalUpdater {
         Ok(())
     }
     
+    /// 单次轮询 USN 变更（供 CLI test binary 使用）
+    pub fn poll_usn_changes(&mut self) -> Result<()> {
+        self.process_usn_changes()
+    }
+    
     /// 处理 USN 变更
     fn process_usn_changes(&mut self) -> Result<()> {
         let volume_handle = self.open_volume()?;
@@ -397,14 +463,16 @@ impl UsnIncrementalUpdater {
             debug!("🗑️  File deleted: {}", filename);
             
             // 从 FRN Map 移除
-            if let Some(_info) = self.frn_map.remove(&frn) {
-                // TODO: 标记文件已删除，但保留 file_id 用于去重
-                // 实际应该在 bitmap 中移除对应的 bit
-                // 这里简化处理：记录到 deleted_files
-                if let Some(&file_id) = self.deleted_files.get(&frn) {
-                    self.deleted_files.insert(frn, file_id);
-                }
-            }
+            self.frn_map.remove(&frn);
+            
+            // 🔥 查找 file_id 并标记为已删除
+            if let Some(&file_id) = self.frn_to_file_id.get(&frn) {
+                self.deleted_file_ids.insert(file_id);
+                self.frn_to_file_id.remove(&frn);
+                debug!("   🗑  Marked file_id {} as deleted (FRN={})", file_id, frn);                // 🔥 立即更新内存中的 DeltaState.deleted_bitmap
+                if let Some(state_arc) = &self.delta_state {
+                    state_arc.write().unwrap().deleted_bitmap.insert(file_id);
+                }            }
         }
         
         // 文件重命名
@@ -413,11 +481,16 @@ impl UsnIncrementalUpdater {
             
             // 更新 FRN Map 中的文件名
             if let Some(info) = self.frn_map.get_mut(&frn) {
-                let old_filename = info.filename.clone();
+                let _old_filename = info.filename.clone();
                 info.filename = filename.clone();
                 
-                // 更新索引：删除旧 3-gram + 添加新 3-gram
-                self.update_file_name_in_index(&old_filename, &filename, frn)?;
+                // 🔥 标记旧 file_id 为已删除，添加新条目
+                if let Some(&old_file_id) = self.frn_to_file_id.get(&frn) {
+                    self.deleted_file_ids.insert(old_file_id);
+                }
+                
+                // 用新名称添加新索引条目
+                self.add_file_to_index(&filename, frn)?;
             } else {
                 // 新监控到的文件，添加到 FRN Map
                 self.frn_map.insert(frn, ParentInfo {
@@ -441,12 +514,20 @@ impl UsnIncrementalUpdater {
         let file_id = self.file_id_counter;
         self.file_id_counter += 1;
         
-        // 3. 追加到 _paths.dat
+        // 3. 记录 FRN -> file_id 反向映射（支持后续删除）
+        self.frn_to_file_id.insert(frn, file_id);
+        
+        // 4. 追加到 _paths.dat
         self.append_path_to_file(&full_path)?;
         
-        // 4. 生成 3-gram 并更新内存缓存
+        // 5. 写入共享 delta_paths（查询侧可立即访问）
+        if let Some(delta_paths) = &self.delta_paths {
+            delta_paths.write().unwrap().insert(file_id, full_path.clone());
+        }
+        
+        // 6. 生成 3-gram 字节 key 并更新内存缓存
         let filename_lower = filename.to_lowercase();
-        let grams = self.split_to_3grams(&filename_lower);
+        let grams = Self::split_to_3grams_bytes(&filename_lower);
         
         for gram in grams {
             self.index_cache
@@ -572,40 +653,6 @@ impl UsnIncrementalUpdater {
         Ok(())
     }
     
-    /// 删除文件（更新索引）
-    fn remove_file(&mut self, _frn: u64) -> Result<()> {
-        // TODO: 从 bitmap 中移除对应的 bit
-        // 由于 RoaringBitmap 不支持直接删除，实际需要重建或标记删除
-        // 这里简化：仅记录到 deleted_files
-        Ok(())
-    }
-    
-    /// 更新文件名（更新索引）
-    fn update_file_name_in_index(&mut self, _old_name: &str, new_name: &str, _frn: u64) -> Result<()> {
-        // TODO: 找到对应的 file_id，然后：
-        // 1. 从旧 3-gram 的 bitmap 中移除 file_id
-        // 2. 添加到新 3-gram 的 bitmap
-        //
-        // 由于没有维护 file_id -> frn 的反向映射，这里简化：
-        // 直接生成新 3-gram（旧 3-gram 保留，下次重建时清理）
-        
-        let new_name_lower = new_name.to_lowercase();
-        let grams = self.split_to_3grams(&new_name_lower);
-        
-        // 分配新 file_id（视为新文件）
-        let file_id = self.file_id_counter;
-        self.file_id_counter += 1;
-        
-        for gram in grams {
-            self.index_cache
-                .entry(gram)
-                .or_insert_with(RoaringBitmap::new)
-                .insert(file_id);
-        }
-        
-        Ok(())
-    }
-    
     /// 提取文件名
     unsafe fn extract_filename(&self, record: &UsnRecordV2) -> SmartString {
         let name_offset = record.file_name_offset as usize;
@@ -617,7 +664,7 @@ impl UsnIncrementalUpdater {
         SmartString::from(String::from_utf16_lossy(name_slice).as_str())
     }
     
-    /// 刷新索引缓存到磁盘
+    /// 刷新索引缓存到磁盘（同时持久化删除 bitmap）
     fn flush_index_cache(&mut self) -> Result<()> {
         if self.index_cache.is_empty() {
             return Ok(());
@@ -645,12 +692,23 @@ impl UsnIncrementalUpdater {
             .append(true)
             .open(&temp_index_file)?;
         
+        // 🔥 先更新内存中的 DeltaState（查询侧立即可见）
+        if let Some(state_arc) = &self.delta_state {
+            let mut state = state_arc.write().unwrap();
+            for (gram, bitmap) in &self.index_cache {
+                state.gram_bitmaps
+                    .entry(gram.clone())
+                    .and_modify(|e| *e |= bitmap)
+                    .or_insert_with(|| bitmap.clone());
+            }
+        }
+        
         for (gram, bitmap) in self.index_cache.drain() {
             // 写入 gram 长度
             file.write_all(&(gram.len() as u32).to_le_bytes())?;
             
-            // 写入 gram 内容
-            file.write_all(gram.as_bytes())?;
+            // 写入 gram 内容（已是 Vec<u8>）
+            file.write_all(&gram)?;
             
             // 写入 bitmap（序列化到 Vec）
             let mut bitmap_bytes = Vec::new();
@@ -664,12 +722,27 @@ impl UsnIncrementalUpdater {
         
         info!("✓ Delta index written to {}", temp_index_file);
         
-        // TODO: 后台任务定期合并 delta 到主索引
-        // 或达到一定大小后触发重建
+        // 同时持久化删除 bitmap（避免重启后无法过滤已删除文件）
+        if !self.deleted_file_ids.is_empty() {
+            if let Err(e) = self.save_deleted_bitmap() {
+                error!("Failed to save deleted bitmap: {e:#}");
+            } else {
+                debug!("✓ Saved deleted bitmap: {} IDs", self.deleted_file_ids.len());
+            }
+        }
         
         Ok(())
     }
     
+    /// 拆分为 3-字节 gram（与 IndexBuilder 字节一致）
+    fn split_to_3grams_bytes(text: &str) -> Vec<Vec<u8>> {
+        let b = text.as_bytes();
+        if b.len() < 3 {
+            return vec![b.to_vec()];
+        }
+        b.windows(3).map(|w| w.to_vec()).collect()
+    }
+
     /// 拆分为 3-gram
     fn split_to_3grams(&self, text: &str) -> Vec<String> {
         if text.len() < 3 {
