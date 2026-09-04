@@ -16,6 +16,8 @@ tray-icon = "0.20"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
+# 启动文件/目录（等价 tauri_plugin_opener，无 Tauri 依赖）
+opener = "0.6"
 
 ilauncher_lib = { package = "ilauncher", path = "../src-tauri", optional = true }
 

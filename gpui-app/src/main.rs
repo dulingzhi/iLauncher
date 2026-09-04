@@ -1,17 +1,17 @@
-// iLauncher GPUI P0 Spike
+// iLauncher GPUI P1 主循环原型
 //
-// 覆盖 Go/No-Go 检查清单的可运行原型：
-//   [1] 热键唤起（global-hotkey）+ 冷启动耗时测量
-//   [2] uniform_list 渲染 10 万条假数据（--bench 自动滚动测 FPS）
-//   [3] 中文 IME（gpui-component Input，需人工验证）
-//   [4] 透明 + 毛玻璃窗口（WindowBackgroundAppearance::Blur）
-//   [6] 托盘（tray-icon）+ 全局热键 + 自启（ilauncher feature 复用 utils::autostart）
-//   [7] LiveIndex 进程内搜索（--snapshot <path>，ilauncher feature）
+// 在 P0 spike 基础上接入搜索门面（src/search.rs）：
+//   - 输入即搜（Demo 子串 / LiveIndex 模糊搜索，feature ilauncher + ILAUNCHER_SNAPSHOT）
+//   - ↑↓ 选择结果、Enter 启动（opener）、Esc 退出
+//   - 保留 P0 能力：--bench 帧率基准、--snapshot 索引基准、托盘、Ctrl+Space 唤起
 //
 // 用法：
-//   ilauncher-gpui                 正常运行（Ctrl+Space 唤起，Esc 退出）
-//   ilauncher-gpui --bench         列表滚动基准（5s 自动滚动 → gpui-p0-result.json）
-//   ilauncher-gpui --snapshot X    LiveIndex 真实快照搜索基准
+//   ilauncher-gpui                      Demo 数据运行（不依赖 src-tauri）
+//   ILAUNCHER_SNAPSHOT=<path> ilauncher-gpui   真实快照搜索（需 --features ilauncher 构建）
+//   ilauncher-gpui --bench              列表滚动帧率基准
+//   ilauncher-gpui --snapshot <path>    LiveIndex 进程内搜索基准（需 feature ilauncher）
+
+mod search;
 
 use std::sync::mpsc;
 use std::time::Instant;
@@ -23,8 +23,11 @@ use gpui_kit::component::{
     *,
 };
 use gpui_kit::*;
+use gpui_kit::prelude::FluentBuilder;
+use search::{Entry, SearchSource};
 
-const ITEM_COUNT: usize = 100_000;
+const DEMO_COUNT: usize = 100_000;
+const PAGE_LIMIT: usize = 50;
 const ROW_HEIGHT: f32 = 44.;
 
 // ── 全局启动时刻（冷启动测量） ────────────────────────────────────────────────
@@ -40,8 +43,10 @@ fn start_time() -> Instant {
 struct Launcher {
     input: Entity<InputState>,
     scroll: UniformListScrollHandle,
-    items: std::sync::Arc<Vec<String>>,
-    filtered: Vec<usize>,
+    focus: FocusHandle,
+    source: SearchSource,
+    entries: Vec<Entry>,
+    selected: usize,
     first_render_done: Option<Instant>,
     render_count: usize,
     render_total_ms: f64,
@@ -56,30 +61,35 @@ struct Launcher {
 impl Launcher {
     fn new(window: &mut Window, cx: &mut Context<Self>, hotkey_rx: mpsc::Receiver<Instant>) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索应用、文件、命令…（中文 IME 请在这里验证）"));
+        let focus = cx.focus_handle();
 
         let words = ["report", "notes", "简历", "配置", "相册", "terminal", "浏览器", "计算器"];
-        let mut items = Vec::with_capacity(ITEM_COUNT);
-        for i in 0..ITEM_COUNT {
-            items.push(format!("{}_{:06}.txt", words[i % words.len()], i));
-        }
-        let items = std::sync::Arc::new(items);
+        let demo: Vec<Entry> = (0..DEMO_COUNT)
+            .map(|i| Entry::new(format!("{}_{:06}.txt", words[i % words.len()], i), format!("C:\\demo\\{}_{:06}.txt", words[i % words.len()], i)))
+            .collect();
+
+        let bench = std::env::args().any(|a| a == "--bench");
+        let source = SearchSource::from_env_or_demo(demo.clone());
+        // bench 模式保持 10 万条全量以测虚拟列表；正常运行空查询显示空（启动器惯例）
+        let entries = if bench { demo } else { Vec::new() };
 
         let mut this = Self {
             input: input.clone(),
             scroll: UniformListScrollHandle::new(),
-            items,
-            filtered: Vec::new(),
+            focus,
+            source,
+            entries,
+            selected: 0,
             first_render_done: None,
             render_count: 0,
             render_total_ms: 0.0,
             frame_count: 0,
             bench_t0: None,
-            bench: std::env::args().any(|a| a == "--bench"),
+            bench,
             bench_tick: 0,
             hotkey_rx,
             _subscriptions: Vec::new(),
         };
-        this.refilter(cx);
         if this.bench {
             this.run_bench(window, cx);
         }
@@ -96,31 +106,39 @@ impl Launcher {
         this
     }
 
-    fn refilter(&mut self, _cx: &mut Context<Self>) {
-        // 初始全量（bench 模式下保持 10 万条全量以测虚拟列表）
-        self.filtered = (0..self.items.len()).collect();
-    }
-
+    /// 输入即搜：空查询清空结果，非空最多 PAGE_LIMIT 条
     fn apply_query(&mut self, query: String, cx: &mut Context<Self>) {
-        let q = query.to_lowercase();
-        self.filtered = if q.is_empty() {
-            (0..self.items.len()).collect()
-        } else {
-            self.items
-                .iter()
-                .enumerate()
-                .filter(|(_, name)| name.to_lowercase().contains(&q))
-                .map(|(i, _)| i)
-                .take(500)
-                .collect()
-        };
+        self.entries = self.source.search(&query, PAGE_LIMIT);
+        self.selected = 0;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
         cx.notify();
     }
 
+    /// 移动选择（↑↓ 键）
+    fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.entries.is_empty() {
+            return;
+        }
+        let len = self.entries.len() as isize;
+        self.selected = (self.selected as isize + delta).clamp(0, len - 1) as usize;
+        self.scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
+        cx.notify();
+    }
+
+    /// 启动当前选中项
+    fn launch_selected(&mut self, cx: &mut Context<Self>) {
+        let Some(entry) = self.entries.get(self.selected) else { return };
+        let path = entry.path.clone();
+        println!("LAUNCH {}", path);
+        match opener::open(path) {
+            Ok(_) => cx.notify(),
+            Err(e) => eprintln!("⚠ 打开失败: {e}"),
+        }
+    }
+
     /// --bench：后台 8ms 一次滚动驱动 + on_next_frame 自续计数，测真实交付帧率
     fn run_bench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let total = self.filtered.len();
+        let total = self.entries.len();
         self.bench_t0 = Some(Instant::now());
         window.activate_window();
         self.count_frame(window, cx);
@@ -165,7 +183,7 @@ impl Launcher {
                 };
                 let result = serde_json::json!({
                     "bench": "uniform_list_scroll_rAF",
-                    "rows": self.filtered.len(),
+                    "rows": self.entries.len(),
                     "duration_secs": t0.elapsed().as_secs_f64(),
                     "frames": self.frame_count,
                     "fps": fps,
@@ -192,6 +210,7 @@ impl Render for Launcher {
             );
         }
         self.render_count += 1;
+        let render_t0 = Instant::now();
 
         // 轮询热键通道（唤起）
         while let Ok(pressed_at) = self.hotkey_rx.try_recv() {
@@ -201,14 +220,23 @@ impl Render for Launcher {
         }
 
         let theme = cx.theme().clone();
-        let items = self.items.clone();
-        let filtered = self.filtered.clone();
-        let result_count = filtered.len();
+        let entries = self.entries.clone();
+        let selected = self.selected;
+        let result_count = entries.len();
         let theme_for_list = theme.clone();
 
-        let render_t0 = Instant::now();
-
         let root = v_flex()
+            .id("root")
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
+                match ev.keystroke.key.as_str() {
+                    "up" => this.move_selection(-1, cx),
+                    "down" => this.move_selection(1, cx),
+                    "enter" => this.launch_selected(cx),
+                    "escape" => std::process::exit(0),
+                    _ => {}
+                }
+            }))
             .size_full()
             .p_3()
             .gap_2()
@@ -220,27 +248,32 @@ impl Render for Launcher {
                     .id("results")
                     .flex_1()
                     .child(
-                        uniform_list("result-list", filtered.len(), {
+                        uniform_list("result-list", entries.len(), {
                             move |visible_range, _window, _cx| {
                                 visible_range
                                     .map(|ix| {
-                                        let name = &items[filtered[ix]];
+                                        let entry = &entries[ix];
+                                        let is_selected = ix == selected;
                                         div()
                                             .h(px(ROW_HEIGHT))
                                             .w_full()
                                             .px_3()
                                             .items_center()
                                             .rounded_md()
+                                            .cursor_pointer()
+                                            .when(is_selected, |s| s.bg(theme_for_list.secondary))
                                             .child(
                                                 h_flex()
                                                     .w_full()
                                                     .justify_between()
-                                                    .child(div().text_sm().child(name.clone()))
+                                                    .gap_2()
+                                                    .child(div().text_sm().child(entry.name.clone()))
                                                     .child(
                                                         div()
                                                             .text_xs()
                                                             .text_color(theme_for_list.muted_foreground)
-                                                            .child(format!("C:\\demo\\{}", name)),
+                                                            .truncate()
+                                                            .child(entry.path.clone()),
                                                     ),
                                             )
                                             .hover(|s| s.bg(theme_for_list.secondary))
@@ -261,7 +294,7 @@ impl Render for Launcher {
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(format!(
-                                "{} 条结果（gpui P0 spike）{}",
+                                "{} 条结果 · ↑↓ 选择 · Enter 打开 · Esc 退出{}",
                                 result_count,
                                 if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
                             )),
@@ -286,7 +319,7 @@ fn spawn_hotkey_thread() -> mpsc::Receiver<Instant> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let manager = GlobalHotKeyManager::new().expect("hotkey manager");
-        // Ctrl+Space 唤起（P0 测试绑定）
+        // Ctrl+Space 唤起（P0/P1 测试绑定）
         let hotkey = HotKey::new(Some(global_hotkey::hotkey::Modifiers::CONTROL), global_hotkey::hotkey::Code::Space);
         manager.register(hotkey).expect("register hotkey");
         println!("✓ 全局热键已注册: Ctrl+Space");
@@ -302,7 +335,7 @@ fn spawn_hotkey_thread() -> mpsc::Receiver<Instant> {
     rx
 }
 
-// ── 托盘 ────────────────────────────────────────────────────────────────────
+// ── 托盘 ────────────────────────────────────────────────────────────────
 
 fn setup_tray() {
     use tray_icon::{menu::{Menu, MenuItem}, TrayIconBuilder};
@@ -310,10 +343,10 @@ fn setup_tray() {
     let menu = Menu::new();
     let _ = menu.append(&MenuItem::new("显示 iLauncher", true, None));
     let _ = menu.append(&MenuItem::new("退出", true, None));
-    match TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("iLauncher (gpui P0)").build() {
+    match TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("iLauncher (gpui P1)").build() {
         Ok(_tray) => {
             println!("✓ 托盘已创建");
-            // 故意泄漏保持存活（P0；正式版接事件）
+            // 故意泄漏保持存活（正式版接事件）
             std::mem::forget(_tray);
         }
         Err(e) => println!("⚠️ 托盘创建失败: {e}"),
