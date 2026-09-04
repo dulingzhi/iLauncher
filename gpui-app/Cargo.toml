@@ -1,0 +1,30 @@
+[package]
+name = "ilauncher-gpui"
+version = "0.1.0"
+edition = "2024"
+description = "iLauncher GPUI frontend (P0 spike)"
+
+[features]
+# 接 ilauncher_lib：LiveIndex 进程内搜索基准 + 自启动复用
+ilauncher = ["dep:ilauncher_lib"]
+
+[dependencies]
+# gpui-kit = umbrella（gpui-pre + platform + base + component + assets）
+gpui-kit = { version = "0.6" }
+global-hotkey = "0.7"
+tray-icon = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+ilauncher_lib = { package = "ilauncher", path = "../src-tauri", optional = true }
+
+[profile.dev]
+codegen-units = 16
+
+# 加速 gpui 依赖的 debug 构建（照抄 gpui-kit 的调优）
+[profile.dev.package]
+taffy = { opt-level = 3 }
+smol = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }
+ttf-parser = { opt-level = 3 }

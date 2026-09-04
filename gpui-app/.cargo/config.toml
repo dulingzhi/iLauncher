@@ -1,0 +1,5 @@
+# 阿里云镜像同步滞后（只有 gpui-kit 0.1.0），改用清华 TUNA sparse 索引
+[source.crates-io]
+replace-with = "tuna"
+[source.tuna]
+registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
