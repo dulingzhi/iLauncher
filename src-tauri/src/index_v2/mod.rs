@@ -9,6 +9,7 @@
 // docs/FILE_INDEX_OPTIMIZATION_PLAN.md Phase 1。
 
 pub mod format;
+pub mod search;
 pub mod snapshot;
 pub mod writer;
 
