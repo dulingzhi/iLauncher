@@ -29,6 +29,9 @@ pub mod query_cache;
 #[cfg(target_os = "windows")]
 pub mod v3_export;
 
+#[cfg(target_os = "windows")]
+pub mod v3_service;
+
 // 重新导出核心类型
 #[cfg(target_os = "windows")]
 pub use types::{MftFileEntry, ScanConfig, FrnMap, ParentInfo};
@@ -39,6 +42,9 @@ pub use config::load_config;
 // 🔥 导出：流式构建和索引
 #[cfg(target_os = "windows")]
 pub use streaming_builder::StreamingBuilder;
+
+#[cfg(target_os = "windows")]
+pub use v3_service::V3DriveService;
 
 #[cfg(target_os = "windows")]
 pub use index_builder::{IndexBuilder, IndexQuery, PathReader, DeltaState};

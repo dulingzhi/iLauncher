@@ -307,6 +307,11 @@ impl DeltaOverlay {
         )
     }
 
+    /// 待折叠的增量规模（compact 策略的输入）
+    pub fn pending_len(&self) -> usize {
+        self.deleted_base.len() + self.overrides.len() + self.live_added().count()
+    }
+
     /// 遍历活 added 记录（搜索/枚举/compact 共用）
     pub fn live_added(&self) -> impl Iterator<Item = (usize, &AddedRecord)> {
         self.added

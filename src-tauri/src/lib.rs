@@ -616,22 +616,36 @@ pub fn run_mft_service(args: &[String]) {
         .map(|&drive| {
             let output_dir_clone = output_dir.clone();
             let running_clone = running.clone();
-            
+
             // 🔥 启动后台合并任务（每个驱动器独立）
             mft_scanner::DeltaMerger::start_background_merge(drive, output_dir_clone.clone());
-            
+
+            // 🔥 v3 索引服务（Phase 2：列式快照 + USN catch-up + 定期 compact）
+            // 与 v2 监控并行：启动守卫"水位有效直接打开、失效才重建"（解决 C4），
+            // 退出前最终 compact 持久化水位。UI 查询仍在 v2，Phase 3 切换后 v2 退役。
+            {
+                let output_dir_v3 = output_dir_clone.clone();
+                let running_v3 = running_clone.clone();
+                std::thread::spawn(move || {
+                    let service = mft_scanner::V3DriveService::new(drive, output_dir_v3);
+                    if let Err(e) = service.run(running_v3) {
+                        error!("❌ [v3] Index service error on drive {}: {:#}", drive, e);
+                    }
+                });
+            }
+
             std::thread::spawn(move || {
                 info!("👀 Starting USN incremental updater for drive {}:", drive);
-                
+
                 // 🔥 使用新的 UsnIncrementalUpdater（基于 prompt.txt）
                 let mut updater = mft_scanner::UsnIncrementalUpdater::new(drive, output_dir_clone.clone());
-                
+
                 // 初始化 USN 位置
                 if let Err(e) = updater.initialize() {
                     error!("❌ Failed to initialize USN updater for drive {}: {:#}", drive, e);
                     return;
                 }
-                
+
                 // 阻塞式监控，直到收到停止信号
                 if let Err(e) = updater.start_monitoring(running_clone) {
                     error!("❌ USN monitoring error on drive {}: {:#}", drive, e);

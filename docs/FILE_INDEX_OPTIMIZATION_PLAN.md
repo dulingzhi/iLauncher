@@ -214,9 +214,22 @@ query → charmask 预过滤(AVX2 扫 UniqueMasks) → 候选 unique name fzf/sk
 - 测试 25 个全绿（journal 解析往返/损坏拒绝/水位判定、replay 建改删移动/
   OLD_NAME 幂等/元数据刷新/compact 水位持久化重开、entry_for_id + 枚举）。
 
-遗留（Phase 2 收尾）：lib.rs 服务流程接入 LiveIndex（替换 UsnIncrementalUpdater
-的 v2 链路，含启动守卫"水位失效才全量重建"，解决 C4）；定时 compact 策略
-（idle / delta 阈值）。
+**✅ Phase 2 收尾（2026-09-05，commit `v3_service` 批次）**
+
+- `v3_service.rs` V3DriveService（每盘一线程，lib.rs 监控阶段与 v2 并行启动）：
+  - 启动守卫 `decide_startup`：快照存在且水位有效 → open + catch-up（秒开）；
+    快照缺失/打开失败/journal 重建 → 才 `scan_mft_streaming_v3` 全量重建
+    （C4 根除：不再每次启动无条件删库重扫）
+  - 运行：每 2s `catch_up_volume`；`CompactPolicy`（pending ≥ 10 万且距上次
+    ≥ 30min → compact）；运行中 journal 重建 → 自动全量重建恢复
+  - 退出：有 pending 变更 → 最终 compact，水位随 header 持久化，
+    下次启动从断点 catch-up
+- DeltaOverlay 补 `pending_len()`（compact 策略输入）。
+- UI 查询仍在 v2 链路（Phase 0 的增量同步），v3 并行维护直到 Phase 3
+  查询切换；届时 v2（UsnIncrementalUpdater/DeltaMerger/paths.dat）退役。
+
+Phase 2 完成。剩余工作均属 Phase 3：UI 查询切换 v3（含拼音 alias、目录
+限定搜索、子串模式）、$MFT 自解析扫描器（补 size/mtime）、v2 链路退役清理。
 
 ### Phase 3：体验增强（按需，可并行）
 
