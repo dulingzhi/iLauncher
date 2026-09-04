@@ -119,9 +119,8 @@ ilauncher-gpui.exe (Rust)
 
 ### 4.4 关键技术决策
 
-1. **依赖来源**：git 依赖 zed monorepo + 锁 commit，gpui-component 同样走 git
-   （其与 gpui HEAD 配套发布）；每月例行 bump（参考 hellno/deck 的 `bump-gpui` 流程）。
-   crates.io `0.2.2` + gpui-component 0.5 作为"冻结 fallback"。
+1. **依赖来源**：~~git 依赖 zed monorepo + 锁 commit~~ → **已修正，见 4.5**：
+   crates.io `gpui-pre` 0.3.1 系列 + gpui-component 0.6，锁 Cargo.lock。
 2. **组件层**：基于 gpui-component 二次封装自己的 design system（现 Tailwind 主题
    变量一一映射）；缺口组件（如 HotkeyRecorder）自建。
 3. **Markdown/AIChat**：pulldown-cmark + syntect；富文本复杂度最高，放最后批次，
@@ -130,6 +129,50 @@ ilauncher-gpui.exe (Rust)
    scripts/generate-updater-json.js 基本不动。
 5. **索引接入**：UI 进程内嵌 LiveIndex（只读 mmap + overlay），
    MFT Service 仅作为"首次构建/compact 的提权后端"保留，或直接由 UI 提权自管（对齐 v3_e2e 的自提权方案）。
+
+### 4.5 组件库定型：gpui-component
+
+**选型确认**：组件层采用 [gpui-component](https://github.com/longbridge/gpui-component)
+（longbridge 开源，Apache-2.0，60+ 桌面组件，shadcn 风格，Lucide 图标内置，
+生产验证于 Longbridge Pro 交易终端）。gpui 本体零组件，本层是事实标准。
+
+**依赖形态（相对 4.4-1 的修正，2026-09 核查）**：
+
+gpui-component 0.6 起改用 crates.io 上的 **gpui-pre 0.3.1** 系列
+（社区对 zed main 拆分后 crate 家族的预发布，含 `gpui-pre` /
+`gpui-pre-platform` / `gpui-pre-macros`）。**无需 git 依赖 zed monorepo**，
+锁定 Cargo.lock 即可复现构建，维护风险大幅下降：
+
+```toml
+gpui           = { package = "gpui-pre", version = "0.3.1" }
+gpui_platform  = { package = "gpui-pre-platform", version = "0.3.1", features = ["font-kit"] }
+gpui-component = { version = "0.6" }
+```
+
+**现有 React 组件 → gpui-component 映射**：
+
+| React/Radix（现状） | gpui-component | 备注 |
+|---|---|---|
+| SearchBox（自研） | `input::TextInput` + 自研高亮层 | 高亮自研（fzf match 区间着色） |
+| Dialog（radix-dialog） | `modal::Modal` / `dialog::Dialog` | |
+| Popover / ContextMenu | `popover::Popover` / `menu::PopupMenu` | |
+| ScrollArea | `scroll::ScrollableElement` / `VirtualList` | |
+| @tanstack/react-virtual | `uniform_list` / `VirtualList` | 原生虚拟列表 |
+| HotkeyRecorder（自研） | 无 → 自研 | 缺口组件，封装 global-hotkey 录制 |
+| Toast | `notification` | |
+| ThemeEditor/Appearance | `Theme`/`ThemeMode` + schemars | gpui-component 自带暗/明主题系统 |
+| react-markdown + syntax-highlighter | `markdown` 组件 + `tree-sitter-languages` feature | **AIChat 风险大幅下降** |
+| lucide-react | `Icon` / `IconName`（同 Lucide 图标集） | |
+| i18next | rust-i18n（gpui-component 同款） | |
+
+**使用规范**：
+
+1. 业务代码只依赖 `ui` 封装层（本 crate）+ gpui-component 公共 API；
+   不直接散落调用裸 gpui 元素构造（框架升级时只改封装层）。
+2. 主题以现有 Tailwind 变量表为源，一次性映射到 gpui-component `Theme`，
+   运行时切换走 `ThemeMode`。
+3. 版本策略：gpui-pre 系列跟随 gpui-component 的配套版本整体升级，
+   每月一个 bump 窗口，锁 Cargo.lock。
 
 ## 5. 风险与对策
 
