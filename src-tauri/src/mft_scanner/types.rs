@@ -10,6 +10,8 @@ pub struct ParentInfo {
     pub parent_frn: u64,
     /// 当前文件/目录名
     pub filename: String,
+    /// 是否为目录（USN record 的 FILE_ATTRIBUTE_DIRECTORY）
+    pub is_dir: bool,
 }
 
 /// FRN 映射表：FRN → {ParentFRN, Filename}

@@ -6,6 +6,7 @@ use bumpalo::Bump;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::PathBuf;
 use tracing::{info, debug};
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
@@ -76,9 +77,33 @@ impl StreamingBuilder {
         self.stream_paths_to_disk(&frn_map)?;
         
         unsafe { let _ = CloseHandle(volume_handle); }
-        
+
         info!("✅ Streaming scan completed: {} files", self.total_files);
         Ok(())
+    }
+
+    /// v3 快照扫描：复用阶段 1 的 FrnMap，直接产出 index_v2 列式快照
+    /// （`{output_dir}\{drive}.snapshot`），不再走物化全路径的 paths.dat 老链路。
+    pub fn scan_mft_streaming_v3(&mut self, output_dir: &str) -> Result<PathBuf> {
+        info!("🚀 Starting v3 snapshot scan for drive {}:", self.drive_letter);
+
+        let volume_handle = self.open_volume()?;
+        info!("✓ Volume handle opened");
+
+        let journal_data = self.query_usn_journal(volume_handle)?;
+        info!("✓ USN Journal ID: {:016X}", journal_data.usn_journal_id);
+
+        info!("📍 Phase 1: Building FRN map...");
+        let frn_map = self.build_frn_map(volume_handle, &journal_data)?;
+        info!("✓ FRN map built: {} entries", frn_map.len());
+
+        unsafe { let _ = CloseHandle(volume_handle); }
+
+        info!("📝 Phase 2: Writing v3 columnar snapshot...");
+        let path = super::v3_export::write_v3_snapshot(&frn_map, self.drive_letter, output_dir)?;
+
+        info!("✅ v3 snapshot written: {:?}", path);
+        Ok(path)
     }
     
     /// 打开卷句柄
@@ -191,8 +216,11 @@ impl StreamingBuilder {
                     let frn = record.file_reference_number;
                     let parent_frn = record.parent_file_reference_number;
                     let filename = self.extract_filename(record);
-                    
-                    frn_map.insert(frn, ParentInfo { parent_frn, filename });
+                    let is_dir =
+                        (record.file_attributes & windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_DIRECTORY.0)
+                            != 0;
+
+                    frn_map.insert(frn, ParentInfo { parent_frn, filename, is_dir });
                     
                     offset += record.record_length as usize;
                     

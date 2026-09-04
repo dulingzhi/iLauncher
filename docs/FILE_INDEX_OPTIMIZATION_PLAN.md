@@ -171,9 +171,13 @@ query → charmask 预过滤(AVX2 扫 UniqueMasks) → 候选 unique name fzf/sk
 - 死代码清理：`index_builder::build_from_paths`、streaming_builder 遗留 v1
   `{D}_index.dat` 写入链路、`quick_scan_mft_for_frn_map`（800MB 内存预载）、
   `query_frn_from_mft` stub（C3 的静默失败源）——全部删除，`cargo check` 零警告。
+- **MFT 扫描输出接入 v3**（`v3_export.rs`）：`FrnMap → IndexRecord` 纯转换
+  （BFS 自根 + 排除子树标记 + 孤儿保留真实 parent_frn），
+  `StreamingBuilder::scan_mft_streaming_v3()` 复用阶段 1 FrnMap 直出
+  `{D}.snapshot`。`ParentInfo` 补充 `is_dir`（USN record 属性位）。
+  限制：USN ENUM 不提供 size/mtime，导出为 0（待 $MFT 自解析补）。
 
-遗留（Phase 2）：MFT 扫描器输出接入 `write_snapshot`（StreamingBuilder 两阶段结果
-→ IndexRecord）；USN 事件源接入 DeltaOverlay；水位持久化 + 启动 catch-up。
+遗留（Phase 2）：USN 事件源接入 DeltaOverlay；水位持久化 + 启动 catch-up。
 
 ### Phase 2：冷启动 + USN catch-up（1 周）
 
