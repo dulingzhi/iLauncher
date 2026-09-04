@@ -15,6 +15,9 @@ mod utils;
 #[cfg(target_os = "windows")]
 pub mod mft_scanner;
 
+/// IndexV2 列式快照索引（v3 磁盘格式，Phase 1 引入）
+pub mod index_v2;
+
 use std::sync::Arc; // 用于 PluginMarketState
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt::time::OffsetTime};
