@@ -4,11 +4,21 @@ use anyhow::Result;
 use roaring::RoaringBitmap;
 use fst::{Map, MapBuilder, Streamer};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Write, BufWriter};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write, BufWriter, SeekFrom};
 use std::path::Path;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use tracing::{info, error, debug};
+
+/// 全局 flush/merge 互斥锁（Service 进程内）
+///
+/// UsnIncrementalUpdater::flush_index_cache（监控线程，每 30s/1000gram 触发）与
+/// DeltaMerger::merge（后台合并线程，每 5min 检查）必须互斥，否则：
+/// - merge 读 delta 文件时可能读到写了一半的记录；
+/// - merge 重建 offsets.dat 后删除 offsets_delta.dat，会吞掉重建期间
+///   updater 追加的路径偏移量，导致这些 file_id 在 UI 侧无法解析。
+pub static INDEX_IO_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Delta 索引合并器
 pub struct DeltaMerger {
@@ -41,34 +51,42 @@ impl DeltaMerger {
     
     /// 执行合并（重建 FST + RoaringBitmap）
     pub fn merge(&self) -> Result<()> {
+        // 🔥 与 USN updater 的 flush 互斥（见 INDEX_IO_LOCK 说明）
+        let _io_guard = INDEX_IO_LOCK.lock().unwrap();
+
         info!("🔄 Starting delta index merge for drive {}...", self.drive_letter);
         let start = std::time::Instant::now();
-        
+
         // 1. 加载现有主索引
         let mut main_index = self.load_main_index()?;
-        
+
         // 2. 加载 delta 索引
         let delta_index = self.load_delta_index()?;
-        
+
         // 3. 合并 bitmap
         for (gram, delta_bitmap) in delta_index {
             main_index.entry(gram)
                 .and_modify(|existing| *existing |= delta_bitmap.clone())
                 .or_insert(delta_bitmap);
         }
-        
+
         // 4. 重建 FST + Bitmap 文件（使用临时文件避免文件锁）
         self.rebuild_index(&main_index)?;
-        
-        // 5. 删除 delta 文件
+
+        // 5. 把 USN 追加的路径偏移量折入主 offsets.dat，并删除 offsets_delta
+        //    （必须在 bump 版本号之前完成，UI 全量重载时两者需一致）
+        self.rebuild_offsets_index()?;
+        self.cleanup_offsets_delta()?;
+
+        // 6. 删除 delta 文件
         self.cleanup_delta()?;
-        
-        // 6. 更新版本号（通知 UI 重新加载）
+
+        // 7. 更新版本号（通知 UI 重新加载）
         self.increment_version()?;
-        
+
         let elapsed = start.elapsed();
         info!("✓ Delta merge completed in {:.2}s", elapsed.as_secs_f64());
-        
+
         Ok(())
     }
     
@@ -238,28 +256,86 @@ impl DeltaMerger {
         
         Ok(())
     }
-    
-    /// 递增版本号（通知 UI 重新加载索引）
-    fn increment_version(&self) -> Result<()> {
-        let version_file = format!("{}\\{}_index.version", self.output_dir, self.drive_letter);
-        
-        // 读取当前版本号
-        let current_version = if Path::new(&version_file).exists() {
-            std::fs::read_to_string(&version_file)?
+
+    /// 全量扫描 paths.dat，把主索引 + USN 追加的所有条目偏移量重建成 offsets.dat
+    ///
+    /// 合并后主索引已包含 delta grams，追加路径的 file_id 仍在 bitmap 中被引用，
+    /// 因此 offsets.dat 必须覆盖它们；此后 offsets_delta.dat 删除，
+    /// 新的追加从新的基线继续编号。
+    fn rebuild_offsets_index(&self) -> Result<()> {
+        let paths_file = format!("{}\\{}_paths.dat", self.output_dir, self.drive_letter);
+        let offsets_file = format!("{}\\{}_offsets.dat", self.output_dir, self.drive_letter);
+        let tmp_file = format!("{}.new", offsets_file);
+
+        let mut reader = std::io::BufReader::new(File::open(&paths_file)?);
+        let mut writer = BufWriter::new(File::create(&tmp_file)?);
+
+        let mut count: u32 = 0;
+        let mut offset: u64 = 0;
+        let mut len_buf = [0u8; 4];
+
+        writer.write_all(&count.to_le_bytes())?; // 占位，扫描完成后回填
+
+        while reader.read_exact(&mut len_buf).is_ok() {
+            writer.write_all(&offset.to_le_bytes())?;
+            let path_len = u32::from_le_bytes(len_buf) as u64;
+            count += 1;
+            offset += 4 + path_len;
+            // 跳过路径内容
+            std::io::Seek::seek(&mut reader, SeekFrom::Current(path_len as i64))?;
+        }
+
+        writer.flush()?;
+        drop(writer);
+
+        // 回填数量
+        let mut file = OpenOptions::new().write(true).open(&tmp_file)?;
+        file.write_all(&count.to_le_bytes())?;
+        drop(file);
+
+        // 原子替换（offsets.dat 只被 UI 在打开/热重载时短读，rename 即可保证一致性）
+        std::fs::rename(&tmp_file, &offsets_file)?;
+
+        info!("✓ Offsets index rebuilt: {} entries", count);
+        Ok(())
+    }
+
+    /// 删除 offsets_delta 文件（其内容已折入 offsets.dat）
+    fn cleanup_offsets_delta(&self) -> Result<()> {
+        let delta_file = format!("{}\\{}_offsets_delta.dat", self.output_dir, self.drive_letter);
+        if Path::new(&delta_file).exists() {
+            std::fs::remove_file(&delta_file)?;
+            info!("✓ Offsets delta removed");
+        }
+        Ok(())
+    }
+
+    /// 递增主索引版本号（独立函数，供全量重建完成后复用）
+    pub fn bump_index_version(drive_letter: char, output_dir: &str) -> Result<()> {
+        let version_file = format!("{}\\{}_index.version", output_dir, drive_letter);
+        Self::bump_version_file(&version_file)
+    }
+
+    fn bump_version_file(version_file: &str) -> Result<()> {
+        let current_version = if Path::new(version_file).exists() {
+            std::fs::read_to_string(version_file)?
                 .trim()
                 .parse::<u64>()
                 .unwrap_or(0)
         } else {
             0
         };
-        
-        // 递增并写入新版本号
+
         let new_version = current_version + 1;
-        std::fs::write(&version_file, new_version.to_string())?;
-        
+        std::fs::write(version_file, new_version.to_string())?;
         info!("✓ Index version updated: {} → {}", current_version, new_version);
-        
         Ok(())
+    }
+
+    /// 递增版本号（通知 UI 重新加载索引）
+    fn increment_version(&self) -> Result<()> {
+        let version_file = format!("{}\\{}_index.version", self.output_dir, self.drive_letter);
+        Self::bump_version_file(&version_file)
     }
     
     /// 后台定期检查并合并

@@ -309,6 +309,7 @@ mod tests {
     
     #[test]
     #[cfg(target_os = "windows")]
+    #[ignore = "需要管理员权限打开卷句柄，非提权环境返回 Unknown"]
     fn test_detect_disk_type() {
         let disk_type = MultiDriveScanner::detect_disk_type('C');
         println!("C: drive type: {:?}", disk_type);
@@ -316,14 +317,12 @@ mod tests {
     }
     
     #[test]
-    fn test_parallelism() {
+    fn test_drive_classification() {
         let mut config = ScanConfig::default();
         config.drives = vec!['C', 'D', 'E'];
-        
+
         let scanner = MultiDriveScanner::new(&config);
-        let parallelism = scanner.calculate_parallelism();
-        
-        println!("Parallelism: {}", parallelism);
-        assert!(parallelism > 0);
+        assert_eq!(scanner.drives.len(), 3);
+        assert!(scanner.disk_types.contains_key(&'C'));
     }
 }

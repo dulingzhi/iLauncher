@@ -99,6 +99,9 @@ struct FileItem {
 struct MftIndexCache {
     query: IndexQuery,
     path_reader: PathReader,
+    /// 已同步的 delta 版本号（{drive}_delta.version）
+    /// Service 每次 flush 增量后递增；查询前比对，变化则热重载 delta 索引与路径
+    delta_version: u64,
 }
 
 #[cfg(target_os = "windows")]
@@ -274,7 +277,11 @@ impl FileSearchPlugin {
                         match (IndexQuery::open(drive, &output_dir), PathReader::open(drive, &output_dir)) {
                             (Ok(query), Ok(path_reader)) => {
                                 tracing::info!("✓ Pre-loaded MFT index cache for drive {} (ready)", drive);
-                                cache.insert(drive, MftIndexCache { query, path_reader });
+                                cache.insert(drive, MftIndexCache {
+                                    query,
+                                    path_reader,
+                                    delta_version: IndexQuery::read_delta_version(drive, &output_dir),
+                                });
                             }
                             (Err(e), _) | (_, Err(e)) => {
                                 tracing::error!("Failed to pre-load cache for drive {}: {:#}", drive, e);
@@ -323,7 +330,11 @@ impl FileSearchPlugin {
                                     match (IndexQuery::open(drive, &output_dir_retry), PathReader::open(drive, &output_dir_retry)) {
                                         (Ok(query), Ok(path_reader)) => {
                                             tracing::info!("✓ Loaded MFT index cache for drive {} (retry #{})", drive, retry_count);
-                                            cache.insert(drive, MftIndexCache { query, path_reader });
+                                            cache.insert(drive, MftIndexCache {
+                                                query,
+                                                path_reader,
+                                                delta_version: IndexQuery::read_delta_version(drive, &output_dir_retry),
+                                            });
                                             loaded_any = true;
                                         }
                                         (Err(e), _) | (_, Err(e)) => {
@@ -829,9 +840,10 @@ impl FileSearchPlugin {
                             (Ok(new_query), Ok(new_path_reader)) => {
                                 // 替换旧索引
                                 let mut cache = mft_cache_clone.write().await;
-                                cache.insert(drive_clone, MftIndexCache { 
-                                    query: new_query, 
-                                    path_reader: new_path_reader 
+                                cache.insert(drive_clone, MftIndexCache {
+                                    query: new_query,
+                                    path_reader: new_path_reader,
+                                    delta_version: IndexQuery::read_delta_version(drive_clone, &output_dir_clone),
                                 });
                                 tracing::info!("✓ Async reload completed for drive {}", drive_clone);
                             }
@@ -843,7 +855,29 @@ impl FileSearchPlugin {
                     
                     // 继续使用旧索引完成本次查询
                 }
-                
+
+                // 🔥 检测 delta 版本：MFT Service 每次 flush 增量后递增 {drive}_delta.version。
+                // 变化则热重载 delta 索引（grams + deleted bitmap）与路径区
+                // （重 mmap paths.dat + 重载 offsets delta），让 USN 变更（新建/删除/改名）
+                // 在不重启的情况下即可见。两个操作均为幂等全量替换，失败留旧版本号下次重试。
+                let current_delta_version = IndexQuery::read_delta_version(drive, &output_dir);
+                if current_delta_version != cached.delta_version {
+                    tracing::debug!(
+                        "🔄 Delta version changed for drive {} ({} → {}), hot-reloading...",
+                        drive, cached.delta_version, current_delta_version
+                    );
+                    let reload_ok = cached.query.hot_reload_delta().is_ok()
+                        && cached.path_reader.reload_paths().is_ok();
+                    if reload_ok {
+                        cached.delta_version = current_delta_version;
+                    } else {
+                        tracing::warn!(
+                            "⚠️  Delta hot-reload failed for drive {} (will retry on next query)",
+                            drive
+                        );
+                    }
+                }
+
                 // 执行查询（每个驱动器限制 20 条，总共最多 50 条）
                 let remaining = MAX_TOTAL_RESULTS - all_results.len();
                 let limit = remaining.min(MAX_PER_DRIVE);

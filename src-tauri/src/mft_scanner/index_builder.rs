@@ -6,7 +6,6 @@ use fst::{Map, MapBuilder};
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::sync::{Arc, RwLock};
@@ -278,17 +277,27 @@ impl IndexQuery {
         RoaringBitmap::deserialize_from(&bytes[..]).ok()
     }
 
-    /// 返回共享 DeltaState 句柄（供 UsnIncrementalUpdater 持有）
+    /// 读取 delta 版本号（{drive}_delta.version）
     ///
-    /// 用法：
-    ///   let handle = index_query.delta_state_handle();
-    ///   usn_updater.attach_index(handle, path_reader.delta_paths_handle());
-    pub fn delta_state_handle(&self) -> Arc<RwLock<DeltaState>> {
-        Arc::clone(&self.delta_state)
+    /// Service 每次 flush 增量索引后递增此版本号；
+    /// UI 查询前对比版本号即可感知增量变化，无需轮询主索引。
+    pub fn read_delta_version(drive_letter: char, output_dir: &str) -> u64 {
+        let version_file = format!("{}\\{}_delta.version", output_dir, drive_letter);
+
+        if let Ok(content) = std::fs::read_to_string(&version_file) {
+            content.trim().parse::<u64>().unwrap_or(0)
+        } else {
+            0
+        }
     }
 
-    /// 热重载 delta（从磁盘重读，用于重启后患复场景）
-    /// 正常运行时用 UsnIncrementalUpdater.attach_index() 即可，无需此方法
+    /// 热重载 delta（从磁盘重读，跨进程同步的标准路径）
+    ///
+    /// 与 MFT Service 的跨进程协议：Service 每次 flush 增量后递增
+    /// {drive}_delta.version，查询侧（UI 进程）检测到版本变化后调用此方法，
+    /// 重新读取 {drive}_index_delta.dat 与 {drive}_deleted.dat。
+    /// 两个热重载操作（本方法 + PathReader::reload_paths）均为幂等全量替换，
+    /// 失败后可安全重试。
     pub fn hot_reload_delta(&self) -> Result<()> {
         let new_grams = Self::load_delta_index(self.drive_letter, &self.output_dir)
             .map(|d| d.gram_bitmaps)
@@ -473,15 +482,17 @@ impl IndexQuery {
             return Ok(Vec::new());
         }
 
+        // 🔥 整个查询持同一份读锁：保证 grams 与 deleted_bitmap 来自同一版本的
+        // delta 状态，不会被并发 hot_reload_delta() 换成新旧混合的两批数据
+        let state = self.delta_state.read().unwrap();
+
         let result_bitmap = if query_bytes.len() < 3 {
             // ── Short query (1-2 bytes): FST prefix search ──────────────────
             // Union all bitmaps whose gram starts with the keyword
-            let state = self.delta_state.read().unwrap();
             self.prefix_search_bitmap(&keyword_lower, &state)?
         } else {
             // ── Normal query (≥3 bytes): 3-gram intersection ─────────────────
             let query_grams = Self::split_to_3grams_bytes(&keyword_lower);
-            let state = self.delta_state.read().unwrap();
 
             let mut bitmaps = Vec::with_capacity(query_grams.len());
             for gram in &query_grams {
@@ -496,14 +507,14 @@ impl IndexQuery {
                 if let Some(delta_bitmap) = state.gram_bitmaps.get(gram.as_slice()) {
                     bitmap |= delta_bitmap;
                 }
-                
+
                 if bitmap.is_empty() {
                     return Ok(Vec::new());
                 }
-                
+
                 bitmaps.push(bitmap);
             }
-            
+
             if bitmaps.len() == 1 {
                 bitmaps.into_iter().next().unwrap()
             } else {
@@ -511,14 +522,11 @@ impl IndexQuery {
             }
         };
 
-        // ── 过滤已删除文件 ────────────────────────────────────────────────────
-        let result_bitmap = {
-            let state = self.delta_state.read().unwrap();
-            if !state.deleted_bitmap.is_empty() {
-                &result_bitmap - &state.deleted_bitmap
-            } else {
-                result_bitmap
-            }
+        // ── 过滤已删除文件（同一读锁内，与上面的一致） ─────────────────────
+        let result_bitmap = if !state.deleted_bitmap.is_empty() {
+            &result_bitmap - &state.deleted_bitmap
+        } else {
+            result_bitmap
         };
         
         let results: Vec<u32> = result_bitmap.iter().take(limit).collect();
@@ -600,26 +608,25 @@ impl IndexQuery {
 pub struct PathReader {
     #[allow(dead_code)]
     drive_letter: char,
+    output_dir: String,
     paths_mmap: memmap2::Mmap,
-    offset_index: Vec<usize>,  // 🔥 新增: 文件ID -> 偏移量索引
-    /// USN 新增文件的路径（主索引固定了，这些路径内存持有）
-    pub delta_paths: Arc<RwLock<HashMap<u32, String>>>,
+    offset_index: Vec<usize>,  // 文件ID -> 偏移量索引（含 USN 追加的 delta offsets）
 }
 
 impl PathReader {
     pub fn open(drive_letter: char, output_dir: &str) -> Result<Self> {
         let paths_file = format!("{}\\{}_paths.dat", output_dir, drive_letter);
         let offset_file = format!("{}\\{}_offsets.dat", output_dir, drive_letter);
-        
+
         let paths_mmap = unsafe {
             memmap2::MmapOptions::new()
                 .map(&File::open(&paths_file)?)?
         };
-        
+
         // 🔥 从文件加载偏移量索引（避免重复扫描）
         let start = std::time::Instant::now();
-        
-        let offset_index = if std::path::Path::new(&offset_file).exists() {
+
+        let mut offset_index = if std::path::Path::new(&offset_file).exists() {
             // 优先从文件加载
             Self::load_offset_index(&offset_file)?
         } else {
@@ -627,7 +634,17 @@ impl PathReader {
             tracing::warn!("⚠️  Offset file not found, building on-the-fly (slower)");
             Self::build_offset_index(&paths_mmap)?
         };
-        
+
+        // 🔥 叠加 USN 增量追加的偏移量（追加条目的 file_id 从 offset_index.len() 起连续编号）
+        let appended = Self::load_offsets_delta(drive_letter, output_dir);
+        if !appended.is_empty() {
+            tracing::debug!(
+                "   + {} appended path offsets (USN delta)",
+                appended.len()
+            );
+            offset_index.extend(appended.iter().map(|&o| o as usize));
+        }
+
         let elapsed = start.elapsed();
         tracing::debug!(
             "✓ Loaded offset index for drive {}: {} entries in {:.2}ms",
@@ -635,13 +652,76 @@ impl PathReader {
             offset_index.len(),
             elapsed.as_secs_f64() * 1000.0
         );
-        
+
         Ok(Self {
             drive_letter,
+            output_dir: output_dir.to_string(),
             paths_mmap,
             offset_index,
-            delta_paths: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    /// 热重载路径区（Service 通过 USN 追加了新路径后调用）
+    ///
+    /// 重新 mmap paths.dat（文件已增长），并重载 offsets.dat + offsets_delta.dat。
+    /// 与 IndexQuery::hot_reload_delta() 配对使用，由 UI 侧检测到
+    /// {drive}_delta.version 变化后触发。
+    pub fn reload_paths(&mut self) -> Result<()> {
+        let paths_file = format!("{}\\{}_paths.dat", self.output_dir, self.drive_letter);
+        let offset_file = format!("{}\\{}_offsets.dat", self.output_dir, self.drive_letter);
+
+        // 重新 mmap（文件已被 Service 追加增长）
+        self.paths_mmap = unsafe {
+            memmap2::MmapOptions::new()
+                .map(&File::open(&paths_file)?)?
+        };
+
+        let mut offset_index = if std::path::Path::new(&offset_file).exists() {
+            Self::load_offset_index(&offset_file)?
+        } else {
+            Self::build_offset_index(&self.paths_mmap)?
+        };
+
+        let appended = Self::load_offsets_delta(self.drive_letter, &self.output_dir);
+        offset_index.extend(appended.iter().map(|&o| o as usize));
+
+        self.offset_index = offset_index;
+
+        tracing::debug!(
+            "✓ PathReader hot-reloaded for drive {}: {} entries",
+            self.drive_letter,
+            self.offset_index.len()
+        );
+
+        Ok(())
+    }
+
+    /// 加载 USN 追加的偏移量列表（{drive}_offsets_delta.dat）
+    ///
+    /// 格式：u32 count + count × u64 offset。
+    /// 追加条目的 file_id 从 offsets.dat 的条目数起连续编号（追加即分配，无空洞）。
+    /// 文件由 UsnIncrementalUpdater 在每次 flush 时重写。
+    fn load_offsets_delta(drive_letter: char, output_dir: &str) -> Vec<u64> {
+        let delta_file = format!("{}\\{}_offsets_delta.dat", output_dir, drive_letter);
+        let Ok(bytes) = std::fs::read(&delta_file) else {
+            return Vec::new();
+        };
+
+        if bytes.len() < 4 {
+            return Vec::new();
+        }
+
+        let count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+        let mut offsets = Vec::with_capacity(count);
+        let mut pos = 4usize;
+        for _ in 0..count {
+            if pos + 8 > bytes.len() {
+                break; // 截断文件：用已读到的部分（下次 flush 会重写完整文件）
+            }
+            offsets.push(u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()));
+            pos += 8;
+        }
+        offsets
     }
     
     /// 从文件加载偏移量索引
@@ -686,42 +766,33 @@ impl PathReader {
         Ok(index)
     }
     
-    /// 返回共享 delta_paths 句柄（供 UsnIncrementalUpdater 持有）
-    pub fn delta_paths_handle(&self) -> Arc<RwLock<HashMap<u32, String>>> {
-        Arc::clone(&self.delta_paths)
-    }
-
-    /// 根据文件ID读取路径（O(1) 访问）— 主索引优先，则 fallback 到 delta_paths
+    /// 根据文件ID读取路径（O(1) 访问）
+    ///
+    /// offset_index 已包含 USN 追加条目的偏移量（见 load_offsets_delta），
+    /// 主索引区与追加区使用同一套寻址逻辑。
     pub fn get_path(&self, file_id: u32) -> Result<String> {
         let idx = file_id as usize;
-        
-        if idx < self.offset_index.len() {
-            // 主索引 O(1)
-            let offset = self.offset_index[idx];
-            
-            if offset + 4 > self.paths_mmap.len() {
-                return Err(anyhow::anyhow!("Invalid offset"));
-            }
-            
-            let len_bytes: [u8; 4] = self.paths_mmap[offset..offset + 4].try_into()?;
-            let path_len = u32::from_le_bytes(len_bytes) as usize;
-            
-            let data_offset = offset + 4;
-            if data_offset + path_len > self.paths_mmap.len() {
-                return Err(anyhow::anyhow!("Invalid path length"));
-            }
-            
-            let path_bytes = &self.paths_mmap[data_offset..data_offset + path_len];
-            Ok(String::from_utf8_lossy(path_bytes).to_string())
-        } else {
-            // USN 新增路径 fallback
-            self.delta_paths
-                .read()
-                .unwrap()
-                .get(&file_id)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("File ID {} not found", file_id))
+
+        if idx >= self.offset_index.len() {
+            return Err(anyhow::anyhow!("File ID {} not found", file_id));
         }
+
+        let offset = self.offset_index[idx];
+
+        if offset + 4 > self.paths_mmap.len() {
+            return Err(anyhow::anyhow!("Invalid offset"));
+        }
+
+        let len_bytes: [u8; 4] = self.paths_mmap[offset..offset + 4].try_into()?;
+        let path_len = u32::from_le_bytes(len_bytes) as usize;
+
+        let data_offset = offset + 4;
+        if data_offset + path_len > self.paths_mmap.len() {
+            return Err(anyhow::anyhow!("Invalid path length"));
+        }
+
+        let path_bytes = &self.paths_mmap[data_offset..data_offset + path_len];
+        Ok(String::from_utf8_lossy(path_bytes).to_string())
     }
     
     /// 批量读取路径（性能优化）

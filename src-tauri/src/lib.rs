@@ -573,6 +573,13 @@ pub fn run_mft_service(args: &[String]) {
             } else {
                 info!("✓ Created ready file: {}.ready (PID: {})", drive, process_id);
             }
+
+            // 🔥 全量重建完成后递增主索引版本号：
+            // 同会话内 UI 进程若持有旧索引 mmap（如 Service 崩溃后重启重建），
+            // 会通过 needs_reload() 检测到此变化并异步重载为新索引
+            if let Err(e) = mft_scanner::DeltaMerger::bump_index_version(*drive, &output_dir) {
+                warn!("⚠️  Failed to bump index version for drive {}: {:#}", drive, e);
+            }
         }
     }
     
