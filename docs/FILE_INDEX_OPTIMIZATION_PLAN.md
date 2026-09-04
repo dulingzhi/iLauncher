@@ -195,6 +195,29 @@ query → charmask 预过滤(AVX2 扫 UniqueMasks) → 候选 unique name fzf/sk
 3. **Overlay 语义升级**（对齐 DeltaOverlay）：现在 DeltaState 只有 gram→bitmap 与 deleted bitmap；升级为 tombstone / override / added 三层（overlay 存行结构而非 gram 结构），删除目录时级联 tombstone 子孙行（或在路径重建时检查祖先存活）。USN reason 补全：RENAME_OLD_NAME（tombstone 旧身份）、DATA_OVERWRITE/BASIC_INFO_CHANGE（re-stat 元数据）。
 4. **Compact**：idle（IdleTrimGate：检测系统空闲/无查询 N 分钟）或 delta 超过阈值时，将 Snapshot+Overlay 折叠写新快照，原子替换，bump version；UI 侧版本轮询保持不变（已是成熟机制）。
 
+**✅ 已完成（2026-09-05，commit `live_index` 批次）**
+
+- `usn_journal.rs`：UsnEntry 纯数据 + `parse_usn_buffer` 安全解析（逐字段
+  from_le_bytes，零 unsafe——DeviceIoControl 缓冲区不保证对齐，裸指针强转是
+  未对齐读 UB）+ `check_water_level` 水位判定（Valid / NoWaterLevel /
+  JournalRecreated）+ Windows-only 卷 I/O（open_volume / query_journal /
+  read_all_pending 非阻塞批量读）。
+- `live_index.rs` LiveIndex = Snapshot（mmap O(1) 打开）+ DeltaOverlay +
+  水位：启动 open → catch_up_volume 校验水位并 replay → search/enumerate
+  全链路 overlay 感知 → compact 折叠新快照（header 携带新水位）原子替换。
+- replay 语义：CREATE / RENAME_NEW_NAME → upsert（rename 保留 FRN 身份，
+  C2 天然正确）；DELETE → remove（目录级联）；RENAME_OLD_NAME 单独出现
+  忽略；BASIC_INFO_CHANGE / DATA_* → touch_added（仅刷新 added 行 modified，
+  基线行无 USN size 来源不建 override）。
+- v3_export 快照 header 现在携带 journal_id + next_usn（扫描时从 USN journal
+  查询写入），与 LiveIndex 水位衔接。
+- 测试 25 个全绿（journal 解析往返/损坏拒绝/水位判定、replay 建改删移动/
+  OLD_NAME 幂等/元数据刷新/compact 水位持久化重开、entry_for_id + 枚举）。
+
+遗留（Phase 2 收尾）：lib.rs 服务流程接入 LiveIndex（替换 UsnIncrementalUpdater
+的 v2 链路，含启动守卫"水位失效才全量重建"，解决 C4）；定时 compact 策略
+（idle / delta 阈值）。
+
 ### Phase 3：体验增强（按需，可并行）
 
 - 拼音 Alias：独立 crate 生成拼音 alias，构建时烘焙进快照 Alias sections；provider fingerprint 变化触发强制重压缩（对齐 Lertaro AliasProviderRegistry）。

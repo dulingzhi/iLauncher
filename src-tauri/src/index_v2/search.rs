@@ -324,28 +324,41 @@ pub fn enumerate_directory_with_overlay(
     results
 }
 
-/// 构造一条 overlay 感知的 SearchHit（override / added 行，row = usize::MAX）
+/// 构造一条 overlay 感知的 SearchHit（row = usize::MAX 仅用于 override/added 行）
 fn make_hit(ov: &DeltaOverlay, snapshot: &Snapshot, entry: EntryRef) -> SearchHit {
-    let (name, is_dir, size, modified) = match entry {
-        EntryRef::Base(row) => {
-            let o = ov
-                .override_of(row as u32)
-                .expect("make_hit(Base) requires an override");
-            (o.name.clone(), o.is_dir, o.size, o.modified)
-        }
+    match entry {
+        EntryRef::Base(row) => match ov.override_of(row as u32) {
+            Some(o) => SearchHit {
+                row: usize::MAX,
+                score: 0,
+                name: o.name.clone(),
+                path: ov.full_path(snapshot, entry),
+                is_dir: o.is_dir,
+                size: o.size,
+                modified: o.modified,
+            },
+            None => SearchHit {
+                row,
+                score: 0,
+                name: snapshot.name_of(row).to_string(),
+                path: ov.full_path(snapshot, entry),
+                is_dir: snapshot.is_dir(row),
+                size: snapshot.size_of(row),
+                modified: snapshot.last_write_times()[row],
+            },
+        },
         EntryRef::Added(idx) => {
             let rec = ov.added_get(idx).expect("make_hit(Added) requires a live record");
-            (rec.name.clone(), rec.is_dir, rec.size, rec.modified)
+            SearchHit {
+                row: usize::MAX,
+                score: 0,
+                name: rec.name.clone(),
+                path: ov.full_path(snapshot, entry),
+                is_dir: rec.is_dir,
+                size: rec.size,
+                modified: rec.modified,
+            }
         }
-    };
-    SearchHit {
-        row: usize::MAX,
-        score: 0,
-        name,
-        path: ov.full_path(snapshot, entry),
-        is_dir,
-        size,
-        modified,
     }
 }
 

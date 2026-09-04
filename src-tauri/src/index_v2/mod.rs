@@ -10,12 +10,15 @@
 // docs/FILE_INDEX_OPTIMIZATION_PLAN.md Phase 1。
 
 pub mod format;
+pub mod live_index;
 pub mod overlay;
 pub mod search;
 pub mod snapshot;
+pub mod usn_journal;
 pub mod writer;
 
 pub use format::{charmask_of, required_mask_of, SnapshotMeta};
+pub use live_index::{CatchUpOutcome, LiveIndex};
 pub use overlay::{DeltaOverlay, EntryRef};
 pub use snapshot::Snapshot;
 pub use writer::{write_snapshot, IndexRecord};

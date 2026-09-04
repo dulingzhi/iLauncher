@@ -126,13 +126,24 @@ pub fn frn_map_to_records(frn_map: &FrnMap, drive_letter: char) -> Vec<IndexReco
 }
 
 /// FrnMap → v3 快照文件（`{output_dir}\{drive}.snapshot`，temp + rename 原子替换）
-pub fn write_v3_snapshot(frn_map: &FrnMap, drive_letter: char, output_dir: &str) -> Result<PathBuf> {
+///
+/// journal_id / next_usn 写入 header（USN 水位，启动 catch-up 的基准）；
+/// 无水位来源时传 (0, 0)，LiveIndex 首次 catch-up 会以当前 journal 为基线。
+pub fn write_v3_snapshot(
+    frn_map: &FrnMap,
+    drive_letter: char,
+    output_dir: &str,
+    journal_id: u64,
+    next_usn: i64,
+) -> Result<PathBuf> {
     let records = frn_map_to_records(frn_map, drive_letter);
     let path = Path::new(output_dir).join(format!("{}.snapshot", drive_letter));
-    let meta = SnapshotMeta::new(
+    let mut meta = SnapshotMeta::new(
         &drive_letter.to_string(),
         &format!("{}:\\", drive_letter),
     );
+    meta.journal_id = journal_id;
+    meta.next_usn = next_usn;
     write_snapshot(&path, records, meta)?;
     Ok(path)
 }

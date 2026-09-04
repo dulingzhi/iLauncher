@@ -339,6 +339,16 @@ impl DeltaOverlay {
         }
     }
 
+    /// 元数据刷新（USN BASIC_INFO_CHANGE/DATA_*）：只更新活 added 行的 modified。
+    /// 基线行无 size 来源（USN 不提供），不为其创建 override。
+    pub fn touch_added(&mut self, id: u64, modified: u32) {
+        if let Some(&idx) = self.added_by_id.get(&id) {
+            if !self.added_removed[idx as usize] {
+                self.added[idx as usize].modified = modified;
+            }
+        }
+    }
+
     // ── 路径重建（overlay 感知） ──────────────────────────────────────────
 
     /// 沿父引用链即时重建完整路径（overlay 版）。

@@ -100,7 +100,13 @@ impl StreamingBuilder {
         unsafe { let _ = CloseHandle(volume_handle); }
 
         info!("📝 Phase 2: Writing v3 columnar snapshot...");
-        let path = super::v3_export::write_v3_snapshot(&frn_map, self.drive_letter, output_dir)?;
+        let path = super::v3_export::write_v3_snapshot(
+            &frn_map,
+            self.drive_letter,
+            output_dir,
+            journal_data.usn_journal_id,
+            journal_data.next_usn,
+        )?;
 
         info!("✅ v3 snapshot written: {:?}", path);
         Ok(path)
