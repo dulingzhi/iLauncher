@@ -144,7 +144,9 @@ impl V3DriveService {
 
         // 启动时先追一次增量（快照冻结至今的变更）
         match index.catch_up_volume(self.drive) {
-            Ok(CatchUpOutcome::CaughtUp(n)) => info!("✓ [v3] Drive {}: caught up {} changes", self.drive, n),
+            Ok(CatchUpOutcome::CaughtUp(entries)) => {
+                info!("✓ [v3] Drive {}: caught up {} changes", self.drive, entries.len())
+            }
             Ok(CatchUpOutcome::BaselineSet(usn)) => {
                 info!("✓ [v3] Drive {}: no water level, baseline set at usn {}", self.drive, usn)
             }
@@ -163,9 +165,9 @@ impl V3DriveService {
             }
 
             match index.catch_up_volume(self.drive) {
-                Ok(CatchUpOutcome::CaughtUp(n)) => {
-                    if n > 0 {
-                        tracing::debug!("[v3] Drive {}: +{} changes", self.drive, n);
+                Ok(CatchUpOutcome::CaughtUp(entries)) => {
+                    if !entries.is_empty() {
+                        tracing::debug!("[v3] Drive {}: +{} changes", self.drive, entries.len());
                     }
                 }
                 Ok(CatchUpOutcome::RebuildNeeded) => {

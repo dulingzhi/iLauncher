@@ -21,6 +21,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "search_test"
 path = "src/bin/search_test.rs"
 
+# V3 索引端到端验证: cargo run --release --bin v3_e2e -- [DRIVE] [--elevated]
+# 自提权（UAC runas）+ 真实卷: 扫描 → 造 USN 变更 → catch-up → compact → 校验
+[[bin]]
+name = "v3_e2e"
+path = "src/bin/v3_e2e.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -99,6 +105,7 @@ windows = { version = "0.58", features = [
     "Win32_System_Ioctl",
     "Win32_System_Memory",
     "Win32_System_DataExchange",
+    "Win32_System_Registry",
     "Win32_UI_Shell",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",

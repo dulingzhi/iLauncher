@@ -24,10 +24,10 @@ use super::writer::{write_snapshot, IndexRecord};
 use super::format::SnapshotMeta;
 
 /// catch-up 结果
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatchUpOutcome {
-    /// replay 了 N 条增量
-    CaughtUp(usize),
+    /// replay 的增量记录（按 usn 升序）
+    CaughtUp(Vec<UsnEntry>),
     /// 快照无水位：以当前 journal 水位为基线（未 replay 历史）
     BaselineSet(i64),
     /// journal 被重建，增量链断裂：该盘需全量重建
@@ -176,7 +176,7 @@ impl LiveIndex {
                     self.replay_entries(&entries);
                     self.journal_id = journal_id;
                     self.next_usn = next_usn;
-                    Ok(CatchUpOutcome::CaughtUp(entries.len()))
+                    Ok(CatchUpOutcome::CaughtUp(entries))
                 }
             }
         })();
