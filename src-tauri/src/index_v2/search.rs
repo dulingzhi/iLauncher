@@ -14,6 +14,7 @@ use rayon::prelude::*;
 use std::cmp::Ordering as CmpOrdering;
 
 use super::format::required_mask_of;
+use super::overlay::{DeltaOverlay, EntryRef};
 use super::snapshot::Snapshot;
 
 /// 一条搜索结果
@@ -98,6 +99,19 @@ struct UniqueHit {
 /// 命中列表合并后排序，再扇出行）。行级分数 = unique 分数 - 行号微扰
 /// （保持扇出顺序稳定）。
 pub fn search(snapshot: &Snapshot, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+    search_with_overlay(snapshot, None, query, limit)
+}
+
+/// overlay 感知的搜索：基线 unique 扇出时跳过墓碑/override 行，
+/// override 与活 added 记录单独打分后按分数合并进结果。
+///
+/// 无 overlay 时与 `search` 完全等价（None 分支零开销判断）。
+pub fn search_with_overlay(
+    snapshot: &Snapshot,
+    overlay: Option<&DeltaOverlay>,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>> {
     if limit == 0 {
         return Ok(Vec::new());
     }
@@ -137,33 +151,108 @@ pub fn search(snapshot: &Snapshot, query: &str, limit: usize) -> Result<Vec<Sear
         })
         .collect();
 
-    // 按分数降序（同分按 uid 升序，保证确定性）
-    let mut hits = hits;
-    hits.sort_by(|a, b| match b.score.cmp(&a.score) {
+    // Phase A.5：overlay 候选（override 新名 + 活 added 名）直接打分。
+    // 量小（USN 增量规模），顺序执行即可。
+    let mut overlay_hits: Vec<(i64, &str, EntryRef)> = Vec::new();
+    if let Some(ov) = overlay {
+        for (row, o) in ov.overrides_iter() {
+            let name_lower = o.name.to_lowercase();
+            let name_chars: Vec<char> = name_lower.chars().collect();
+            if let Some(score) = fuzzy_score(&pattern, &name_chars) {
+                overlay_hits.push((score, o.name.as_str(), EntryRef::Base(row as usize)));
+            }
+        }
+        for (idx, rec) in ov.live_added() {
+            let name_lower = rec.name.to_lowercase();
+            let name_chars: Vec<char> = name_lower.chars().collect();
+            if let Some(score) = fuzzy_score(&pattern, &name_chars) {
+                overlay_hits.push((score, rec.name.as_str(), EntryRef::Added(idx)));
+            }
+        }
+    }
+
+    // 合并候选：score 降序，同分按名字、来源升序（确定性）
+    let mut overlay_hits = overlay_hits;
+    overlay_hits.sort_by(|a, b| match b.0.cmp(&a.0) {
+        CmpOrdering::Equal => a.1.cmp(b.1).then(a.2.ord_key().cmp(&b.2.ord_key())),
+        other => other,
+    });
+
+    let mut results = Vec::with_capacity(limit);
+
+    // Phase B-1：overlay 候选（按分数与基线交错合并：双指针）
+    let mut base_i = 0usize;
+    let mut ov_i = 0usize;
+    let mut hits_sorted = hits;
+    hits_sorted.sort_by(|a, b| match b.score.cmp(&a.score) {
         CmpOrdering::Equal => a.uid.cmp(&b.uid),
         other => other,
     });
 
-    // Phase B：扇出行、重建路径、裁剪到 limit
-    let mut results = Vec::with_capacity(limit);
-    for hit in &hits {
-        if results.len() >= limit {
-            break;
-        }
-        for &row in snapshot.rows_for_uid(hit.uid) {
-            if results.len() >= limit {
-                break;
-            }
-            let row = row as usize;
+    let push_overlay_hit =
+        |ov: &DeltaOverlay, score: i64, entry: EntryRef, results: &mut Vec<SearchHit>| {
+            let (name, is_dir, size, modified) = match entry {
+                EntryRef::Base(row) => {
+                    let o = ov.override_of(row as u32).expect("overlay hit must be override");
+                    (o.name.as_str(), o.is_dir, o.size, o.modified)
+                }
+                EntryRef::Added(idx) => {
+                    let rec = ov.added_get(idx).expect("overlay hit must be live added");
+                    (rec.name.as_str(), rec.is_dir, rec.size, rec.modified)
+                }
+            };
             results.push(SearchHit {
-                row,
-                score: hit.score,
-                name: snapshot.name_of(row).to_string(),
-                path: snapshot.get_full_path(row),
-                is_dir: snapshot.is_dir(row),
-                size: snapshot.size_of(row),
-                modified: snapshot.last_write_times()[row],
+                row: usize::MAX, // overlay 行无基线行号
+                score,
+                name: name.to_string(),
+                path: ov.full_path(snapshot, entry),
+                is_dir,
+                size,
+                modified,
             });
+        };
+
+    while results.len() < limit && (base_i < hits_sorted.len() || ov_i < overlay_hits.len()) {
+        let take_overlay = if base_i >= hits_sorted.len() {
+            true
+        } else if ov_i >= overlay_hits.len() {
+            false
+        } else {
+            // 同分时基线优先（与既有行为一致）
+            overlay_hits[ov_i].0 > hits_sorted[base_i].score
+        };
+        if take_overlay {
+            let (score, _, entry) = overlay_hits[ov_i];
+            ov_i += 1;
+            if let Some(ov) = overlay {
+                push_overlay_hit(ov, score, entry, &mut results);
+            }
+        } else {
+            let hit = &hits_sorted[base_i];
+            base_i += 1;
+            for &row in snapshot.rows_for_uid(hit.uid) {
+                if results.len() >= limit {
+                    break;
+                }
+                if let Some(ov) = overlay {
+                    // 墓碑/override 行经 overlay 通道出结果，跳过
+                    if !ov.is_base_row_visible(row) {
+                        continue;
+                    }
+                }
+                let row = row as usize;
+                results.push(SearchHit {
+                    row,
+                    score: hit.score,
+                    name: snapshot.name_of(row).to_string(),
+                    path: overlay
+                        .map(|ov| ov.full_path(snapshot, EntryRef::Base(row)))
+                        .unwrap_or_else(|| snapshot.get_full_path(row)),
+                    is_dir: snapshot.is_dir(row),
+                    size: snapshot.size_of(row),
+                    modified: snapshot.last_write_times()[row],
+                });
+            }
         }
     }
 
@@ -173,13 +262,38 @@ pub fn search(snapshot: &Snapshot, query: &str, limit: usize) -> Result<Vec<Sear
 /// 目录枚举：列出某行的全部（直接）子行，按名字升序。
 /// 供 "浏览目录" / 目录限定搜索的底座（对齐 Lertaro EnumerateDirectory）。
 pub fn enumerate_directory(snapshot: &Snapshot, row: usize, limit: usize) -> Vec<SearchHit> {
-    let mut results: Vec<SearchHit> = snapshot
-        .children_of(row)
-        .iter()
-        .take(limit)
-        .map(|&child| {
-            let child = child as usize;
-            SearchHit {
+    enumerate_directory_with_overlay(snapshot, None, row, limit)
+}
+
+/// overlay 感知的目录枚举：基线子行过滤墓碑/移出的 override，
+/// 并补充挂在该目录下的活 added 子行。
+pub fn enumerate_directory_with_overlay(
+    snapshot: &Snapshot,
+    overlay: Option<&DeltaOverlay>,
+    row: usize,
+    limit: usize,
+) -> Vec<SearchHit> {
+    let dir_id = snapshot.id_of(row);
+    let mut results: Vec<SearchHit> = Vec::new();
+
+    for &child in snapshot.children_of(row) {
+        if results.len() >= limit {
+            break;
+        }
+        let child = child as usize;
+        let hit = match overlay {
+            Some(ov) => {
+                if !ov.is_base_row_visible(child as u32) {
+                    // 墓碑必跳过；override 行看 parent 是否仍指向本目录
+                    match ov.override_of(child as u32) {
+                        Some(o) if o.parent_row == row as i32 => Some(make_hit(ov, snapshot, EntryRef::Base(child))),
+                        _ => None,
+                    }
+                } else {
+                    Some(make_hit(ov, snapshot, EntryRef::Base(child)))
+                }
+            }
+            None => Some(SearchHit {
                 row: child,
                 score: 0,
                 name: snapshot.name_of(child).to_string(),
@@ -187,11 +301,52 @@ pub fn enumerate_directory(snapshot: &Snapshot, row: usize, limit: usize) -> Vec
                 is_dir: snapshot.is_dir(child),
                 size: snapshot.size_of(child),
                 modified: snapshot.last_write_times()[child],
+            }),
+        };
+        if let Some(h) = hit {
+            results.push(h);
+        }
+    }
+
+    // added 子行（parent_frn == 本目录 id）
+    if let Some(ov) = overlay {
+        for (idx, rec) in ov.live_added() {
+            if results.len() >= limit {
+                break;
             }
-        })
-        .collect();
+            if rec.parent_frn == dir_id {
+                results.push(make_hit(ov, snapshot, EntryRef::Added(idx)));
+            }
+        }
+    }
+
     results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     results
+}
+
+/// 构造一条 overlay 感知的 SearchHit（override / added 行，row = usize::MAX）
+fn make_hit(ov: &DeltaOverlay, snapshot: &Snapshot, entry: EntryRef) -> SearchHit {
+    let (name, is_dir, size, modified) = match entry {
+        EntryRef::Base(row) => {
+            let o = ov
+                .override_of(row as u32)
+                .expect("make_hit(Base) requires an override");
+            (o.name.clone(), o.is_dir, o.size, o.modified)
+        }
+        EntryRef::Added(idx) => {
+            let rec = ov.added_get(idx).expect("make_hit(Added) requires a live record");
+            (rec.name.clone(), rec.is_dir, rec.size, rec.modified)
+        }
+    };
+    SearchHit {
+        row: usize::MAX,
+        score: 0,
+        name,
+        path: ov.full_path(snapshot, entry),
+        is_dir,
+        size,
+        modified,
+    }
 }
 
 #[cfg(test)]

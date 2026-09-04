@@ -126,6 +126,14 @@ impl Snapshot {
     pub fn is_hidden_or_system(&self, row: usize) -> bool {
         (self.flags()[row] & (flags::HIDDEN | flags::SYSTEM)) != 0
     }
+    #[inline]
+    pub fn is_hidden(&self, row: usize) -> bool {
+        (self.flags()[row] & flags::HIDDEN) != 0
+    }
+    #[inline]
+    pub fn is_system(&self, row: usize) -> bool {
+        (self.flags()[row] & flags::SYSTEM) != 0
+    }
 
     // ── 唯一名访问 ─────────────────────────────────────────────────────────
 

@@ -19,7 +19,6 @@ pub struct StreamingBuilder {
     arena: Bump,                                // 内存池（分块释放）
     parent_cache: FxHashMap<u64, String>,       // FRN -> 完整路径缓存
     path_writer: BufWriter<File>,               // 流式写入路径
-    index_writer: BufWriter<File>,              // 流式写入索引
     current_path_id: u32,
     total_files: u64,
     /// 每个写入文件的小写文件名字节（pipeline 用）
@@ -35,11 +34,10 @@ impl StreamingBuilder {
     pub fn new(drive_letter: char, output_dir: &str) -> Result<Self> {
         // 删除旧的临时文件
         let _ = std::fs::remove_file(format!("{}\\{}_paths.tmp", output_dir, drive_letter));
-        let _ = std::fs::remove_file(format!("{}\\{}_index.tmp", output_dir, drive_letter));
-        
+
         // 确保目录存在
         std::fs::create_dir_all(output_dir)?;
-        
+
         Ok(Self {
             drive_letter,
             arena: Bump::with_capacity(256 * 1024 * 1024), // 预分配 256MB
@@ -47,10 +45,6 @@ impl StreamingBuilder {
             path_writer: BufWriter::with_capacity(
                 32 * 1024 * 1024,
                 File::create(format!("{}\\{}_paths.tmp", output_dir, drive_letter))?,
-            ),
-            index_writer: BufWriter::with_capacity(
-                32 * 1024 * 1024,
-                File::create(format!("{}\\{}_index.tmp", output_dir, drive_letter))?,
             ),
             current_path_id: 0,
             total_files: 0,
@@ -272,8 +266,7 @@ impl StreamingBuilder {
                     queue.push_back(child_frn);
                 }
 
-                let priority = self.calculate_priority(&child_path, parent_info);
-                self.write_path_entry(&child_path, priority)?;
+                self.write_path_entry(&child_path)?;
                 self.total_files += 1;
 
                 if self.total_files % 10_000 == 0 {
@@ -288,15 +281,14 @@ impl StreamingBuilder {
         // ── 步骤 3: 处理孤立节点（BFS 未访问到的 FRN）
         let mut orphan_count = 0u64;
         let mut path_buffer = String::with_capacity(512);
-        for (frn, parent_info) in frn_map.iter() {
+        for frn in frn_map.keys() {
             if visited.contains(frn) {
                 continue;
             }
             path_buffer.clear();
             if let Ok(full_path) = self.build_path_recursive(*frn, frn_map, &mut path_buffer) {
                 if !self.should_ignore(&full_path) {
-                    let priority = self.calculate_priority(&full_path, parent_info);
-                    self.write_path_entry(&full_path, priority)?;
+                    self.write_path_entry(&full_path)?;
                     self.total_files += 1;
                     orphan_count += 1;
                 }
@@ -356,34 +348,18 @@ impl StreamingBuilder {
         Ok(path_buffer.clone())
     }
     
-    /// 计算优先级
-    fn calculate_priority(&self, path: &str, parent_info: &ParentInfo) -> i32 {
-        // 根据扩展名计算优先级
-        if parent_info.filename.ends_with(".exe") {
-            100
-        } else if parent_info.filename.ends_with(".lnk") {
-            90
-        } else if parent_info.filename.ends_with(".bat") || parent_info.filename.ends_with(".cmd") {
-            80
-        } else if path.contains("\\Program Files") || path.contains("\\Windows") {
-            70
-        } else {
-            50
-        }
-    }
-    
     /// 检查是否应该忽略
     fn should_ignore(&self, path: &str) -> bool {
         let path_lower = path.to_lowercase();
-        
+
         path_lower.contains("$recycle.bin") ||
         path_lower.contains("system volume information") ||
         path_lower.contains("\\winsxs\\") ||
         path_lower.contains("\\temp\\")
     }
-    
+
     /// 写入路径条目（同时收集 offset_index + filename_entries 供 pipeline 使用）
-    fn write_path_entry(&mut self, path: &str, priority: i32) -> Result<()> {
+    fn write_path_entry(&mut self, path: &str) -> Result<()> {
         let path_bytes = path.as_bytes();
         let path_len = path_bytes.len();
 
@@ -402,52 +378,42 @@ impl StreamingBuilder {
         // 写入路径内容
         self.path_writer.write_all(path_bytes)?;
 
-        // 写入优先级（4字节）
-        let priority_bytes = priority.to_le_bytes();
-        self.index_writer.write_all(&priority_bytes)?;
-
         self.current_path_id += 1;
 
         Ok(())
     }
-    
+
     /// 刷新缓冲区
     fn flush_buffers(&mut self) -> Result<()> {
         self.path_writer.flush()?;
-        self.index_writer.flush()?;
-        
+
         // 🔥 释放 Arena 内存
         if self.arena.allocated_bytes() > 128 * 1024 * 1024 {  // 超过 128MB
             self.arena.reset();
             debug!("   Arena reset: freed memory");
         }
-        
+
         Ok(())
     }
-    
+
     /// 完成构建，生成最终文件
     pub fn finalize(mut self, output_dir: &str) -> Result<()> {
         info!("🔧 Finalizing database...");
-        
+
         // 刷新所有缓冲区
         self.flush_buffers()?;
-        
+
         // 关闭文件
         drop(self.path_writer);
-        drop(self.index_writer);
-        
+
         // 重命名临时文件为最终文件
         let temp_paths = format!("{}\\{}_paths.tmp", output_dir, self.drive_letter);
-        let temp_index = format!("{}\\{}_index.tmp", output_dir, self.drive_letter);
-        
         let final_paths = format!("{}\\{}_paths.dat", output_dir, self.drive_letter);
-        let final_index = format!("{}\\{}_index.dat", output_dir, self.drive_letter);
-        
+
         std::fs::rename(temp_paths, final_paths)?;
-        std::fs::rename(temp_index, final_index)?;
-        
+
         info!("✅ Database finalized: {} files", self.total_files);
-        
+
         Ok(())
     }
 }

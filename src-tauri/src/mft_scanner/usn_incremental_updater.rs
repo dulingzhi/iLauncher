@@ -116,10 +116,10 @@ impl UsnIncrementalUpdater {
         unsafe { let _ = CloseHandle(volume_handle); }
         
         info!("✓ USN initialized at: {}", self.last_usn);
-        
-        // 2. 从持久化文件恢复 FRN Map（如果存在）
-        self.load_frn_map_from_index()?;
-        
+
+        // 2. FRN Map 采用按需增量构建（见 build_path_from_frn 的 MFT 查询回退），
+        //    不预加载全量（避免 ~800MB 内存占用）
+
         // 3. 加载删除 bitmap
         self.load_deleted_bitmap()?;
         
@@ -230,128 +230,6 @@ impl UsnIncrementalUpdater {
         let mut bytes = Vec::new();
         self.deleted_file_ids.serialize_into(&mut bytes)?;
         std::fs::write(&deleted_file, &bytes)?;
-        Ok(())
-    }
-    
-    /// 从现有索引文件加载 FRN Map（改为按需加载策略）
-    fn load_frn_map_from_index(&mut self) -> Result<()> {
-        // 优化：不再预加载整个 FRN Map（避免 800MB 内存占用）
-        // 新策略：
-        // 1. Monitor 模式下只在需要时通过 USN 事件逐步构建 FRN Map
-        // 2. 对于现有文件，首次访问时通过 MFT 查询补充到缓存
-        // 3. 使用 LRU 缓存限制内存占用（最多保留 10 万条热点路径）
-        
-        info!("💡 FRN Map will be built incrementally from USN events (memory-efficient mode)");
-        info!("💡 Existing files will be queried on-demand from MFT when needed");
-        
-        Ok(())
-    }
-    
-    /// 快速扫描 MFT 构建 FRN Map（仅提取父子关系）
-    /// 🔥 已弃用：此方法会加载所有文件到内存（~800MB），改用按需加载
-    #[allow(dead_code)]
-    fn quick_scan_mft_for_frn_map(&mut self) -> Result<()> {
-        use windows::Win32::System::Ioctl::*;
-        
-        info!("⚡ Quick scanning MFT for FRN map...");
-        let start = std::time::Instant::now();
-        
-        let volume_handle = self.open_volume()?;
-        
-        // 查询 USN Journal 数据
-        let mut journal_data: UsnJournalData = Default::default();
-        let mut bytes_returned: u32 = 0;
-        
-        unsafe {
-            DeviceIoControl(
-                volume_handle,
-                FSCTL_QUERY_USN_JOURNAL,
-                None,
-                0,
-                Some(&mut journal_data as *mut _ as *mut std::ffi::c_void),
-                std::mem::size_of::<UsnJournalData>() as u32,
-                Some(&mut bytes_returned),
-                None,
-            )?;
-        }
-        
-        // 枚举 USN 数据（类似全量扫描，但只提取元数据）
-        let mut enum_data = MftEnumData {
-            start_file_reference_number: 0,
-            low_usn: 0,
-            high_usn: journal_data.next_usn,
-        };
-        
-        const BUFFER_SIZE: usize = 4 * 1024 * 1024;  // 4MB buffer
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        
-        let mut total_entries = 0;
-        
-        loop {
-            unsafe {
-                let result = DeviceIoControl(
-                    volume_handle,
-                    FSCTL_ENUM_USN_DATA,
-                    Some(&enum_data as *const _ as *const std::ffi::c_void),
-                    std::mem::size_of::<MftEnumData>() as u32,
-                    Some(buffer.as_mut_ptr() as *mut std::ffi::c_void),
-                    BUFFER_SIZE as u32,
-                    Some(&mut bytes_returned),
-                    None,
-                );
-                
-                if result.is_err() {
-                    let error = GetLastError();
-                    if error.0 == 38 {  // ERROR_HANDLE_EOF
-                        break;
-                    } else {
-                        return Err(anyhow::anyhow!("DeviceIoControl failed: {:?}", error));
-                    }
-                }
-                
-                if bytes_returned < 8 {
-                    break;
-                }
-                
-                // 更新下一个起始位置
-                let next_usn = i64::from_le_bytes(buffer[0..8].try_into().unwrap());
-                enum_data.start_file_reference_number = next_usn as u64;
-                
-                // 解析 USN 记录提取 FRN 映射
-                let mut offset = 8usize;
-                while offset < bytes_returned as usize {
-                    let record = &*(buffer.as_ptr().add(offset) as *const UsnRecordV2);
-                    
-                    if record.record_length == 0 {
-                        break;
-                    }
-                    
-                    let frn = record.file_reference_number;
-                    let parent_frn = record.parent_file_reference_number;
-                    let filename = self.extract_filename(record);
-                    
-                    // 添加到 FRN Map
-                    self.frn_map.insert(frn, ParentInfo {
-                        parent_frn,
-                        filename,
-                    });
-                    
-                    total_entries += 1;
-                    offset += record.record_length as usize;
-                    
-                    // 每 100K 输出进度
-                    if total_entries % 100_000 == 0 {
-                        debug!("   Progress: {} entries", total_entries);
-                    }
-                }
-            }
-        }
-        
-        unsafe { let _ = CloseHandle(volume_handle); }
-        
-        let elapsed = start.elapsed();
-        info!("✓ FRN Map built: {} entries in {:.2}s", total_entries, elapsed.as_secs_f64());
-        
         Ok(())
     }
     
@@ -647,21 +525,8 @@ impl UsnIncrementalUpdater {
                 components.push(info.filename.clone());
                 current = info.parent_frn;
             } else {
-                // 🔥 缓存未命中：从 MFT 查询并添加到缓存
-                if let Some((parent_frn, filename)) = self.query_frn_from_mft(current)? {
-                    components.push(filename.clone());
-                    
-                    // 添加到缓存（后续访问更快）
-                    self.frn_map.insert(current, ParentInfo {
-                        parent_frn,
-                        filename,
-                    });
-                    
-                    current = parent_frn;
-                } else {
-                    // FRN 无效或已删除
-                    break;
-                }
+                // 缓存未命中：无按需 MFT 查询（已移除），路径到此截断
+                break;
             }
             
             // 🔥 限制缓存大小（LRU 策略：超过 10 万条时清理旧条目）
@@ -685,49 +550,6 @@ impl UsnIncrementalUpdater {
         let path = format!("{}:\\{}", self.drive_letter, components.join("\\"));
         
         Ok(path)
-    }
-    
-    /// 🔥 从 MFT 查询单个 FRN 的父目录和文件名（按需加载）
-    fn query_frn_from_mft(&self, frn: u64) -> Result<Option<(u64, SmartString)>> {
-        use windows::Win32::System::Ioctl::*;
-        
-        let volume_handle = self.open_volume()?;
-        
-        // 构造查询结构
-        let mut ntfs_file_record_input = NtfsFileRecordInputBuffer {
-            file_reference_number: frn,
-        };
-        
-        const BUFFER_SIZE: usize = 8192;
-        let mut buffer = vec![0u8; BUFFER_SIZE];
-        let mut bytes_returned: u32 = 0;
-        
-        unsafe {
-            let result = DeviceIoControl(
-                volume_handle,
-                FSCTL_GET_NTFS_FILE_RECORD,
-                Some(&mut ntfs_file_record_input as *mut _ as *mut std::ffi::c_void),
-                std::mem::size_of::<NtfsFileRecordInputBuffer>() as u32,
-                Some(buffer.as_mut_ptr() as *mut std::ffi::c_void),
-                BUFFER_SIZE as u32,
-                Some(&mut bytes_returned),
-                None,
-            );
-            
-            let _ = CloseHandle(volume_handle);
-            
-            if result.is_err() {
-                // FRN 不存在或已删除
-                return Ok(None);
-            }
-            
-            // 解析 MFT 记录提取文件名和父 FRN
-            // （简化实现：实际需要解析 NTFS 文件记录结构）
-            // TODO: 完整实现需要解析 $FILE_NAME 属性
-            
-            // 临时方案：返回 None（路径可能不完整）
-            Ok(None)
-        }
     }
     
     /// 追加路径到文件

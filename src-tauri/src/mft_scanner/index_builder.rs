@@ -28,37 +28,6 @@ impl IndexBuilder {
         }
     }
     
-    /// 从路径文件构建索引（fallback，优先使用 build_from_entries）
-    pub fn build_from_paths(&mut self, output_dir: &str) -> Result<()> {
-        info!("🔍 Building 3-gram index for drive {}:", self.drive_letter);
-        let paths_file = format!("{}\\{}_paths.dat", output_dir, self.drive_letter);
-        let mut reader = BufReader::with_capacity(32 * 1024 * 1024, File::open(paths_file)?);
-
-        let mut len_buf = [0u8; 4];
-        let mut current_offset = 0usize;
-        let mut offset_index: Vec<usize> = Vec::with_capacity(2_200_000);
-        let mut filename_entries: Vec<Vec<u8>> = Vec::with_capacity(2_200_000);
-
-        while reader.read_exact(&mut len_buf).is_ok() {
-            offset_index.push(current_offset);
-            let path_len = u32::from_le_bytes(len_buf) as usize;
-            let mut path_bytes = vec![0u8; path_len];
-            reader.read_exact(&mut path_bytes)?;
-            let path = String::from_utf8_lossy(&path_bytes);
-            let filename = path.rsplit('\\').next().unwrap_or(&path);
-            filename_entries.push(filename.to_lowercase().into_bytes());
-            current_offset += 4 + path_len;
-        }
-
-        info!("   Read {} file names, building gram index...", filename_entries.len());
-        self.build_gram_index_parallel(&filename_entries);
-        self.total_grams = self.gram_index.len();
-        info!("✓ Index built: {} files, {} unique 3-grams", filename_entries.len(), self.total_grams);
-
-        Self::write_offset_index(&offset_index, output_dir, self.drive_letter)?;
-        Ok(())
-    }
-
     /// 从内存文件名条目构建索引（pipeline 路径，无 paths.dat 二次读取）
     pub fn build_from_entries(
         &mut self,

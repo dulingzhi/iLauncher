@@ -153,6 +153,28 @@ query → charmask 预过滤(AVX2 扫 UniqueMasks) → 候选 unique name fzf/sk
 - 保留 3-gram FST 作为**可选的子串精确匹配后端**（它对 "包含某连续子串" 的查询比 fzf 更快更准），两种模式：默认 fzf 模糊；引号或前缀修饰符切换子串模式。也可在 Phase 1 先只上 fzf，FST 改造延后。
 - 新增 CancellationToken 语义：tokio oneshot/Notify，新查询取消旧查询的扫描循环。
 
+**✅ 已完成（2026-09-05，commit `overlay` 批次）**
+
+- 列式快照底座 `index_v2/`：format（18 section 布局 + charmask）/ writer（唯一名池化、
+  父引用解析、孤儿 section、temp+rename 原子替换）/ snapshot（mmap O(1) 打开、
+  typed section 切片、路径沿父链重建、截断文件打开即报错）。
+- 搜索 `search.rs`：charmask 预过滤 + fzf 打分 + rayon 并行 + `enumerate_directory`。
+  性能冒烟（release，52.5 万行）：open 157µs，查询 ~5ms。
+- **DeltaOverlay**（`overlay.rs`，C2 根除 + USN 增量语义）：
+  tombstone（基线行墓碑）/ override（改名·移动·元数据，**保留行身份 → 目录 rename
+  后子孙路径经父链自动跟随**）/ added（新行 + 墓碑位）三层；
+  目录删除级联（基线 BFS 子行 + added parent_frn 链，已 override 移出的行不杀）；
+  id（FRN）复用不复活墓碑；`compact()` 折叠为 IndexRecord 直接喂 write_snapshot；
+  `search_with_overlay` / `enumerate_directory_with_overlay` 全链路 overlay 感知。
+- 单元测试 18 个全绿，覆盖：目录 rename 子孙跟随、删除级联（含移出存活）、
+  added 目录级联、id 复用、upsert 幂等、compact 往返、跨目录移动 compact。
+- 死代码清理：`index_builder::build_from_paths`、streaming_builder 遗留 v1
+  `{D}_index.dat` 写入链路、`quick_scan_mft_for_frn_map`（800MB 内存预载）、
+  `query_frn_from_mft` stub（C3 的静默失败源）——全部删除，`cargo check` 零警告。
+
+遗留（Phase 2）：MFT 扫描器输出接入 `write_snapshot`（StreamingBuilder 两阶段结果
+→ IndexRecord）；USN 事件源接入 DeltaOverlay；水位持久化 + 启动 catch-up。
+
 ### Phase 2：冷启动 + USN catch-up（1 周）
 
 目标：解决 C4，开机即可用。
