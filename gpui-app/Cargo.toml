@@ -21,6 +21,12 @@ anyhow = "1"
 # 启动文件/目录（等价 tauri_plugin_opener，无 Tauri 依赖）
 opener = "0.6"
 
+# 更新检查（对接现行 GitHub releases latest.json 协议，见 updater.rs）
+reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3" }
+futures = "0.3"
+minisign-verify = "0.2"
+base64 = "0.22"
+
 ilauncher-index = { path = "../ilauncher-index", optional = true }
 ilauncher-clipboard = { path = "../ilauncher-clipboard", optional = true }
 parking_lot = "0.12"

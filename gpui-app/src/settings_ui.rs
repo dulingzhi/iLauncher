@@ -16,6 +16,7 @@ use gpui_kit::component::*;
 use gpui_kit::*;
 
 use crate::search::LiveSet;
+use crate::updater;
 use crate::AppSignal;
 
 #[cfg(feature = "clipboard")]
@@ -30,6 +31,8 @@ pub struct SettingsModel {
     pub theme_dark: bool,
     pub autostart: bool,
     pub clipboard_capacity: usize,
+    /// 检查更新状态机（updater::UpdateState）
+    pub update_state: updater::UpdateState,
 }
 
 /// Global trait 需要显式实现，包一层新类型
@@ -44,6 +47,7 @@ pub fn init_model(cx: &mut App) {
             .unwrap_or_else(crate::settings::system_prefers_dark),
         autostart: crate::autostart::is_enabled(),
         clipboard_capacity: clipboard_capacity_or_default(),
+        update_state: updater::UpdateState::Idle,
     };
     let entity = cx.new(|_| model);
     let capacity = entity.read(cx).clipboard_capacity;
@@ -268,13 +272,27 @@ pub(crate) fn build_pages(
             ).item(
                 SettingItem::new(
                     "检查更新",
-                    SettingField::render(|_, _, _| {
+                    SettingField::render(move |_, _, cx: &mut App| {
+                        let state = model(cx).read(cx).update_state.clone();
                         Button::new("check-update")
-                            .label("检查更新")
-                            .disabled(true)
+                            .label(state.button_label())
+                            .disabled(!state.can_click())
+                            .on_click(move |_, _, cx| dispatch_update_action(cx))
                     }),
                 )
-                .description("UpdateChecker 开发中（P2 下一项），将沿用现行 JSON 更新协议"),
+                .description(
+                    "对接 GitHub releases latest.json（Tauri 同款协议）；点击按钮开始检查",
+                ),
+            ).item(
+                // 动态状态行：进度 / 新版本号 / 失败原因都在这里显示
+                SettingItem::new(
+                    "更新状态",
+                    SettingField::input(
+                        |cx: &App| model(cx).read(cx).update_state.status_text().into(),
+                        |_, _| {},
+                    ),
+                )
+                .disabled(true),
             ),
         );
     pages.push(("关于", about));
@@ -294,10 +312,82 @@ fn data_dir() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("iLauncher"))
 }
 
+/// 「检查更新」按钮点击分派：按状态机推进
+/// Idle/Failed → 发起检查；Available → 下载；Ready → 启动安装程序并退出
+fn dispatch_update_action(cx: &mut App) {
+    let m = model(cx);
+    let state = m.read(cx).update_state.clone();
+    match state {
+        updater::UpdateState::Idle | updater::UpdateState::Failed(_) => {
+            m.update(cx, |m, cx| {
+                m.update_state = updater::UpdateState::Checking;
+                cx.spawn(async move |m: WeakEntity<SettingsModel>, cx| {
+                    let state = run_check().await;
+                    let _ = m.update(cx, |m, _| m.update_state = state);
+                })
+                .detach();
+            });
+        }
+        updater::UpdateState::Available(info) => {
+            m.update(cx, |m, cx| {
+                m.update_state = updater::UpdateState::Downloading(info.version.clone());
+                cx.spawn(async move |m: WeakEntity<SettingsModel>, cx| {
+                    let state = run_download(info).await;
+                    let _ = m.update(cx, |m, _| m.update_state = state);
+                })
+                .detach();
+            });
+        }
+        updater::UpdateState::Ready { path, .. } => match updater::launch_installer(&path) {
+            Ok(()) => {
+                println!("✓ 安装程序已启动，退出以释放文件锁");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                m.update(cx, |m, _| {
+                    m.update_state =
+                        updater::UpdateState::Failed(format!("启动安装程序失败: {e:#}"));
+                });
+            }
+        },
+        // Checking / Downloading / UpToDate：按钮已禁用，防御性忽略
+        _ => {}
+    }
+}
+
+fn http_client() -> Option<std::sync::Arc<dyn gpui_kit::http_client::HttpClient>> {
+    reqwest_client::ReqwestClient::user_agent(&format!("iLauncher/{}", updater::CURRENT_VERSION))
+        .ok()
+        .map(|c| std::sync::Arc::new(c) as std::sync::Arc<dyn gpui_kit::http_client::HttpClient>)
+}
+
+async fn run_check() -> updater::UpdateState {
+    let Some(client) = http_client() else {
+        return updater::UpdateState::Failed("HTTP 客户端创建失败".into());
+    };
+    updater::check(client.as_ref(), updater::CURRENT_VERSION)
+        .await
+        .unwrap_or_else(|e| updater::UpdateState::Failed(format!("{e:#}")))
+}
+
+async fn run_download(info: updater::UpdateInfo) -> updater::UpdateState {
+    let Some(client) = http_client() else {
+        return updater::UpdateState::Failed("HTTP 客户端创建失败".into());
+    };
+    match updater::download(client.as_ref(), &info).await {
+        Ok(path) => updater::UpdateState::Ready {
+            version: info.version.clone(),
+            path,
+        },
+        Err(e) => updater::UpdateState::Failed(format!("{e:#}")),
+    }
+}
+
 pub struct SettingsView {
     focus: FocusHandle,
     index_set: LiveSet,
     tx: mpsc::Sender<AppSignal>,
+    _model_subscription: Subscription,
     #[cfg(feature = "clipboard")]
     clipboard_store: Arc<Mutex<ClipboardStore>>,
 }
@@ -309,10 +399,14 @@ impl SettingsView {
         tx: mpsc::Sender<AppSignal>,
         #[cfg(feature = "clipboard")] clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
+        // model 变化（主题/更新状态机）→ 通知视图重渲染
+        let m = model(cx);
+        let _model_subscription = cx.observe(&m, |_, _, cx| cx.notify());
         Self {
             focus: cx.focus_handle(),
             index_set,
             tx,
+            _model_subscription,
             #[cfg(feature = "clipboard")]
             clipboard_store,
         }

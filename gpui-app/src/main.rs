@@ -17,6 +17,7 @@ mod search;
 mod settings;
 #[cfg(windows)]
 mod settings_ui;
+mod updater;
 
 #[cfg(all(feature = "clipboard", target_os = "windows"))]
 mod clipboard_ui;
