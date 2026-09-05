@@ -31,6 +31,10 @@ mod clipboard_ui;
 
 #[cfg(all(feature = "ilauncher", target_os = "windows"))]
 mod index_service;
+#[cfg(target_os = "windows")]
+mod workflow;
+#[cfg(target_os = "windows")]
+mod workflow_ui;
 
 use std::sync::mpsc;
 use std::time::Instant;
@@ -87,6 +91,8 @@ enum AppSignal {
     ShowAudit,
     /// 托盘"插件"：打开/激活插件市场/管理窗口
     ShowPlugins,
+    /// 托盘"工作流"：打开/激活工作流管理窗口
+    ShowWorkflows,
     /// 托盘"设置"：打开/激活设置窗口（窗口逻辑仅 Windows 编译）
     ShowSettings,
     /// 托盘"深色主题"：切换主题模式（true = 深色）
@@ -117,6 +123,9 @@ struct Launcher {
     audit_logger: Arc<Mutex<audit::AuditLogger>>,
     /// 插件管理器（搜索扇出 + 执行分发；沙盒权限检查写审计）
     plugins: Arc<plugin::PluginManager>,
+    /// 工作流引擎（关键词精确匹配触发 + 后台执行）
+    #[cfg(target_os = "windows")]
+    workflows: Arc<workflow::WorkflowEngine>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -127,6 +136,7 @@ impl Launcher {
         source: SearchSource,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
         plugins: Arc<plugin::PluginManager>,
+        #[cfg(target_os = "windows")] workflows: Arc<workflow::WorkflowEngine>,
     ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索应用、文件、命令…（中文 IME 请在这里验证）"));
         let focus = cx.focus_handle();
@@ -154,6 +164,8 @@ impl Launcher {
             preview_gen: 0,
             audit_logger,
             plugins,
+            #[cfg(target_os = "windows")]
+            workflows,
             _subscriptions: Vec::new(),
         };
         if this.bench {
@@ -190,12 +202,23 @@ impl Launcher {
     }
 
     /// 防抖后到期的真正搜索：空查询清空结果，非空最多 PAGE_LIMIT 条。
-    /// 文件结果在前，插件结果按 score 降序追加其后（对齐 Tauri 排序语义）
+    /// 文件结果在前，插件结果按 score 降序追加其后（对齐 Tauri 排序语义）；
+    /// 工作流关键词精确匹配命中时追加在插件结果之后
     fn apply_query(&mut self, query: String, cx: &mut Context<Self>) {
         let mut entries = self.source.search(&query, PAGE_LIMIT);
         // bench 模式跳过插件扇出：避免插件结果混入滚动/渲染性能基线
         if !self.bench {
             entries.extend(self.plugins.query_entries(&query, PAGE_LIMIT));
+            // 工作流：仅 query 与 Manual 关键词完全一致时命中（与 Tauri 语义一致）
+            #[cfg(target_os = "windows")]
+            for wf in self.workflows.find_by_keyword(&query) {
+                entries.push(search::Entry {
+                    name: wf.name.clone(),
+                    path: if wf.description.is_empty() { "工作流".into() } else { wf.description.clone() },
+                    score: 0,
+                    origin: search::EntryOrigin::Workflow { workflow_id: wf.id.clone() },
+                });
+            }
         }
         self.entries = std::rc::Rc::new(entries);
         self.selected = 0;
@@ -316,6 +339,59 @@ impl Launcher {
                     }
                 }
             }
+            // 工作流：后台执行（步骤可能含 Delay/HTTP），副作用回主线程执行
+            #[cfg(target_os = "windows")]
+            search::EntryOrigin::Workflow { workflow_id } => {
+                let workflow_id = workflow_id.clone();
+                println!("WORKFLOW_RUN {}", workflow_id);
+                let engine = self.workflows.clone();
+                let audit_logger = self.audit_logger.clone();
+                cx.spawn(async move |this, cx| {
+                    let mut effects = Vec::new();
+                    let result = engine.execute_workflow(&workflow_id, Default::default(), &mut effects).await;
+                    let _ = this.update(cx, |_, cx| {
+                        match result {
+                            Ok(_) => {
+                                for effect in effects {
+                                    match effect {
+                                        workflow::WorkflowEffect::CopyToClipboard(text) => {
+                                            println!("WORKFLOW_COPY {}", text);
+                                            cx.write_to_clipboard(ClipboardItem::new_string(text));
+                                        }
+                                        workflow::WorkflowEffect::ShowNotification { title, message } => {
+                                            // 系统 Toast 未接入：状态走控制台（gpui 无内建通知组件）
+                                            println!("WORKFLOW_NOTIFY {}: {}", title, message);
+                                        }
+                                    }
+                                }
+                                audit_logger.lock().log(
+                                    audit::AuditEventType::ProgramExecution {
+                                        plugin_id: "workflow".into(),
+                                        program: workflow_id,
+                                        allowed: true,
+                                    },
+                                    audit::AuditSeverity::Info,
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("⚠ 工作流执行失败（{workflow_id}）: {e:#}");
+                                audit_logger.lock().log(
+                                    audit::AuditEventType::ProgramExecution {
+                                        plugin_id: "workflow".into(),
+                                        program: workflow_id,
+                                        allowed: false,
+                                    },
+                                    audit::AuditSeverity::Warning,
+                                );
+                            }
+                        }
+                    });
+                })
+                .detach();
+            }
+            // 非 Windows 无工作流引擎：该来源不会出现（穷尽性占位）
+            #[cfg(not(target_os = "windows"))]
+            search::EntryOrigin::Workflow { .. } => {}
         }
         cx.notify();
     }
@@ -644,6 +720,12 @@ struct WindowGuard {
     /// 插件市场/管理窗口
     #[cfg(windows)]
     plugins_window: Option<(WindowHandle<Root>, Entity<plugin_ui::MarketPanel>)>,
+    /// 工作流引擎（启动器关键词触发 + 管理窗口共享）
+    #[cfg(windows)]
+    workflows: Arc<workflow::WorkflowEngine>,
+    /// 工作流管理窗口
+    #[cfg(windows)]
+    workflow_window: Option<(WindowHandle<Root>, Entity<workflow_ui::WorkflowPanel>)>,
 }
 
 impl WindowGuard {
@@ -656,6 +738,8 @@ impl WindowGuard {
         plugins: Arc<plugin::PluginManager>,
         #[cfg(windows)]
         market: Arc<plugin_ui::MarketState>,
+        #[cfg(windows)]
+        workflows: Arc<workflow::WorkflowEngine>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -678,6 +762,10 @@ impl WindowGuard {
             market,
             #[cfg(windows)]
             plugins_window: None,
+            #[cfg(windows)]
+            workflows,
+            #[cfg(windows)]
+            workflow_window: None,
         }
     }
 
@@ -690,6 +778,8 @@ impl WindowGuard {
         plugins: Arc<plugin::PluginManager>,
         #[cfg(windows)]
         market: Arc<plugin_ui::MarketState>,
+        #[cfg(windows)]
+        workflows: Arc<workflow::WorkflowEngine>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -711,6 +801,10 @@ impl WindowGuard {
             market,
             #[cfg(windows)]
             plugins_window: None,
+            #[cfg(windows)]
+            workflows,
+            #[cfg(windows)]
+            workflow_window: None,
         }
     }
 
@@ -751,9 +845,21 @@ impl WindowGuard {
         let source = self.make_source();
         let audit_logger = self.audit_logger.clone();
         let plugins = self.plugins.clone();
+        #[cfg(target_os = "windows")]
+        let workflows = self.workflows.clone();
         let mut launcher_slot: Option<Entity<Launcher>> = None;
         let result = cx.open_window(options, |window, cx| {
-            let launcher = cx.new(|cx| Launcher::new(window, cx, source, audit_logger, plugins));
+            let launcher = cx.new(|cx| {
+                Launcher::new(
+                    window,
+                    cx,
+                    source,
+                    audit_logger,
+                    plugins,
+                    #[cfg(target_os = "windows")]
+                    workflows,
+                )
+            });
             launcher_slot = Some(launcher.clone());
             cx.new(|cx| Root::new(launcher, window, cx).bg(cx.theme().background))
         });
@@ -892,6 +998,32 @@ impl WindowGuard {
             Err(e) => eprintln!("⚠ 打开插件窗口失败: {e:#}"),
         }
     }
+
+    /// 打开/激活工作流管理窗口
+    #[cfg(windows)]
+    fn summon_workflows(&mut self, cx: &mut AsyncApp) {
+        if let Some((handle, _)) = &self.workflow_window {
+            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+                return;
+            }
+            self.workflow_window = None;
+        }
+        let engine = self.workflows.clone();
+        let audit_logger = self.audit_logger.clone();
+        let mut panel_slot: Option<Entity<workflow_ui::WorkflowPanel>> = None;
+        let result = cx.open_window(make_window_options(), |window, cx| {
+            let panel = cx.new(|cx| workflow_ui::WorkflowPanel::new(window, cx, engine, audit_logger));
+            panel_slot = Some(panel.clone());
+            cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
+        });
+        match result {
+            Ok(handle) => {
+                println!("✓ 工作流窗口已打开");
+                self.workflow_window = Some((handle, panel_slot.expect("workflow panel entity")));
+            }
+            Err(e) => eprintln!("⚠ 打开工作流窗口失败: {e:#}"),
+        }
+    }
 }
 
 fn make_window_options() -> WindowOptions {
@@ -944,6 +1076,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         let _ = menu.append(&MenuItem::with_id("clipboard", "剪贴板历史", true, None));
         let _ = menu.append(&MenuItem::with_id("audit", "审计日志", true, None));
         let _ = menu.append(&MenuItem::with_id("plugins", "插件", true, None));
+        let _ = menu.append(&MenuItem::with_id("workflows", "工作流", true, None));
         let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
         // 开机自启：可勾选项，初始状态读注册表
         let autostart_item =
@@ -993,6 +1126,9 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                     }
                     "plugins" => {
                         let _ = tx.send(AppSignal::ShowPlugins);
+                    }
+                    "workflows" => {
+                        let _ = tx.send(AppSignal::ShowWorkflows);
                     }
                     "rebuild" => {
                         let _ = tx.send(AppSignal::RebuildIndex);
@@ -1144,6 +1280,24 @@ fn main() {
         market
     };
 
+    // ── 工作流引擎：JSON 定义加载（目录与 Tauri 版一致；编辑器 UI 不做，直接放 JSON） ──
+    #[cfg(windows)]
+    let workflows = {
+        let dir = std::env::var_os("LOCALAPPDATA")
+            .map(|d| std::path::PathBuf::from(d).join("iLauncher").join("workflows"))
+            .unwrap_or_else(|| std::path::PathBuf::from("iLauncher").join("workflows"));
+        let _ = std::fs::create_dir_all(&dir);
+        let http = reqwest_client::ReqwestClient::user_agent("iLauncher/workflow")
+            .map(|c| Arc::new(c) as Arc<dyn gpui_kit::http_client::HttpClient>)
+            .unwrap_or_else(|e| panic!("工作流 HTTP 客户端创建失败: {e:#}"));
+        let engine = Arc::new(workflow::WorkflowEngine::new(dir, http));
+        match engine.load_workflows() {
+            Ok(()) => println!("✓ 工作流已加载（{} 个）", engine.list_workflows().len()),
+            Err(e) => eprintln!("⚠️ 工作流加载失败（引擎仍可用）: {e:#}"),
+        }
+        engine
+    };
+
     let (tx, rx) = mpsc::channel();
     setup_tray(tx.clone());
     spawn_hotkey_thread(tx.clone());
@@ -1176,6 +1330,8 @@ fn main() {
             plugins,
             #[cfg(windows)]
             market,
+            #[cfg(windows)]
+            workflows,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
         );
@@ -1195,6 +1351,7 @@ fn main() {
                 let mut show_settings = false;
                 let mut show_audit = false;
                 let mut show_plugins = false;
+                let mut show_workflows = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
@@ -1203,6 +1360,7 @@ fn main() {
                         AppSignal::ShowSettings => show_settings = true,
                         AppSignal::ShowAudit => show_audit = true,
                         AppSignal::ShowPlugins => show_plugins = true,
+                        AppSignal::ShowWorkflows => show_workflows = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                     }
                 }
@@ -1241,6 +1399,14 @@ fn main() {
                 #[cfg(not(windows))]
                 if show_plugins {
                     println!("⚠️ 插件市场窗口仅 Windows 构建");
+                }
+                #[cfg(windows)]
+                if show_workflows {
+                    guard.summon_workflows(&mut cx);
+                }
+                #[cfg(not(windows))]
+                if show_workflows {
+                    println!("⚠️ 工作流窗口仅 Windows 构建");
                 }
                 if let Some(dark) = theme_dark {
                     use gpui_kit::component::theme::ThemeMode;

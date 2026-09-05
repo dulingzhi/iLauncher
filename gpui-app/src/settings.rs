@@ -36,7 +36,7 @@ mod imp {
     }
 
     /// 保存剪贴板历史容量（越界自动夹取到合法区间）
-    #[cfg(any(feature = "clipboard", test))]
+    #[cfg(feature = "clipboard")]
     pub fn save_clipboard_capacity(cap: usize) -> anyhow::Result<()> {
         save_capacity_to(SETTINGS_KEY, CLIPBOARD_CAPACITY_VALUE, cap)
     }

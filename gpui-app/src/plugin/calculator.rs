@@ -251,7 +251,7 @@ mod tests {
     use super::*;
     use crate::audit::AuditLogger;
     use crate::plugin::QueryContext;
-    use crate::plugin::sandbox::{NetworkScope, PluginPermission, SandboxConfig, SecurityLevel};
+    use crate::plugin::sandbox::{PluginPermission, SandboxConfig, SecurityLevel};
 
     fn plugin() -> CalculatorPlugin {
         CalculatorPlugin::new(Arc::new(SandboxManager::new(Arc::new(parking_lot::Mutex::new(

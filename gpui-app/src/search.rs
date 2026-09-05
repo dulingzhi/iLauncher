@@ -32,6 +32,8 @@ pub enum EntryOrigin {
         action_id: String,
         icon: Option<String>,
     },
+    /// 手动触发的工作流：path 字段复用为描述；query 与关键词精确匹配时出现
+    Workflow { workflow_id: String },
 }
 
 impl Entry {

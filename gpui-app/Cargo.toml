@@ -43,6 +43,8 @@ features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Threading",
     "Win32_System_Registry",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_SystemInformation",
     # RegCreateKeyExW 的 SECURITY_ATTRIBUTES 参数需要该 feature
     # （ilauncher-index 碰巧开了它，但 plain 组合不能依赖这种间接统一）
     "Win32_Security",
