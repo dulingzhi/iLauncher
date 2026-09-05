@@ -1,6 +1,6 @@
-//! 插件沙盒审计日志：对齐 src-tauri/src/plugin/audit.rs 的事件模型与统计语义。
+//! 插件沙盒审计日志：对齐旧版 audit 插件的事件模型与统计语义。
 //! 两处刻意偏离（注释标明）：时间戳用 Unix 秒（无 chrono 依赖，UTC 展示复用
-//! preview::format_unix_utc）；增加 JSONL 持久化——Tauri 版纯内存、重启即丢，
+//! preview::format_unix_utc）；增加 JSONL 持久化——旧版纯内存、重启即丢，
 //! 启动器常驻场景审计日志应可回溯（PluginManager 落地后事件源接入此处）。
 //!
 //! 无 gpui 依赖，全部单测。
@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
-/// 内存容量上限（与 Tauri 版默认一致）
+/// 内存容量上限（与 旧版默认一致）
 pub const DEFAULT_MAX_ENTRIES: usize = 1000;
 
-/// 审计事件类型（与 Tauri 版六类一致）
+/// 审计事件类型（与 旧版六类一致）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AuditEventType {
     /// 权限检查
@@ -141,7 +141,7 @@ pub struct AuditLogEntry {
     pub severity: AuditSeverity,
 }
 
-/// 审计统计（字段与 Tauri 版一致）
+/// 审计统计（字段与 旧版一致）
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditStatistics {
     pub total_checks: usize,
@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn statistics_match_tauri_semantics() {
+    fn statistics_match_legacy_semantics() {
         let mut logger = AuditLogger::in_memory(100);
         logger.log(perm_check("t", true), AuditSeverity::Info);
         logger.log(perm_check("t", false), AuditSeverity::Warning);

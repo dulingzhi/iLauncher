@@ -1,8 +1,9 @@
 # UI 框架迁移方案：Tauri(React) → GPUI
 
-> 状态：**P0/P1/P2 全部完成并验证，进入 P3**（2026-09-05 更新，见 4.6 实施进度；
-> P2 剩余 i18n 标签硬编码中文，随 P3 打磨）
-> 关联：[FILE_INDEX_OPTIMIZATION_PLAN.md](FILE_INDEX_OPTIMIZATION_PLAN.md)（v3 索引，
+> 状态：**P0-P3 全部完成，P4 进行中**（2026-09-05 更新，见 4.6 实施进度；
+> React 前端与 src-tauri 已删除，发布通道已切 gpui 版；
+> P2 i18n 标签硬编码中文仍待做；P4 剩余 v2 索引链路退役）
+> 关联：[FILE_INDEX_OPTIMIZATION_PLAN.md](archive/FILE_INDEX_OPTIMIZATION_PLAN.md)（v3 索引，
 > 迁移后将由 GPUI 进程直接以库调用消费，服务进程文件 IPC 可退役）
 
 ---
@@ -196,7 +197,7 @@ gpui-component = { version = "0.6" }
 | P3 PluginManager/Market | ✅ 完成 | 切片 A（c272b5d）：插件框架 trait 同步化 + ExecuteOutcome 副作用上移 Launcher；沙盒四级权限模型对齐，审计 logger 注入共享管道（纠正 Tauri 黑洞）；calculator/web_search 样板插件接入主搜索扇出。切片 B（af92920）：.ilp 安装管线（manifest/ID/依赖/权限白名单/解压）+ 商店客户端（ReqwestClient，URL 构建纯函数）+ 市场/已安装双页签窗口（托盘"插件"入口）；JS/WASM 包与内置 Rust 插件两套并存对齐 Tauri |
 | P3 WorkflowManager | ✅ 完成 | `workflow.rs` 引擎对齐 Tauri（aa0553e）：serde 类型模型一致；删死变体 PluginQuery/PluginExecute；副作用收集 WorkflowEffect（剪贴板/通知由调用层执行）；TimeRange 真实现（纯函数+GetLocalTime）；ProcessRunning 用 Toolhelp32；无条件 Loop 加 1 万次防护；Retry 保持 Tauri"全失败仍继续"语义；12 单测（MockHttp 注入）。启动器关键词精确匹配触发（EntryOrigin::Workflow）；`workflow_ui.rs` 管理窗口（列表/启用开关/运行/删除，托盘"工作流"入口）；编辑器 UI 不做，JSON 直接放 workflows 目录 |
 | P3 AIChat | ✅ 完成 | `ai.rs` 引擎对齐 Tauri ai_assistant（40ce252）：六 provider 调用函数收敛为纯函数 build_request/parse_response 两张表；配置+会话 JSON 持久化（Tauri 仅内存）；首条消息重命名标题修 Tauri 字节切 panic；14 单测。`markdown.rs` 块级 AST（pulldown-cmark，语法高亮按方案降级）；`ai_ui.rs` 聊天窗口（会话栏/Markdown 气泡/设置区，托盘"AI 助手"入口）。随后全局优化（c86f1a0）：clippy 16→0，http_util/test_util 共享模块消除四处构造重复与三份 MockHttp，Deps 结构体收敛六个单例 + activate_existing 提取，净 -141 行 |
-| P4 切换与退役 | ⬜ 未开始 | |
+| P4 切换与退役 | 🚧 进行中 | 打包链路已建（8d54c5e：NSIS + minisign + CI，静默装/卸实测通过）；React 前端（1325c5b）与 src-tauri（4c4b1eb）已删，四组合单测全绿；剩余：v2 索引链路退役（ilauncher-index 内部清理） |
 
 **与 4.4-5 的偏差说明**：
 

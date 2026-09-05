@@ -1,11 +1,11 @@
 //! 网页搜索插件：多搜索引擎关键词触发 + `? ` 前缀全网搜索
-//! （对齐 src-tauri/src/plugin/web_search.rs 行为）。
+//! （对齐 旧版对应实现 行为）。
 //! 无 gpui 依赖，可单元测试。
 //!
-//! 相对 Tauri 版的偏离：
+//! 相对 旧版的偏离：
 //!   - URL 编码用本地 encode_query（不引入 urlencoding 依赖；同 %20 语义，单测锚定）
 //!   - execute 返回 ExecuteOutcome::Open（opener 上移 Launcher 层），且先走沙盒
-//!     NetworkAccess 域名校验——检查事件落审计管道（Tauri 版无此检查）
+//!     NetworkAccess 域名校验——检查事件落审计管道（旧版无此检查）
 
 use std::sync::Arc;
 
@@ -57,7 +57,7 @@ pub struct WebSearchPlugin {
 
 impl WebSearchPlugin {
     pub fn new(sandbox: Arc<SandboxManager>) -> Self {
-        // 引擎表与 Tauri 版一致（名称/关键词/URL 模板/图标）
+        // 引擎表与 旧版一致（名称/关键词/URL 模板/图标）
         let engines = [
             ("Google", "g", "https://www.google.com/search?q={query}", "🔍"),
             ("Bing", "b", "https://www.bing.com/search?q={query}", "🔎"),

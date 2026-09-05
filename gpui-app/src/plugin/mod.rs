@@ -1,9 +1,9 @@
-//! 插件框架：trait + 基础类型（对齐 src-tauri/src/plugin/mod.rs 与 core::types 语义）。
+//! 插件框架：trait + 基础类型（对齐 旧版对应实现 与 core::types 语义）。
 //! 无 gpui 依赖，可单元测试。
 //!
-//! 相对 Tauri 版的刻意偏离（在各处注释重复说明）：
+//! 相对 旧版的刻意偏离（在各处注释重复说明）：
 //!   - trait 方法同步：GPUI 搜索跑在后台执行器的同步路径上，插件以内部可变性管理
-//!     自身状态（Tauri 版 async_trait + tokio）
+//!     自身状态（旧版 async_trait + tokio）
 //!   - execute 返回 [`ExecuteOutcome`] 而非 `Result<()>`：副作用（打开 URL / 写剪贴板）
 //!     上移到 Launcher 层真正执行，插件保持纯函数、无需 gpui 即可单测
 //!   - 类型裁剪：PluginMetadata 去掉 WoxImage / commands / settings / supported_os /
@@ -65,7 +65,7 @@ impl PluginMetadata {
 }
 
 /// 查询上下文（Tauri QueryContext 只保留 search；trigger_keyword/command 语义
-/// 由各插件在自己的 query 实现内匹配，与 Tauri 版插件行为一致）
+/// 由各插件在自己的 query 实现内匹配，与 旧版插件行为一致）
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct QueryContext {
     pub search: String,
@@ -147,7 +147,7 @@ impl QueryResult {
 }
 
 /// 执行副作用的声明式描述：插件只声明"想做什么"，Launcher 层真正执行
-/// （opener 打开 / 系统剪贴板写入）。Tauri 版 execute 直接做副作用（async），
+/// （opener 打开 / 系统剪贴板写入）。旧版 execute 直接做副作用（async），
 /// GPUI 版上移到 UI 层，换取插件无 gpui 依赖、可单测
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecuteOutcome {

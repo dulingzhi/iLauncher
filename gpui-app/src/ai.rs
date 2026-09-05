@@ -1,8 +1,8 @@
 //! AI 助手引擎（跨平台，无 gpui 依赖，可单测）。
 //!
-//! 对齐 Tauri `plugin/ai_assistant.rs` 的对外语义：配置模型、对话模型、
+//! 对齐旧版 ai_assistant 插件的对外语义：配置模型、对话模型、
 //! send_message 流程（空 key 报错 → 追加用户消息 → 调 API → 追加回复 →
-//! 首条消息重命名标题）。与 Tauri 版的差异：
+//! 首条消息重命名标题）。与旧版的差异：
 //! - 时间戳 Unix 秒 u64（Tauri 为 chrono i64，同 workflow 处理）
 //! - 会话/配置持久化到 JSON（Tauri 仅内存，重启即丢）
 //! - Tauri 六个 provider 调用函数大量雷同（openai/custom/deepseek/github
@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_TITLE: &str = "新对话";
 
-// ── 配置与对话模型（serde 字段与 Tauri 版一致） ─────────────────────────────
+// ── 配置与对话模型（serde 字段与 旧版一致） ─────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AIConfig {
@@ -65,7 +65,7 @@ pub struct Conversation {
 
 // ── provider 请求构造/响应解析（纯函数，核心去重） ──────────────────────────
 //
-// Tauri 版六个 async 调用函数 → 两类纯函数：
+// 旧版六个 async 调用函数 → 两类纯函数：
 // - OpenAI 兼容族（openai/custom/deepseek/github copilot）：同 endpoint
 //   同请求体同响应 shape，仅默认 base_url 与额外头不同 → 查表
 // - anthropic / gemini / ollama：各家一份构造 + 一份解析
@@ -78,7 +78,7 @@ struct CompatVariant {
 
 fn compat_variant(provider: &str) -> Option<CompatVariant> {
     match provider {
-        // custom 与 openai 完全同构（Tauri 版即复用 openai 函数）
+        // custom 与 openai 完全同构（旧版即复用 openai 函数）
         "openai" | "custom" => {
             Some(CompatVariant { default_base: "https://api.openai.com/v1", extra_headers: &[] })
         }

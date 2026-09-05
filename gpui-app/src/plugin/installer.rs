@@ -1,10 +1,10 @@
-//! 插件安装与已安装状态管理（对齐 src-tauri/src/plugin/plugin_installer.rs）。
+//! 插件安装与已安装状态管理（对齐 旧版对应实现）。
 //! 无 gpui 依赖，可单元测试（tempdir 构造假 .ilp 走完整安装回路）。
 //!
-//! 相对 Tauri 版的偏离：
-//!   - 同步 fs + parking_lot（Tauri 版 tokio RwLock；本 crate 无 tokio 依赖）
+//! 相对 旧版的偏离：
+//!   - 同步 fs + parking_lot（旧版 tokio RwLock；本 crate 无 tokio 依赖）
 //!   - installed_at 用 Unix 秒 u64（无 chrono 依赖，与 audit.rs 一致）
-//!   - 不迁移 verify_signature：Tauri 版是 #[cfg(not(debug_assertions))] 的空 TODO
+//!   - 不迁移 verify_signature：旧版是 #[cfg(not(debug_assertions))] 的空 TODO
 //!     stub（生产直接 Ok），迁移即搬运死代码；真验签随市场公钥方案一起做
 //!   - 不迁移 update() 的独立方法：卸载+安装两步调用方组合即可（无额外逻辑）
 

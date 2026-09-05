@@ -7,7 +7,7 @@
 //   - ↑↓ 选择、Enter 启动（opener）、托盘"退出"
 //
 // 用法：
-//   ilauncher-gpui                      Demo 数据运行（不依赖 src-tauri）
+//   ilauncher-gpui                      Demo 数据运行（自包含，无需外部数据）
 //   ILAUNCHER_SNAPSHOT=<path> ilauncher-gpui   真实快照搜索（需 --features ilauncher 构建）
 //   ilauncher-gpui --bench              列表滚动帧率基准
 //   ilauncher-gpui --snapshot <path>    LiveIndex 进程内搜索基准（需 feature ilauncher）
@@ -1251,7 +1251,7 @@ fn main() {
         market
     };
 
-    // ── 工作流引擎：JSON 定义加载（目录与 Tauri 版一致；编辑器 UI 不做，直接放 JSON） ──
+    // ── 工作流引擎：JSON 定义加载（目录与 旧版一致；编辑器 UI 不做，直接放 JSON） ──
     #[cfg(windows)]
     let workflows = {
         let dir = std::env::var_os("LOCALAPPDATA")

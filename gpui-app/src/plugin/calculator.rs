@@ -1,11 +1,11 @@
 //! 计算器插件：数学表达式、进制转换、单位转换
-//! （对齐 src-tauri/src/plugin/calculator.rs 行为）。
+//! （对齐 旧版对应实现 行为）。
 //! 无 gpui 依赖，可单元测试。
 //!
-//! 相对 Tauri 版的偏离：
+//! 相对 旧版的偏离：
 //!   - 正则由手写字符类谓词替代（不引入 regex 依赖；模式本身 trivial）
 //!   - execute 的 copy 动作返回 ExecuteOutcome::Copy（副作用上移 Launcher 层），
-//!     且先走沙盒 ClipboardAccess 权限检查——检查事件落审计管道（Tauri 版 copy 是空实现）
+//!     且先走沙盒 ClipboardAccess 权限检查——检查事件落审计管道（旧版 copy 是空实现）
 
 use std::sync::Arc;
 

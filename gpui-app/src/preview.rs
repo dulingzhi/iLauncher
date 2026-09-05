@@ -1,4 +1,4 @@
-//! 文件预览：对齐 src-tauri/src/preview/mod.rs 的行为（去掉代码高亮 HTML，GPUI 版一期
+//! 文件预览：对齐 旧版对应实现 的行为（去掉代码高亮 HTML，GPUI 版一期
 //! 展示原文；语法高亮可后续换 gpui-component highlighter）。
 //!
 //! 纯同步实现（≤1MB 小文件读取毫秒级），UI 侧在后台执行器跑并做防抖；
@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 
-/// 超过 1MB 不预览（与 Tauri 版一致）
+/// 超过 1MB 不预览（与 旧版一致）
 pub const MAX_PREVIEW_SIZE: u64 = 1024 * 1024;
 /// UI 展示截断行数（内容仍完整返回，截断是渲染层行为）
 pub const MAX_PREVIEW_LINES: usize = 200;
@@ -63,7 +63,7 @@ pub fn get_file_type(extension: &str) -> FileType {
     if ext == "json" {
         return FileType::Json;
     }
-    // 代码文件（与 Tauri 版同清单）
+    // 代码文件（与 旧版同清单）
     if matches!(
         ext.as_str(),
         "rs" | "js"
@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn file_type_mapping_matches_tauri_version() {
+    fn file_type_mapping_matches_legacy_version() {
         assert_eq!(get_file_type("png"), FileType::Image);
         assert_eq!(get_file_type("JPG"), FileType::Image);
         assert_eq!(get_file_type("svg"), FileType::Image);

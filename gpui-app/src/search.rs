@@ -4,7 +4,7 @@
 //   - Live：ilauncher_lib 的 LiveIndex（真实 MFT 快照，feature ilauncher）
 //   - Demo：内存假数据（无 feature 或开发调试）
 //
-// 语义约定（与现行 Tauri 版启动器一致）：
+// 语义约定（与旧版启动器一致）：
 //   - 空查询返回空结果（启动器惯例：不打断用户前先给全量列表）
 //   - 非空查询最多返回 limit 条
 //   - Demo 源为大小写不敏感子串匹配；Live 源走 LiveIndex 的模糊搜索
@@ -153,7 +153,7 @@ impl SearchSource {
                     .flat_map(|idx| idx.search(q, per_drive).unwrap_or_default())
                     .map(|h| Entry::with_score(h.name, h.path, h.score))
                     .collect();
-                merged.sort_by(|a, b| b.score.cmp(&a.score));
+                merged.sort_by_key(|a| std::cmp::Reverse(a.score));
                 merged.truncate(limit);
                 merged
             }

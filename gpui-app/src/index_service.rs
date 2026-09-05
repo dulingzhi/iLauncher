@@ -82,7 +82,7 @@ pub mod imp {
         unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, false, PCWSTR(name.as_ptr())).is_ok() }
     }
 
-    /// ShellExecuteW runas 提权启动本程序（带自定义参数，与现行 Tauri 版同一手法）
+    /// ShellExecuteW runas 提权启动本程序（带自定义参数；与旧版同一手法）
     fn spawn_elevated(args: &str) {
         let exe = std::env::current_exe().expect("current exe");
         let result = unsafe {

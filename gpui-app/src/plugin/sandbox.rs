@@ -1,10 +1,10 @@
-//! 插件沙盒：权限模型 + 资源访问控制（对齐 src-tauri/src/plugin/sandbox.rs 语义）。
+//! 插件沙盒：权限模型 + 资源访问控制（对齐 旧版对应实现 语义）。
 //! 无 gpui 依赖，可单元测试。
 //!
-//! 相对 Tauri 版的刻意偏离：
-//!   - 审计 logger 由构造方注入共享实例：Tauri 版 SandboxManager 自持独立 logger
+//! 相对 旧版的刻意偏离：
+//!   - 审计 logger 由构造方注入共享实例：旧版 SandboxManager 自持独立 logger
 //!     （事件写进黑洞，生产从未读取）；GPUI 版事件直接落全局审计管道，查看器实时可见
-//!   - 不迁移 SandboxedExecution 超时包装器：Tauri 版全程 dead_code，生产无使用方
+//!   - 不迁移 SandboxedExecution 超时包装器：旧版全程 dead_code，生产无使用方
 //!   - 不迁移审计条目 getter：全局 AuditLogger 已暴露同款接口，迁移即重复
 //!   - 同步 parking_lot 锁（GPUI 版无 tokio 运行时依赖）
 
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audit::{AuditEventType, AuditLogger, AuditSeverity};
 
-/// 插件权限类型（与 Tauri 版一一对应）
+/// 插件权限类型（与 旧版一一对应）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PluginPermission {
     /// 文件系统读取（指定目录）
@@ -68,7 +68,7 @@ pub enum SecurityLevel {
 }
 
 impl SecurityLevel {
-    /// 获取默认权限集（与 Tauri 版逐条一致）
+    /// 获取默认权限集（与 旧版逐条一致）
     pub fn default_permissions(&self) -> HashSet<PluginPermission> {
         match self {
             SecurityLevel::System => [
@@ -133,7 +133,7 @@ impl SandboxConfig {
 /// 插件沙盒管理器
 pub struct SandboxManager {
     configs: RwLock<HashMap<String, SandboxConfig>>,
-    /// 共享审计 logger：每次权限检查写入事件（Tauri 版写自持 logger 成黑洞，此处纠正）
+    /// 共享审计 logger：每次权限检查写入事件（旧版写自持 logger 成黑洞，此处纠正）
     audit_logger: Arc<Mutex<AuditLogger>>,
 }
 
@@ -148,7 +148,7 @@ impl SandboxManager {
         self.configs.write().insert(config.plugin_id.clone(), config);
     }
 
-    /// 检查权限（检查即审计：允许 Info / 拒绝 Warning，语义与 Tauri 版一致）
+    /// 检查权限（检查即审计：允许 Info / 拒绝 Warning，语义与 旧版一致）
     pub fn check_permission(&self, plugin_id: &str, permission: &PluginPermission) -> Result<()> {
         let configs = self.configs.read();
         let config = configs

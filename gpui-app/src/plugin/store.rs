@@ -1,8 +1,8 @@
-//! 插件商店客户端（对齐 src-tauri/src/plugin/plugin_store.rs）。
+//! 插件商店客户端（对齐 旧版对应实现）。
 //! HTTP 走 gpui-kit ReqwestClient（与 updater.rs 同模式：调用方传 &dyn HttpClient），
 //! URL 构建与响应解析为纯函数，可无网络单测。
 //!
-//! 相对 Tauri 版的偏离：
+//! 相对 旧版的偏离：
 //!   - 只迁移窗口 UI 有消费方的方法：search / popular / download（其余
 //!     get_plugin_details / get_recent_plugins / get_plugins_by_category /
 //!     check_updates / clear_cache 随更富的市场 UI 再补，不搬死代码）
@@ -133,7 +133,7 @@ async fn get_bytes(client: &dyn HttpClient, url: &str) -> Result<Vec<u8>> {
     Ok(body)
 }
 
-/// 构建搜索 URL（纯函数：参数拼查询串，key 与 Tauri 版一致）
+/// 构建搜索 URL（纯函数：参数拼查询串，key 与 旧版一致）
 fn build_search_url(base_url: &str, params: &SearchParams) -> String {
     let mut query_params = Vec::new();
     if let Some(q) = &params.query {

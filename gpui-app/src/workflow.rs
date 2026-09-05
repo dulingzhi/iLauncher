@@ -1,16 +1,16 @@
-//! 工作流引擎：自动化任务编排（对齐 src-tauri/src/plugin/workflow_engine.rs 模型）。
+//! 工作流引擎：自动化任务编排（对齐 旧版对应实现 模型）。
 //! 无 gpui 依赖，可单元测试（HttpRequest 走注入的 MockHttpClient）。
 //!
-//! 相对 Tauri 版的刻意偏离：
+//! 相对 旧版的刻意偏离：
 //!   - 删死变体：PluginQuery / PluginExecute（Tauri execute_step 落到
 //!     `_ => Err("Unsupported action")`，从未实现）
 //!   - 副作用收集：CopyToClipboard / ShowNotification 推入 Vec<WorkflowEffect>
 //!     由调用层（Launcher/UI）执行——与插件 ExecuteOutcome 同哲学，引擎无
-//!     arboard/系统通知依赖、可单测（Tauri 版内联 arboard，ShowNotification
+//!     arboard/系统通知依赖、可单测（旧版内联 arboard，ShowNotification
 //!     只是 tracing log）
 //!   - OpenFile 用 opener crate（替代 cmd /c start 黑窗闪烁）
 //!   - TimeRange 真正实现（Tauri 落入 `_ => Ok(true)` 默认放行）；
-//!     Expression 保持默认放行（表达式语言 Tauri 版同样不存在）
+//!     Expression 保持默认放行（表达式语言 旧版同样不存在）
 //!   - Retry 保持 Tauri 语义：全部尝试失败仍继续工作流（注释标记，属上游行为）
 //!   - chrono → Unix 秒；Delay 用自写 timer future（无 tokio）；
 //!     ProcessRunning 用 Windows Toolhelp32 快照（非 Windows 返回 false）
@@ -48,12 +48,12 @@ pub struct Workflow {
     pub updated_at: u64,
 }
 
-/// 工作流触发器（serde tag 格式与 Tauri 版一致）
+/// 工作流触发器（serde tag 格式与 旧版一致）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WorkflowTrigger {
     /// 手动触发（关键词精确匹配，启动器唯一有调度设施的触发器；
-    /// Hotkey/Schedule/Event 仅存储定义，Tauri 版同样无调度实现）
+    /// Hotkey/Schedule/Event 仅存储定义，旧版同样无调度实现）
     Manual { keyword: String },
     /// 热键触发（存储定义，调度设施未实现——Tauri 同）
     Hotkey { key: String },
@@ -85,7 +85,7 @@ pub enum WorkflowAction {
     OpenFile { path: String },
     /// 复制到剪贴板（副作用：推入 effects，调用层执行）
     CopyToClipboard { content: String },
-    /// 显示通知（副作用：推入 effects，调用层执行；Tauri 版仅 tracing log）
+    /// 显示通知（副作用：推入 effects，调用层执行；旧版仅 tracing log）
     ShowNotification { title: String, message: String },
     /// HTTP 请求
     HttpRequest { method: String, url: String, headers: HashMap<String, String>, body: Option<String> },
@@ -113,7 +113,7 @@ pub enum WorkflowCondition {
     ProcessRunning { name: String },
     /// 时间范围（"HH:MM"-"HH:MM"，本地时间，支持跨午夜）
     TimeRange { start: String, end: String },
-    /// 自定义表达式（未实现：恒 true，与 Tauri 版行为一致）
+    /// 自定义表达式（未实现：恒 true，与 旧版行为一致）
     Expression { expr: String },
     /// 逻辑与
     And { conditions: Vec<WorkflowCondition> },
@@ -391,7 +391,7 @@ impl WorkflowEngine {
                             }
                         }
                     } else if let Some(cond) = condition {
-                        // 无 count 有 condition：循环上限防护（Tauri 版无上限，死循环风险）
+                        // 无 count 有 condition：循环上限防护（旧版无上限，死循环风险）
                         for _ in 0..10_000 {
                             if !self.evaluate_condition(cond, context).await? {
                                 break;
@@ -433,7 +433,7 @@ impl WorkflowEngine {
                     let (start_m, end_m) = parse_time_range(start, end)?;
                     Ok(time_in_range(start_m, end_m, now_local_minutes()))
                 }
-                // 表达式语言不存在（Tauri 版同）：恒 true
+                // 表达式语言不存在（旧版同）：恒 true
                 WorkflowCondition::Expression { .. } => Ok(true),
                 WorkflowCondition::And { conditions } => {
                     for cond in conditions {

@@ -1,10 +1,10 @@
 //! 插件管理器：注册 / 查询扇出 / 执行分发 / 禁用过滤
-//! （对齐 src-tauri/src/plugin/mod.rs PluginManager 语义）。
+//! （对齐 旧版对应实现 PluginManager 语义）。
 //! 无 gpui 依赖，可单元测试。
 //!
-//! 相对 Tauri 版的偏离：
+//! 相对 旧版的偏离：
 //!   - 同步扇出（trait 已同步，见 mod.rs 头注释）
-//!   - 禁用列表由 set_disabled_plugins 注入（Tauri 版每次查询现读 storage 配置；
+//!   - 禁用列表由 set_disabled_plugins 注入（旧版每次查询现读 storage 配置；
 //!     GPUI 版由 main 启动时从设置注册表加载一次，设置页变更后再热更新）
 //!   - 沙盒权限静态表只登记已迁移插件（calculator / web_search），其余插件随迁移补充
 

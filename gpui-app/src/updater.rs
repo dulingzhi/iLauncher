@@ -1,5 +1,5 @@
-//! 更新检查与安装：对接现行 GitHub releases latest.json 协议（Tauri v2 静态 JSON 格式，
-//! 见 src-tauri/tauri.conf.json plugins.updater）。
+//! 更新检查与安装：对接 GitHub releases latest.json 协议（沿用旧版 Tauri 的
+//! 静态 JSON 格式；发布侧见 scripts/pack-gpui.ps1 + .github/workflows/release.yml）。
 //!
 //! 分层：manifest 解析 / 版本比较 / 状态机文案是纯逻辑（全单测，无 I/O）；
 //! 网络下载与签名校验是薄 I/O 层（gpui-kit 自带 ReqwestClient，rustls）。
@@ -22,10 +22,10 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use gpui_kit::http_client::{AsyncBody, HttpClient};
 use serde::Deserialize;
 
-/// GitHub releases 的 latest.json 地址（tauri.conf.json endpoints 现行值）
+/// GitHub releases 的 latest.json 地址（发布通道现行值）
 pub const DEFAULT_MANIFEST_URL: &str =
     "https://github.com/dulingzhi/iLauncher/releases/latest/download/latest.json";
-/// tauri.conf.json updater pubkey（minisign 公钥，base64，嵌入安装包）
+/// minisign 公钥（base64，嵌入安装包；配对的私钥由发布方保管，签名见 pack-gpui.ps1）
 pub const UPDATE_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFEQ0Y1MDQ1RjE2OTU0ODQKUldTRVZHbnhSVkRQSFRMcFNRei9FSlFZS2dMN1JZbG5URlA3RG9XVWtDem1McVNoRXVxOXczbkYK";
 /// latest.json platforms 下 Windows x64 对应的 key
 pub const WINDOWS_PLATFORM: &str = "windows-x86_64";
@@ -204,7 +204,7 @@ pub async fn download(client: &dyn HttpClient, info: &UpdateInfo) -> Result<std:
 }
 
 /// minisign 签名校验（公钥嵌入，等价 tauri-plugin-updater 的验签步骤）。
-/// 注意两层 base64：tauri.conf.json 的 pubkey / latest.json 的 signature 字段
+/// 注意两层 base64：内置公钥 / latest.json 的 signature 字段
 /// 都是 minisign 文件内容的 base64；minisign-verify 要的是解码后的多行文档
 /// （公钥用 PublicKey::decode 取第二行，签名用 Signature::decode 取四行结构）
 pub fn verify_signature(data: &[u8], signature_b64: &str) -> Result<()> {
