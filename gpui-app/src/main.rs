@@ -12,6 +12,7 @@
 //   ilauncher-gpui --bench              列表滚动帧率基准
 //   ilauncher-gpui --snapshot <path>    LiveIndex 进程内搜索基准（需 feature ilauncher）
 
+mod autostart;
 mod search;
 
 #[cfg(all(feature = "ilauncher", target_os = "windows"))]
@@ -458,24 +459,36 @@ fn spawn_hotkey_thread(tx: mpsc::Sender<AppSignal>) {
 // ── 托盘（菜单事件：显示 / 退出） ────────────────────────────────────────────
 
 fn setup_tray(tx: mpsc::Sender<AppSignal>) {
-    use tray_icon::menu::{Menu, MenuEvent, MenuItem};
-    use tray_icon::TrayIconBuilder;
-
-    let menu = Menu::new();
-    let _ = menu.append(&MenuItem::with_id("show", "显示 iLauncher", true, None));
-    let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
-    let _ = menu.append(&MenuItem::with_id("quit", "退出", true, None));
-    match TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("iLauncher (gpui P1)").build() {
-        Ok(_tray) => {
-            println!("✓ 托盘已创建");
-            // 故意泄漏保持存活（正式版接事件）
-            std::mem::forget(_tray);
-        }
-        Err(e) => println!("⚠️ 托盘创建失败: {e}"),
-    }
-
-    // 菜单点击事件线程（muda）
+    // 托盘整体（含 CheckMenuItem 句柄）都在本线程创建和使用——
+    // muda 的菜单项内部是 Rc，!Send，跨线程移动会编译失败
     std::thread::spawn(move || {
+        use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
+        use tray_icon::TrayIconBuilder;
+
+        let menu = Menu::new();
+        let _ = menu.append(&MenuItem::with_id("show", "显示 iLauncher", true, None));
+        let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
+        // 开机自启：可勾选项，初始状态读注册表
+        let autostart_item =
+            CheckMenuItem::with_id("autostart", "开机自启动", true, autostart::is_enabled(), None);
+        let _ = menu.append(&autostart_item);
+        let _ = menu.append(&MenuItem::with_id("quit", "退出", true, None));
+        let _tray = match TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("iLauncher (gpui P1)")
+            .build()
+        {
+            Ok(tray) => {
+                println!("✓ 托盘已创建（开机自启={}）", autostart::is_enabled());
+                tray
+            }
+            Err(e) => {
+                println!("⚠️ 托盘创建失败: {e}");
+                return;
+            }
+        };
+
+        // 菜单点击事件循环（muda），本线程内同步勾选状态
         let receiver = MenuEvent::receiver();
         loop {
             if let Ok(event) = receiver.recv() {
@@ -485,6 +498,28 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                     }
                     "rebuild" => {
                         let _ = tx.send(AppSignal::RebuildIndex);
+                    }
+                    "autostart" => {
+                        // 切换注册表 Run 项并同步勾选状态
+                        let now_enabled = if autostart::is_enabled() {
+                            match autostart::disable() {
+                                Ok(()) => false,
+                                Err(e) => {
+                                    println!("⚠️ 取消自启失败: {e:#}");
+                                    true
+                                }
+                            }
+                        } else {
+                            match autostart::enable() {
+                                Ok(()) => true,
+                                Err(e) => {
+                                    println!("⚠️ 设置自启失败: {e:#}");
+                                    false
+                                }
+                            }
+                        };
+                        autostart_item.set_checked(now_enabled);
+                        println!("✓ 开机自启 → {}", if now_enabled { "已启用" } else { "已关闭" });
                     }
                     "quit" => std::process::exit(0),
                     _ => {}
