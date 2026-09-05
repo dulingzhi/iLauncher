@@ -835,13 +835,15 @@ impl WindowGuard {
         }
         let store = self.deps.clipboard_store.clone();
         let mut panel_slot: Option<Entity<clipboard_ui::ClipboardPanel>> = None;
-        let result = cx.open_window(make_window_options(), |window, cx| {
+        let result = cx.open_window(make_panel_window_options(), |window, cx| {
             let panel = cx.new(|cx| clipboard_ui::ClipboardPanel::new(window, cx, store));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
         });
         match result {
             Ok(handle) => {
+                // 新窗口显式前台激活：不激活时 PopUp/Normal 都可能落在别的窗口后面
+                let _ = handle.update(cx, |_, window, _| window.activate_window());
                 println!("✓ 剪贴板历史窗口已打开");
                 self.clipboard_window = Some((handle, panel_slot.expect("clipboard panel entity")));
             }
@@ -873,7 +875,7 @@ impl WindowGuard {
                 origin: Point { x: px(160.), y: px(120.) },
                 size: size(px(860.), px(560.)),
             })),
-            ..make_window_options()
+            ..make_panel_window_options()
         };
         let mut view_slot: Option<Entity<settings_ui::SettingsView>> = None;
         let result = cx.open_window(options, |window, cx| {
@@ -891,6 +893,8 @@ impl WindowGuard {
         });
         match result {
             Ok(handle) => {
+                // 新窗口显式前台激活：不激活时 PopUp/Normal 都可能落在别的窗口后面
+                let _ = handle.update(cx, |_, window, _| window.activate_window());
                 println!("✓ 设置窗口已打开");
                 self.settings_window = Some((handle, view_slot.expect("settings view entity")));
             }
@@ -920,13 +924,15 @@ impl WindowGuard {
         }
         let logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<audit_ui::AuditPanel>> = None;
-        let result = cx.open_window(make_window_options(), |window, cx| {
+        let result = cx.open_window(make_panel_window_options(), |window, cx| {
             let panel = cx.new(|cx| audit_ui::AuditPanel::new(window, cx, logger));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
         });
         match result {
             Ok(handle) => {
+                // 新窗口显式前台激活：不激活时 PopUp/Normal 都可能落在别的窗口后面
+                let _ = handle.update(cx, |_, window, _| window.activate_window());
                 println!("✓ 审计日志窗口已打开");
                 self.audit_window = Some((handle, panel_slot.expect("audit panel entity")));
             }
@@ -942,13 +948,15 @@ impl WindowGuard {
         }
         let state = self.deps.market.clone();
         let mut panel_slot: Option<Entity<plugin_ui::MarketPanel>> = None;
-        let result = cx.open_window(make_window_options(), |window, cx| {
+        let result = cx.open_window(make_panel_window_options(), |window, cx| {
             let panel = cx.new(|cx| plugin_ui::MarketPanel::new(window, cx, state));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
         });
         match result {
             Ok(handle) => {
+                // 新窗口显式前台激活：不激活时 PopUp/Normal 都可能落在别的窗口后面
+                let _ = handle.update(cx, |_, window, _| window.activate_window());
                 println!("✓ 插件窗口已打开");
                 self.plugins_window = Some((handle, panel_slot.expect("market panel entity")));
             }
@@ -965,13 +973,15 @@ impl WindowGuard {
         let engine = self.deps.workflows.clone();
         let audit_logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<workflow_ui::WorkflowPanel>> = None;
-        let result = cx.open_window(make_window_options(), |window, cx| {
+        let result = cx.open_window(make_panel_window_options(), |window, cx| {
             let panel = cx.new(|cx| workflow_ui::WorkflowPanel::new(window, cx, engine, audit_logger));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
         });
         match result {
             Ok(handle) => {
+                // 新窗口显式前台激活：不激活时 PopUp/Normal 都可能落在别的窗口后面
+                let _ = handle.update(cx, |_, window, _| window.activate_window());
                 println!("✓ 工作流窗口已打开");
                 self.workflow_window = Some((handle, panel_slot.expect("workflow panel entity")));
             }
@@ -987,13 +997,15 @@ impl WindowGuard {
         }
         let chat = self.deps.ai_chat.clone();
         let mut panel_slot: Option<Entity<ai_ui::AiChatPanel>> = None;
-        let result = cx.open_window(make_window_options(), |window, cx| {
+        let result = cx.open_window(make_panel_window_options(), |window, cx| {
             let panel = cx.new(|cx| ai_ui::AiChatPanel::new(window, cx, chat));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
         });
         match result {
             Ok(handle) => {
+                // 新窗口显式前台激活：不激活时 PopUp/Normal 都可能落在别的窗口后面
+                let _ = handle.update(cx, |_, window, _| window.activate_window());
                 println!("✓ AI 对话窗口已打开");
                 self.ai_window = Some((handle, panel_slot.expect("ai chat panel entity")));
             }
@@ -1013,6 +1025,27 @@ fn make_window_options() -> WindowOptions {
         })),
         ..Default::default()
     }
+}
+
+/// 副窗口（设置/剪贴板/审计/插件/工作流/AI）选项：外观与主窗口一致，
+/// 但 kind 用 Normal——进任务栏，被其他窗口遮挡时用户仍能从任务栏找回；
+/// 主窗口保持 PopUp（启动器语义，不占任务栏）
+fn make_panel_window_options() -> WindowOptions {
+    WindowOptions {
+        kind: WindowKind::Normal,
+        ..make_window_options()
+    }
+}
+
+/// Windows 下 gpui 默认 .SystemUIFont 对 CJK 字形回退到宋体（SimSun），
+/// 界面发虚发"土"；显式指定微软雅黑。主题每次 change 后需重刷
+/// （font_family 不在 ThemeMode 切换的保留字段里）
+#[cfg(target_os = "windows")]
+fn apply_cjk_font(cx: &mut gpui_kit::App) {
+    use gpui_kit::component::theme::Theme;
+    cx.update_global::<Theme, _>(|theme, _| {
+        theme.font_family = "Microsoft YaHei UI".into();
+    });
 }
 
 // ── 热键线程 ────────────────────────────────────────────────────────────────
@@ -1293,6 +1326,22 @@ fn main() {
     spawn_hotkey_thread(tx.clone());
     // 启动即显示主窗口（含 bench 模式）；之后 Esc 隐藏、热键/托盘唤起
     let _ = tx.send(AppSignal::Show(Instant::now()));
+    // 开发调试：ILAUNCHER_DEV_OPEN=settings|clipboard|audit|plugins|workflows|ai
+    // 启动时直接唤起对应副窗口（免点托盘，供本机冒烟/截图用）
+    if let Ok(which) = std::env::var("ILAUNCHER_DEV_OPEN") {
+        let sig = match which.as_str() {
+            "settings" => Some(AppSignal::ShowSettings),
+            "clipboard" => Some(AppSignal::ShowClipboard),
+            "audit" => Some(AppSignal::ShowAudit),
+            "plugins" => Some(AppSignal::ShowPlugins),
+            "workflows" => Some(AppSignal::ShowWorkflows),
+            "ai" => Some(AppSignal::ShowAi),
+            _ => None,
+        };
+        if let Some(sig) = sig {
+            let _ = tx.send(sig);
+        }
+    }
 
     let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
@@ -1309,6 +1358,8 @@ fn main() {
             );
             println!("✓ 主题初始化 → {}", if dark { "深色" } else { "浅色" });
         }
+        #[cfg(target_os = "windows")]
+        apply_cjk_font(cx);
         // 设置页 model 全局实体（字段值闭包的数据源，托盘/设置页共用）
         #[cfg(windows)]
         settings_ui::init_model(cx);
@@ -1421,6 +1472,9 @@ fn main() {
                         cx.refresh_windows();
                         // 同步设置页 model，避免托盘切换后设置页显示过期值
                         settings_ui::sync_theme_model(cx, dark);
+                        // Theme::change 会重置 font_family，CJK 字体需重刷
+                        #[cfg(target_os = "windows")]
+                        apply_cjk_font(cx);
                     });
                 }
                 if let Some(t) = latest {
