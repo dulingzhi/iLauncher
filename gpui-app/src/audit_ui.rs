@@ -196,7 +196,7 @@ impl Render for AuditPanel {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child("过滤违规尝试 / 严重级别事件"),
+                            .child("仅显示违规尝试事件（ViolationAttempt）"),
                     ),
             )
             .child(Input::new(&self.input).w_full())

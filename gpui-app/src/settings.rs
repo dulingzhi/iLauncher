@@ -70,6 +70,26 @@ mod imp {
             .unwrap_or(false)
     }
 
+    /// 禁用插件列表值名：逗号分隔的插件 id；不存在/为空 = 全部启用
+    const DISABLED_PLUGINS_VALUE: &str = "DisabledPlugins";
+
+    /// 读取禁用插件列表（解析逗号分隔、去空白、丢弃空项；未设置返回空）
+    pub fn load_disabled_plugins() -> Vec<String> {
+        load_disabled_from(SETTINGS_KEY, DISABLED_PLUGINS_VALUE)
+    }
+
+    fn load_disabled_from(key: &str, name: &str) -> Vec<String> {
+        read_value(key, name)
+            .map(|raw| {
+                raw.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -156,11 +176,34 @@ mod imp {
             // 不断言具体值（随系统设置变化），只验证读取路径不 panic
             let _ = system_prefers_dark();
         }
+
+        #[test]
+        fn disabled_plugins_parse_and_clean() {
+            let name = "disabled_plugins";
+            cleanup(name);
+            assert!(load_disabled_from(TEST_KEY, name).is_empty());
+            write_value(TEST_KEY, name, "calculator, web_search ,,ghost").unwrap();
+            assert_eq!(
+                load_disabled_from(TEST_KEY, name),
+                vec![
+                    "calculator".to_string(),
+                    "web_search".to_string(),
+                    "ghost".to_string()
+                ]
+            );
+            // 全空串 → 空列表
+            write_value(TEST_KEY, name, " , ,").unwrap();
+            assert!(load_disabled_from(TEST_KEY, name).is_empty());
+            cleanup(name);
+        }
     }
 }
 
 #[cfg(windows)]
-pub use imp::{load_clipboard_capacity, load_theme_dark, save_theme_dark, system_prefers_dark};
+pub use imp::{
+    load_clipboard_capacity, load_disabled_plugins, load_theme_dark, save_theme_dark,
+    system_prefers_dark,
+};
 // 容量写/夹取常量仅在剪贴板设置项存在时使用
 #[cfg(all(windows, feature = "clipboard"))]
 pub use imp::{save_clipboard_capacity, CLIPBOARD_CAPACITY_MAX, CLIPBOARD_CAPACITY_MIN};

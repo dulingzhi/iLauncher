@@ -16,16 +16,52 @@ pub struct Entry {
     pub path: String,
     /// 索引 fzf 匹配分（Demo 源恒 0；Live 源用于跨盘合并排序）
     pub score: i64,
+    /// 结果来源：文件（默认，可预览/直接 opener）或插件结果（经 PluginManager 分发执行）
+    pub origin: EntryOrigin,
+}
+
+/// 结果来源
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EntryOrigin {
+    /// 文件系统条目：path 为真实路径，可预览、直接 opener 打开
+    File,
+    /// 插件结果：path 字段复用为副标题；执行走 PluginManager → 插件 execute
+    Plugin {
+        plugin_id: String,
+        result_id: String,
+        action_id: String,
+        icon: Option<String>,
+    },
 }
 
 impl Entry {
     pub fn new(name: impl Into<String>, path: impl Into<String>) -> Self {
-        Self { name: name.into(), path: path.into(), score: 0 }
+        Self { name: name.into(), path: path.into(), score: 0, origin: EntryOrigin::File }
     }
 
     #[cfg(feature = "ilauncher")]
     pub fn with_score(name: impl Into<String>, path: impl Into<String>, score: i64) -> Self {
-        Self { name: name.into(), path: path.into(), score }
+        Self { name: name.into(), path: path.into(), score, origin: EntryOrigin::File }
+    }
+
+    /// 插件结果条目（PluginManager.query_entries 用）：
+    /// name=标题、path=副标题、执行目标打包进 origin
+    pub fn plugin_result(
+        title: impl Into<String>,
+        subtitle: impl Into<String>,
+        score: i64,
+        icon: String,
+        action_id: String,
+        result_id: String,
+        plugin_id: String,
+    ) -> Self {
+        let icon = if icon.is_empty() { None } else { Some(icon) };
+        Self {
+            name: title.into(),
+            path: subtitle.into(),
+            score,
+            origin: EntryOrigin::Plugin { plugin_id, result_id, action_id, icon },
+        }
     }
 }
 

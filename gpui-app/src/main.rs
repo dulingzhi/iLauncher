@@ -14,6 +14,7 @@
 
 mod audit;
 mod autostart;
+mod plugin;
 mod preview;
 mod search;
 mod settings;
@@ -108,8 +109,10 @@ struct Launcher {
     /// 预览：路径 + 读取结果（Err 为展示用错误文本）
     preview: Option<(std::path::PathBuf, Result<preview::FilePreview, String>)>,
     preview_gen: usize,
-    /// 审计日志（启动文件记 ProgramExecution；后续插件沙盒事件同管道）
+    /// 审计日志（启动文件记 ProgramExecution；插件沙盒事件经 plugin 模块同管道写入）
     audit_logger: Arc<Mutex<audit::AuditLogger>>,
+    /// 插件管理器（搜索扇出 + 执行分发；沙盒权限检查写审计）
+    plugins: Arc<plugin::PluginManager>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -119,6 +122,7 @@ impl Launcher {
         cx: &mut Context<Self>,
         source: SearchSource,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
+        plugins: Arc<plugin::PluginManager>,
     ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索应用、文件、命令…（中文 IME 请在这里验证）"));
         let focus = cx.focus_handle();
@@ -145,6 +149,7 @@ impl Launcher {
             preview: None,
             preview_gen: 0,
             audit_logger,
+            plugins,
             _subscriptions: Vec::new(),
         };
         if this.bench {
@@ -180,9 +185,15 @@ impl Launcher {
         .detach();
     }
 
-    /// 防抖后到期的真正搜索：空查询清空结果，非空最多 PAGE_LIMIT 条
+    /// 防抖后到期的真正搜索：空查询清空结果，非空最多 PAGE_LIMIT 条。
+    /// 文件结果在前，插件结果按 score 降序追加其后（对齐 Tauri 排序语义）
     fn apply_query(&mut self, query: String, cx: &mut Context<Self>) {
-        self.entries = std::rc::Rc::new(self.source.search(&query, PAGE_LIMIT));
+        let mut entries = self.source.search(&query, PAGE_LIMIT);
+        // bench 模式跳过插件扇出：避免插件结果混入滚动/渲染性能基线
+        if !self.bench {
+            entries.extend(self.plugins.query_entries(&query, PAGE_LIMIT));
+        }
+        self.entries = std::rc::Rc::new(entries);
         self.selected = 0;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
         self.schedule_preview(cx);
@@ -193,6 +204,17 @@ impl Launcher {
     fn schedule_preview(&mut self, cx: &mut Context<Self>) {
         self.preview_gen = self.preview_gen.wrapping_add(1);
         let gen_id = self.preview_gen;
+        // 插件结果无文件可预览（path 字段是副标题）
+        let is_file = self
+            .entries
+            .get(self.selected)
+            .map(|e| e.origin == search::EntryOrigin::File)
+            .unwrap_or(false);
+        if !is_file {
+            self.preview = None;
+            cx.notify();
+            return;
+        }
         let Some(path) = self.entries.get(self.selected).map(|e| std::path::PathBuf::from(&e.path)) else {
             self.preview = None;
             cx.notify();
@@ -226,28 +248,71 @@ impl Launcher {
         cx.notify();
     }
 
-    /// 启动当前选中项（并记审计：程序执行）
+    /// 启动当前选中项：文件 → opener；插件 → PluginManager 分发，
+    /// 副作用按 ExecuteOutcome 在此层真正执行（插件侧保持纯函数）
     fn launch_selected(&mut self, cx: &mut Context<Self>) {
         let Some(entry) = self.entries.get(self.selected) else { return };
-        let path = entry.path.clone();
-        println!("LAUNCH {}", path);
-        let opened = opener::open(&path).is_ok();
-        if !opened {
-            eprintln!("⚠ 打开失败: {path}");
+        match &entry.origin {
+            search::EntryOrigin::File => {
+                let path = entry.path.clone();
+                println!("LAUNCH {}", path);
+                let opened = opener::open(&path).is_ok();
+                if !opened {
+                    eprintln!("⚠ 打开失败: {path}");
+                }
+                self.audit_logger.lock().log(
+                    audit::AuditEventType::ProgramExecution {
+                        plugin_id: "ilauncher-core".into(),
+                        program: path,
+                        allowed: true,
+                    },
+                    if opened { audit::AuditSeverity::Info } else { audit::AuditSeverity::Warning },
+                );
+            }
+            search::EntryOrigin::Plugin { plugin_id, result_id, action_id, .. } => {
+                let (plugin_id, result_id, action_id) =
+                    (plugin_id.clone(), result_id.clone(), action_id.clone());
+                match self.plugins.execute(&plugin_id, &result_id, &action_id) {
+                    Ok(plugin::ExecuteOutcome::Open(target)) => {
+                        println!("PLUGIN_OPEN {}", target);
+                        let opened = opener::open(&target).is_ok();
+                        if !opened {
+                            eprintln!("⚠ 打开失败: {target}");
+                        }
+                        self.audit_logger.lock().log(
+                            audit::AuditEventType::ProgramExecution {
+                                plugin_id,
+                                program: target,
+                                allowed: opened,
+                            },
+                            if opened {
+                                audit::AuditSeverity::Info
+                            } else {
+                                audit::AuditSeverity::Warning
+                            },
+                        );
+                    }
+                    Ok(plugin::ExecuteOutcome::Copy(text)) => {
+                        // 剪贴板权限检查已在插件 execute 内完成（事件落审计管道）；
+                        // 写入走 App 级剪贴板（等价 gpui 版 opener 的职责上移）
+                        println!("PLUGIN_COPY {}", text);
+                        cx.write_to_clipboard(ClipboardItem::new_string(text));
+                    }
+                    Err(e) => {
+                        eprintln!("⚠ 插件执行失败（{plugin_id}）: {e:#}");
+                        // 权限拒绝/执行失败记 ProgramExecution 拒绝（插件 id 归属真实来源）
+                        self.audit_logger.lock().log(
+                            audit::AuditEventType::ProgramExecution {
+                                plugin_id,
+                                program: result_id,
+                                allowed: false,
+                            },
+                            audit::AuditSeverity::Warning,
+                        );
+                    }
+                }
+            }
         }
-        // 审计：插件 id 用 ilauncher-core（插件沙盒事件随 PluginManager 接入同管道）
-        self.audit_logger.lock().log(
-            audit::AuditEventType::ProgramExecution {
-                plugin_id: "ilauncher-core".into(),
-                program: path,
-                allowed: true,
-            },
-            if opened {
-                audit::AuditSeverity::Info
-            } else {
-                audit::AuditSeverity::Warning
-            },
-        );
         cx.notify();
     }
 
@@ -455,6 +520,11 @@ impl Render for Launcher {
                                                     .map(|ix| {
                                                         let entry = &entries[ix];
                                                         let is_selected = ix == selected;
+                                                        // 插件结果在标题前渲染 emoji 图标（文件条目无图标）
+                                                        let icon = match &entry.origin {
+                                                            search::EntryOrigin::Plugin { icon: Some(i), .. } => i.clone(),
+                                                            _ => String::new(),
+                                                        };
                                                         // gpui-component ListItem：选中/悬停色全部由
                                                         // theme tokens（list_active / list_hover）驱动
                                                         ListItem::new(ix)
@@ -474,7 +544,17 @@ impl Render for Launcher {
                                                                     .w_full()
                                                                     .justify_between()
                                                                     .gap_2()
-                                                                    .child(div().text_sm().child(entry.name.clone()))
+                                                                    .child(
+                                                                        h_flex()
+                                                                            .gap_2()
+                                                                            .min_w_0()
+                                                                            .children(if icon.is_empty() {
+                                                                                Vec::new()
+                                                                            } else {
+                                                                                vec![div().child(icon).into_any_element()]
+                                                                            })
+                                                                            .child(div().text_sm().child(entry.name.clone())),
+                                                                    )
                                                                     .child(
                                                                         div()
                                                                             .text_xs()
@@ -544,8 +624,10 @@ struct WindowGuard {
     clipboard_window: Option<(WindowHandle<Root>, Entity<clipboard_ui::ClipboardPanel>)>,
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     clipboard_store: Arc<Mutex<ClipboardStore>>,
-    /// 审计日志（共享 logger：启动器核心 + 后续插件沙盒写入）
+    /// 审计日志（共享 logger：启动器核心 + 插件沙盒写入）
     audit_logger: Arc<Mutex<audit::AuditLogger>>,
+    /// 插件管理器（主窗口搜索扇出 + 执行分发）
+    plugins: Arc<plugin::PluginManager>,
     /// 设置窗口
     #[cfg(windows)]
     settings_window: Option<(WindowHandle<Root>, Entity<settings_ui::SettingsView>)>,
@@ -561,6 +643,7 @@ impl WindowGuard {
         tx: mpsc::Sender<AppSignal>,
         index_set: LiveSet,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
+        plugins: Arc<plugin::PluginManager>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -574,6 +657,7 @@ impl WindowGuard {
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
             audit_logger,
+            plugins,
             #[cfg(windows)]
             settings_window: None,
             #[cfg(windows)]
@@ -587,6 +671,7 @@ impl WindowGuard {
         tx: mpsc::Sender<AppSignal>,
         _index_set: LiveSet,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
+        plugins: Arc<plugin::PluginManager>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -599,6 +684,7 @@ impl WindowGuard {
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
             audit_logger,
+            plugins,
             #[cfg(windows)]
             settings_window: None,
             #[cfg(windows)]
@@ -642,9 +728,10 @@ impl WindowGuard {
         let options = make_window_options();
         let source = self.make_source();
         let audit_logger = self.audit_logger.clone();
+        let plugins = self.plugins.clone();
         let mut launcher_slot: Option<Entity<Launcher>> = None;
         let result = cx.open_window(options, |window, cx| {
-            let launcher = cx.new(|cx| Launcher::new(window, cx, source, audit_logger));
+            let launcher = cx.new(|cx| Launcher::new(window, cx, source, audit_logger, plugins));
             launcher_slot = Some(launcher.clone());
             cx.new(|cx| Root::new(launcher, window, cx).bg(cx.theme().background))
         });
@@ -974,6 +1061,16 @@ fn main() {
         logger
     };
 
+    // ── 插件系统：内置插件注册 + 沙盒权限表（权限检查事件写上方同一审计管道） ──
+    let plugins = Arc::new(plugin::PluginManager::new(audit_logger.clone()));
+    #[cfg(windows)]
+    plugins.set_disabled_plugins(settings::load_disabled_plugins());
+    println!(
+        "✓ 插件已注册: {} 个（沙盒权限 {} 项）",
+        plugins.get_plugins().len(),
+        plugins.sandbox().registered_count()
+    );
+
     // ── 剪贴板历史：加载 JSONL + 启动事件监听（feature clipboard） ──────────
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     let clipboard_store = clipboard_ui::init_clipboard();
@@ -1007,6 +1104,7 @@ fn main() {
             tx,
             index_set,
             audit_logger,
+            plugins,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
         );
