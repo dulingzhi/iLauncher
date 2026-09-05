@@ -187,7 +187,10 @@ gpui-component = { version = "0.6" }
 | P1 开机自启 | ✅ 完成 | `autostart.rs` 读写 HKCU Run 项（值名 iLauncher），托盘可勾选菜单，6 个单测走独立测试子键 |
 | P1 主题 | ✅ 完成 | 全组件走 gpui-component Theme token；托盘「深色主题」可勾选，偏好持久化到 HKCU\Software\iLauncher（无偏好时跟随系统 AppsUseLightTheme） |
 | P1 i18n | ⬜ 未做 | rust-i18n（gpui-component 同款），P2 随设置页一起 |
-| P2 数据环 | ⬜ 未开始 | ClipboardHistory / 设置页 / UpdateChecker / PreviewPanel |
+| P2 剪贴板历史 | ✅ 完成 | 独立 crate `ilauncher-clipboard`：WM_CLIPBOARDUPDATE 监听线程、JSONL 持久化（容量截断、文本连续去重）、搜索/删除/清空；**图片支持**——get_image → 采样哈希 → 落盘 PNG + 全库哈希去重，删除/清空连带删文件，复制按类型分派（copy_text/copy_image）；store 15 单测 + monitor_smoke 真实文本/图片事件路径 |
+| P2 设置页 | ⬜ 未开始 | 骨架 + 通用/主题/剪贴板/索引/关于分区 |
+| P2 UpdateChecker | ⬜ 未开始 | self_update 接现有 JSON 协议 |
+| P2 PreviewPanel | ⬜ 未开始 | |
 | P3/P4 | ⬜ 未开始 | |
 
 **与 4.4-5 的偏差说明**：
