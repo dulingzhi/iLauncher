@@ -1,0 +1,24 @@
+[package]
+name = "ilauncher-clipboard"
+version = "0.1.0"
+edition = "2021"
+description = "iLauncher clipboard history store + Windows monitor（无 UI 依赖，可单测）"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+parking_lot = "0.12"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+arboard = { version = "3", default-features = false }
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    # WNDCLASSW/RegisterClassW 依赖 GDI 类型（hIcon/hCursor）
+    "Win32_Graphics_Gdi",
+    # AddClipboardFormatListener/RemoveClipboardFormatListener 在 DataExchange
+    "Win32_System_DataExchange",
+] }
