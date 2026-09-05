@@ -29,14 +29,14 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $version = $tag.TrimStart('v')
-          $toml = "gpui-app/Cargo.toml"
+          $toml = "crates/ilauncher-gpui/Cargo.toml"
           (Get-Content $toml -Raw) -replace '(?m)^version = "[^"]+"', "version = `"$version`"" |
             Set-Content $toml -NoNewline
           Write-Host "Version set to $version"
         shell: pwsh
 
       - name: Build release
-        run: cargo build --release --manifest-path gpui-app/Cargo.toml --features "ilauncher clipboard"
+        run: cargo build --release --manifest-path crates/ilauncher-gpui/Cargo.toml --features "ilauncher clipboard"
         shell: pwsh
 
       - name: Pack installer + sign
@@ -63,6 +63,6 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           files: |
-            gpui-app/target/release/bundle/nsis/iLauncher_*_x64-setup.exe
-            gpui-app/target/release/bundle/nsis/iLauncher_*_x64-setup.exe.sig
+            crates/ilauncher-gpui/target/release/bundle/nsis/iLauncher_*_x64-setup.exe
+            crates/ilauncher-gpui/target/release/bundle/nsis/iLauncher_*_x64-setup.exe.sig
             latest.json

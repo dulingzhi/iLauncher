@@ -1,22 +1,22 @@
 ﻿; iLauncher GPUI 版安装脚本（NSIS）
 ;
-; 消费契约（gpui-app/src/updater.rs）：
+; 消费契约（crates/ilauncher-gpui/src/updater.rs）：
 ;   - 产物名：iLauncher_${VERSION}_x64-setup.exe
 ;   - 更新器以 /SILENT 启动（被动安装：显示进度、无交互），这里映射为 NSIS silent
 ;   - 安装目录与注册表卸载项对齐旧 Tauri 安装包（%LOCALAPPDATA%\Programs\iLauncher），
 ;     保证 gpui 更新器能原地覆盖旧版安装
 ;
 ; 构建（scripts/pack-gpui.ps1 调用）：
-;   makensis /DVERSION=1.2.3 /DEXE=..\target\release\ilauncher-gpui.exe /DOUTDIR=... iLauncher.nsi
+;   makensis /DVERSION=1.2.3 /DEXE=..\..\target\release\ilauncher-gpui.exe /DOUTDIR=... iLauncher.nsi
 
 !ifndef VERSION
   !define VERSION "0.1.0"
 !endif
 !ifndef EXE
-  !define EXE "..\target\release\ilauncher-gpui.exe"
+  !define EXE "..\..\target\release\ilauncher-gpui.exe"
 !endif
 !ifndef OUTDIR
-  !define OUTDIR "..\target\release\bundle\nsis"
+  !define OUTDIR "..\..\target\release\bundle\nsis"
 !endif
 
 !define APP_NAME "iLauncher"

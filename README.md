@@ -81,7 +81,7 @@
 无 JS/TS，无 WebView。
 
 ```
-gpui-app/          启动器主体（UI + 插件框架 + AI/工作流/更新等模块）
+crates/ilauncher-gpui/          启动器主体（UI + 插件框架 + AI/工作流/更新等模块）
 ilauncher-index/   文件索引独立 crate（MFT v3 服务 + USN 增量，无 UI 依赖）
 ilauncher-clipboard/ 剪贴板历史独立 crate（无 UI 依赖）
 scripts/           打包与发版脚本（NSIS、latest.json 生成）
@@ -91,16 +91,16 @@ scripts/           打包与发版脚本（NSIS、latest.json 生成）
 
 ```bash
 # 运行（Demo 数据）
-cargo run --manifest-path gpui-app/Cargo.toml
+cargo run --manifest-path crates/ilauncher-gpui/Cargo.toml
 
 # 全功能（真实索引 + 剪贴板）
-cargo run --manifest-path gpui-app/Cargo.toml --features "ilauncher clipboard"
+cargo run --manifest-path crates/ilauncher-gpui/Cargo.toml --features "ilauncher clipboard"
 
 # 单测（四种 feature 组合都应全绿）
-cargo test --manifest-path gpui-app/Cargo.toml
-cargo test --manifest-path gpui-app/Cargo.toml --features ilauncher
-cargo test --manifest-path gpui-app/Cargo.toml --features clipboard
-cargo test --manifest-path gpui-app/Cargo.toml --features "ilauncher clipboard"
+cargo test --manifest-path crates/ilauncher-gpui/Cargo.toml
+cargo test --manifest-path crates/ilauncher-gpui/Cargo.toml --features ilauncher
+cargo test --manifest-path crates/ilauncher-gpui/Cargo.toml --features clipboard
+cargo test --manifest-path crates/ilauncher-gpui/Cargo.toml --features "ilauncher clipboard"
 ```
 
 ### 打包发版

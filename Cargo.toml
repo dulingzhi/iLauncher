@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ilauncher-gpui",
+    "crates/ilauncher-index",
+    "crates/ilauncher-clipboard",
+]
+
+# 加速 gpui 依赖的 debug 构建（从 crates/ilauncher-gpui 上移，workspace 统一生效）
+[profile.dev]
+codegen-units = 16
+
+[profile.dev.package]
+taffy = { opt-level = 3 }
+smol = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }
+ttf-parser = { opt-level = 3 }

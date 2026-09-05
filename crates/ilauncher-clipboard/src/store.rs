@@ -108,7 +108,7 @@ impl ClipboardStore {
                 store.items.drain(..overflow);
             }
             // 按 id 降序（新→旧）排序，容忍文件里乱序
-            store.items.sort_by(|a, b| b.id.cmp(&a.id));
+            store.items.sort_by_key(|a| std::cmp::Reverse(a.id));
         }
         store.persist_path = Some(path);
         Ok(store)

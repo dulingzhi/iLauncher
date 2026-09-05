@@ -27,7 +27,7 @@ futures = "0.3"
 minisign-verify = "0.2"
 base64 = "0.22"
 
-# 插件市场：.ilp 包（zip）解压安装（对齐 src-tauri zip = "2.2"）
+# 插件市场：.ilp 包（zip）解压安装
 zip = "2.2"
 
 # AI 助手：Markdown 块级解析（AIChat 渲染消息用，纯函数可单测）
@@ -52,13 +52,3 @@ features = [
     # （ilauncher-index 碰巧开了它，但 plain 组合不能依赖这种间接统一）
     "Win32_Security",
 ]
-
-[profile.dev]
-codegen-units = 16
-
-# 加速 gpui 依赖的 debug 构建（照抄 gpui-kit 的调优）
-[profile.dev.package]
-taffy = { opt-level = 3 }
-smol = { opt-level = 3 }
-rustybuzz = { opt-level = 3 }
-ttf-parser = { opt-level = 3 }

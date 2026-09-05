@@ -7,7 +7,7 @@ gpui 通道发版：推送 `v*` 标签 → CI（Windows）构建 → NSIS 打安
 `release.yml` 在推送 `v*` 标签（或手动触发）时执行：
 
 1. 安装 Rust、NSIS（choco）、minisign（cargo install）
-2. 用标签号更新 `gpui-app/Cargo.toml` 版本
+2. 用标签号更新 `crates/ilauncher-gpui/Cargo.toml` 版本
 3. `cargo build --release --features "ilauncher clipboard"`
 4. `scripts/pack-gpui.ps1 -SkipBuild -Sign` → `iLauncher_<ver>_x64-setup.exe` + `.sig`
 5. `scripts/generate-updater-json.js` → `latest.json`
@@ -17,7 +17,7 @@ gpui 通道发版：推送 `v*` 标签 → CI（Windows）构建 → NSIS 打安
 
 ### 1. 准备 minisign 私钥
 
-公钥已硬编码在 `gpui-app/src/updater.rs`（`UPDATE_PUBKEY`），私钥持有者在本地签名过历史版本。
+公钥已硬编码在 `crates/ilauncher-gpui/src/updater.rs`（`UPDATE_PUBKEY`），私钥持有者在本地签名过历史版本。
 若需重新生成密钥对（会切断旧客户端更新，谨慎）：
 
 ```powershell
@@ -48,7 +48,7 @@ node scripts/generate-updater-json.js 0.2.0 v0.2.0
 # 手动创建 Release，上传 setup.exe、setup.exe.sig、latest.json
 ```
 
-## 协议要点（消费端 gpui-app/src/updater.rs）
+## 协议要点（消费端 crates/ilauncher-gpui/src/updater.rs）
 
 - `latest.json` 的 `platforms.windows-x86_64.url` 直接指向 **setup.exe**（下载字节即验签对象，无需 zip 解包）
 - `signature` = base64(整个 `.minisig` 文件)
@@ -59,5 +59,5 @@ node scripts/generate-updater-json.js 0.2.0 v0.2.0
 ## 故障排查
 
 - **签名验证失败**：确认 `.sig` 由 `pack-gpui.ps1 -Sign` 生成（不是 `.minisig` 原名）；确认公钥与私钥配对。
-- **更新检测不到**：确认 `latest.json` 可访问，版本格式 `v1.2.3`，且大于客户端 `gpui-app/Cargo.toml` 版本。
+- **更新检测不到**：确认 `latest.json` 可访问，版本格式 `v1.2.3`，且大于客户端 `crates/ilauncher-gpui/Cargo.toml` 版本。
 - **覆盖安装失败**：安装脚本会 taskkill `iLauncher.exe` / `ilauncher-gpui.exe`，确认安装时旧进程已退出。

@@ -3,7 +3,7 @@
 /**
  * 生成 latest.json（gpui 更新通道）
  *
- * 消费契约见 gpui-app/src/updater.rs：
+ * 消费契约见 crates/ilauncher-gpui/src/updater.rs：
  *   - url 直接指向 iLauncher_<ver>_x64-setup.exe（下载字节即安装程序，minisign 直接验签）
  *   - signature = base64(整个 .minisig 文件内容)，由 scripts/pack-gpui.ps1 -Sign 生成
  *
@@ -24,7 +24,7 @@ const owner = process.env.GITHUB_OWNER || 'dulingzhi';
 const repo = env('GITHUB_REPO', 'iLauncher');
 // 产物目录可用 ARTIFACT_DIR 覆盖（CI 里指向下载好的产物）
 const artifactDir =
-    process.env.ARTIFACT_DIR || path.join(__dirname, '..', 'gpui-app', 'target', 'release', 'bundle', 'nsis');
+    process.env.ARTIFACT_DIR || path.join(__dirname, '..', 'crates/ilauncher-gpui', 'target', 'release', 'bundle', 'nsis');
 
 function env(name, fallback) {
     return process.env[name] || fallback;

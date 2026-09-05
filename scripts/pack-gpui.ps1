@@ -2,9 +2,9 @@
 # 用法：powershell -File scripts/pack-gpui.ps1 [-Version 1.2.3] [-Features "ilauncher clipboard"] [-SkipBuild]
 #
 # 流程：cargo build --release → makensis 打安装包 → （可选）minisign 签名
-# 产物：gpui-app/target/release/bundle/nsis/iLauncher_<ver>_x64-setup.exe
+# 产物：crates/ilauncher-gpui/target/release/bundle/nsis/iLauncher_<ver>_x64-setup.exe
 #       同名 .sig = base64(minisign 签名文件)，latest.json 的 signature 字段取这个内容
-#       （签名/验签协议见 gpui-app/src/updater.rs verify_signature）
+#       （签名/验签协议见 crates/ilauncher-gpui/src/updater.rs verify_signature）
 #
 # 签名（-Sign）：需要 minisign 在 PATH，且私钥在 $env:MINISIGN_SECRET_KEY_FILE
 
@@ -17,7 +17,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
-$gpuiDir = Join-Path $root "gpui-app"
+$gpuiDir = Join-Path $root "crates/ilauncher-gpui"
 $installerDir = Join-Path $gpuiDir "installer"
 $bundleDir = Join-Path $gpuiDir "target\release\bundle\nsis"
 $exeSrc = Join-Path $gpuiDir "target\release\ilauncher-gpui.exe"
@@ -25,7 +25,7 @@ $exeSrc = Join-Path $gpuiDir "target\release\ilauncher-gpui.exe"
 if (-not $Version) {
     $toml = Get-Content (Join-Path $gpuiDir "Cargo.toml") -Raw
     $Version = [regex]::Match($toml, '(?m)^version = "([^"]+)"').Groups[1].Value
-    if (-not $Version) { throw "无法从 gpui-app/Cargo.toml 解析版本号，请用 -Version 指定" }
+    if (-not $Version) { throw "无法从 crates/ilauncher-gpui/Cargo.toml 解析版本号，请用 -Version 指定" }
 }
 Write-Host "==> iLauncher GPUI 打包 v$Version (features: $Features)" -ForegroundColor Cyan
 

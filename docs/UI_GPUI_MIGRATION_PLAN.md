@@ -178,7 +178,7 @@ gpui-component = { version = "0.6" }
 
 ## 4.6 实施进度（2026-09-05 更新）
 
-代码在 `gpui-app/`（独立 crate，非 workspace），核心索引已拆分为
+代码在 `crates/ilauncher-gpui/`（workspace 成员），核心索引已拆分为
 `ilauncher-index/`（无 Tauri 依赖，35+ 单测）。提交历史即实现日志。
 
 | 阶段 | 状态 | 实测/备注 |
