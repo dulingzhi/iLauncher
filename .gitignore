@@ -34,3 +34,6 @@ target/
 
 # workspace 根锁文件入库（二进制应用标准做法）
 !/Cargo.lock
+
+# 本地工具（NSIS 便携版等，choco 需要管理员装不上时手动放这里）
+/tools/

@@ -63,6 +63,6 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           files: |
-            crates/ilauncher-gpui/target/release/bundle/nsis/iLauncher_*_x64-setup.exe
-            crates/ilauncher-gpui/target/release/bundle/nsis/iLauncher_*_x64-setup.exe.sig
+            target/release/bundle/nsis/iLauncher_*_x64-setup.exe
+            target/release/bundle/nsis/iLauncher_*_x64-setup.exe.sig
             latest.json
