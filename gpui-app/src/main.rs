@@ -13,6 +13,7 @@
 //   ilauncher-gpui --snapshot <path>    LiveIndex 进程内搜索基准（需 feature ilauncher）
 
 mod autostart;
+mod preview;
 mod search;
 mod settings;
 #[cfg(windows)]
@@ -49,6 +50,8 @@ const DEMO_COUNT: usize = 100_000;
 const PAGE_LIMIT: usize = 50;
 /// 输入防抖：暂停输入这么久后才真正执行搜索
 const DEBOUNCE_MS: u64 = 80;
+/// 预览防抖：方向键连按时不重复读盘，停止 120ms 后才读
+const PREVIEW_DEBOUNCE_MS: u64 = 120;
 /// 唤起信号轮询周期（热键 → 窗口激活的附加延迟 ≤ 该值）
 const SIGNAL_POLL_MS: u64 = 16;
 
@@ -99,6 +102,9 @@ struct Launcher {
     bench_t0: Option<Instant>,
     bench: bool,
     bench_tick: usize,
+    /// 预览：路径 + 读取结果（Err 为展示用错误文本）
+    preview: Option<(std::path::PathBuf, Result<preview::FilePreview, String>)>,
+    preview_gen: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -126,6 +132,8 @@ impl Launcher {
             bench_t0: None,
             bench,
             bench_tick: 0,
+            preview: None,
+            preview_gen: 0,
             _subscriptions: Vec::new(),
         };
         if this.bench {
@@ -166,7 +174,33 @@ impl Launcher {
         self.entries = std::rc::Rc::new(self.source.search(&query, PAGE_LIMIT));
         self.selected = 0;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
+        self.schedule_preview(cx);
         cx.notify();
+    }
+
+    /// 选中变化 → 防抖读取预览（方向键连按不重复读盘；preview_gen 丢弃过期结果）
+    fn schedule_preview(&mut self, cx: &mut Context<Self>) {
+        self.preview_gen = self.preview_gen.wrapping_add(1);
+        let gen_id = self.preview_gen;
+        let Some(path) = self.entries.get(self.selected).map(|e| std::path::PathBuf::from(&e.path)) else {
+            self.preview = None;
+            cx.notify();
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(PREVIEW_DEBOUNCE_MS))
+                .await;
+            // 同步小文件读取（≤1MB，毫秒级）直接跑在后台执行器
+            let result = preview::read_file_preview(&path).map_err(|e| format!("{e:#}"));
+            let _ = this.update(cx, |this, cx| {
+                if this.preview_gen == gen_id {
+                    this.preview = Some((path, result));
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     /// 移动选择（↑↓ 键）
@@ -177,6 +211,7 @@ impl Launcher {
         let len = self.entries.len() as isize;
         self.selected = (self.selected as isize + delta).clamp(0, len - 1) as usize;
         self.scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
+        self.schedule_preview(cx);
         cx.notify();
     }
 
@@ -194,6 +229,81 @@ impl Launcher {
     /// 唤起时聚焦输入框（由 Watcher 调）
     fn focus_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.input.update(cx, |state, cx| state.focus(window, cx));
+    }
+
+    /// 预览面板：元信息头 + 按类型分派的内容区（图片 / 文本 / 二进制 / 错误）
+    fn render_preview_panel(
+        &self,
+        theme: &gpui_kit::component::theme::Theme,
+    ) -> gpui_kit::AnyElement {
+        use preview::FileType;
+
+        let muted = theme.muted_foreground;
+        let base = || {
+            v_flex()
+                .id("preview-panel")
+                .size_full()
+                .p_3()
+                .gap_2()
+                .bg(theme.background)
+        };
+
+        let Some((path, result)) = &self.preview else {
+            return base()
+                .child(div().text_xs().text_color(muted).child("选择文件以预览"))
+                .into_any_element();
+        };
+
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let header = v_flex()
+            .gap_1()
+            .child(div().text_sm().font_weight(FontWeight::BOLD).child(name))
+            .child(
+                div().text_xs().text_color(muted).child(match result {
+                    Ok(p) => {
+                        let ext = if p.extension.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" (.{})", p.extension)
+                        };
+                        format!(
+                            "{}{} · {} · 修改 {} UTC",
+                            p.file_type.label(),
+                            ext,
+                            preview::human_size(p.size),
+                            preview::format_unix_utc(p.modified_unix),
+                        )
+                    }
+                    Err(_) => "无法读取元信息".to_string(),
+                }),
+            );
+
+        let body: gpui_kit::AnyElement = match result {
+            Ok(p) => match p.file_type {
+                FileType::Image => img(path.clone())
+                    .max_w_full()
+                    .max_h_full()
+                    .into_any_element(),
+                FileType::Text | FileType::Markdown | FileType::Json | FileType::Code => div()
+                    .id("preview-text")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .text_xs()
+                    .child(preview::head_lines(&p.content, preview::MAX_PREVIEW_LINES).to_string())
+                    .into_any_element(),
+                FileType::Binary => div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child("二进制文件，无法预览内容")
+                    .into_any_element(),
+            },
+            Err(e) => div().text_xs().text_color(muted).child(e.clone()).into_any_element(),
+        };
+
+        base().child(header).child(body).into_any_element()
     }
 
     /// --bench：后台 8ms 一次滚动驱动 + on_next_frame 自续计数，测真实交付帧率
@@ -300,50 +410,70 @@ impl Render for Launcher {
             .child(Input::new(&self.input).w_full())
             .child(
                 div()
-                    .id("results")
+                    .id("split-wrap")
                     .flex_1()
+                    .size_full()
                     .child(
-                        uniform_list("result-list", entries.len(), {
-                            let launcher = launcher.clone();
-                            move |visible_range, _window, _cx| {
-                                visible_range
-                                    .map(|ix| {
-                                        let entry = &entries[ix];
-                                        let is_selected = ix == selected;
-                                        // gpui-component ListItem：选中/悬停色全部由
-                                        // theme tokens（list_active / list_hover）驱动
-                                        ListItem::new(ix)
-                                            .selected(is_selected)
-                                            .on_click({
-                                                let launcher = launcher.clone();
-                                                move |_, _, cx| {
-                                                    launcher.update(cx, |this: &mut Launcher, cx| {
-                                                        this.selected = ix;
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            })
-                                            .child(
-                                                h_flex()
-                                                    .w_full()
-                                                    .justify_between()
-                                                    .gap_2()
-                                                    .child(div().text_sm().child(entry.name.clone()))
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(theme_for_list.muted_foreground)
-                                                            .truncate()
-                                                            .child(entry.path.clone()),
-                                                    ),
-                                            )
-                                    })
-                                    .collect::<Vec<_>>()
-                            }
-                        })
-                        .size_full()
-                        .track_scroll(&self.scroll),
+                        h_resizable("main-split")
+                    .child(
+                        resizable_panel()
+                            .min_size(px(360.))
+                            .child(
+                                div()
+                                    .id("results")
+                                    .size_full()
+                                    .child(
+                                        uniform_list("result-list", entries.len(), {
+                                            let launcher = launcher.clone();
+                                            move |visible_range, _window, _cx| {
+                                                visible_range
+                                                    .map(|ix| {
+                                                        let entry = &entries[ix];
+                                                        let is_selected = ix == selected;
+                                                        // gpui-component ListItem：选中/悬停色全部由
+                                                        // theme tokens（list_active / list_hover）驱动
+                                                        ListItem::new(ix)
+                                                            .selected(is_selected)
+                                                            .on_click({
+                                                                let launcher = launcher.clone();
+                                                                move |_, _, cx| {
+                                                                    launcher.update(cx, |this: &mut Launcher, cx| {
+                                                                        this.selected = ix;
+                                                                        this.schedule_preview(cx);
+                                                                        cx.notify();
+                                                                    });
+                                                                }
+                                                            })
+                                                            .child(
+                                                                h_flex()
+                                                                    .w_full()
+                                                                    .justify_between()
+                                                                    .gap_2()
+                                                                    .child(div().text_sm().child(entry.name.clone()))
+                                                                    .child(
+                                                                        div()
+                                                                            .text_xs()
+                                                                            .text_color(theme_for_list.muted_foreground)
+                                                                            .truncate()
+                                                                            .child(entry.path.clone()),
+                                                                    ),
+                                                            )
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            }
+                                        })
+                                        .size_full()
+                                        .track_scroll(&self.scroll),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        resizable_panel()
+                            .size(px(300.))
+                            .min_size(px(180.))
+                            .child(self.render_preview_panel(&theme)),
                     ),
+                    )
             )
             .child(
                 h_flex()
@@ -572,8 +702,8 @@ fn make_window_options() -> WindowOptions {
         titlebar: None,
         window_background: WindowBackgroundAppearance::Blurred,
         window_bounds: Some(WindowBounds::Windowed(Bounds {
-            origin: Point { x: px(200.), y: px(200.) },
-            size: size(px(760.), px(480.)),
+            origin: Point { x: px(160.), y: px(200.) },
+            size: size(px(1000.), px(520.)),
         })),
         ..Default::default()
     }
