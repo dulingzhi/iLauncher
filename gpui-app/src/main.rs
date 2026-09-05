@@ -22,18 +22,17 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 use gpui_kit::assets::Assets;
+use gpui_kit::component::list::ListItem;
 use gpui_kit::component::{
     button::Button,
     input::{Input, InputEvent, InputState},
     *,
 };
-use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use search::{Entry, LiveSet, SearchSource};
 
 const DEMO_COUNT: usize = 100_000;
 const PAGE_LIMIT: usize = 50;
-const ROW_HEIGHT: f32 = 44.;
 /// 输入防抖：暂停输入这么久后才真正执行搜索
 const DEBOUNCE_MS: u64 = 80;
 /// 唤起信号轮询周期（热键 → 窗口激活的附加延迟 ≤ 该值）
@@ -258,6 +257,7 @@ impl Render for Launcher {
         let selected = self.selected;
         let result_count = entries.len();
         let theme_for_list = theme.clone();
+        let launcher = cx.entity();
 
         let root = v_flex()
             .id("root")
@@ -284,19 +284,25 @@ impl Render for Launcher {
                     .flex_1()
                     .child(
                         uniform_list("result-list", entries.len(), {
+                            let launcher = launcher.clone();
                             move |visible_range, _window, _cx| {
                                 visible_range
                                     .map(|ix| {
                                         let entry = &entries[ix];
                                         let is_selected = ix == selected;
-                                        div()
-                                            .h(px(ROW_HEIGHT))
-                                            .w_full()
-                                            .px_3()
-                                            .items_center()
-                                            .rounded_md()
-                                            .cursor_pointer()
-                                            .when(is_selected, |s| s.bg(theme_for_list.secondary))
+                                        // gpui-component ListItem：选中/悬停色全部由
+                                        // theme tokens（list_active / list_hover）驱动
+                                        ListItem::new(ix)
+                                            .selected(is_selected)
+                                            .on_click({
+                                                let launcher = launcher.clone();
+                                                move |_, _, cx| {
+                                                    launcher.update(cx, |this: &mut Launcher, cx| {
+                                                        this.selected = ix;
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            })
                                             .child(
                                                 h_flex()
                                                     .w_full()
@@ -311,7 +317,6 @@ impl Render for Launcher {
                                                             .child(entry.path.clone()),
                                                     ),
                                             )
-                                            .hover(|s| s.bg(theme_for_list.secondary))
                                     })
                                     .collect::<Vec<_>>()
                             }
