@@ -1,6 +1,6 @@
 // 配置文件管理
 
-use crate::{mft_scanner::types::ScanConfig, utils::paths::get_app_data_dir};
+use crate::{mft_scanner::types::ScanConfig, paths::get_app_data_dir};
 use anyhow::Result;
 
 const DEFAULT_CONFIG_PATH: &str = "scan_config.json";

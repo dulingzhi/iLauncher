@@ -1,10 +1,10 @@
 {
   "bench": "uniform_list_scroll_rAF",
   "rows": 100000,
-  "duration_secs": 5.002915,
-  "frames": 722,
-  "fps": 144.31663693783923,
-  "renders": 317,
-  "avg_render_ms": 0.01416529968454259,
-  "cold_start_ms": 5478.6589
+  "duration_secs": 5.00305,
+  "frames": 699,
+  "fps": 139.71545817625756,
+  "renders": 313,
+  "avg_render_ms": 0.019299041533546304,
+  "cold_start_ms": 5492.842900000001
 }

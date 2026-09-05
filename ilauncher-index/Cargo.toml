@@ -1,0 +1,41 @@
+[package]
+name = "ilauncher-index"
+version = "0.1.0"
+edition = "2021"
+description = "iLauncher 核心索引：MFT 扫描器 + 列式快照索引（v3 磁盘格式），无 Tauri/UI 依赖"
+
+[dependencies]
+anyhow = "1"
+tracing = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 搜索和匹配
+rustc-hash = "2"   # 高性能哈希
+rayon = "1.10"     # 并行计算
+
+# 索引数据结构
+bumpalo = { version = "3.14", features = ["collections"] }  # Arena 分配器
+roaring = "0.11"   # RoaringBitmap 压缩位图
+fst = "0.4"        # FST 有限状态转换器
+memmap2 = "0.9"    # 内存映射
+smartstring = "1"  # 内联小字符串优化（<23 bytes 无堆分配）
+once_cell = "1.19" # 全局懒加载单例
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.58"
+features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+    "Win32_System_Ioctl",
+    "Win32_System_Memory",
+    "Win32_System_DataExchange",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",  # 图标提取需要
+]

@@ -25,7 +25,7 @@ impl Entry {
 /// 搜索数据源
 pub enum SearchSource {
     #[cfg(feature = "ilauncher")]
-    Live(ilauncher_lib::index_v2::LiveIndex),
+    Live(ilauncher_index::index_v2::LiveIndex),
     Demo(Vec<Entry>),
 }
 
@@ -34,7 +34,7 @@ impl SearchSource {
     pub fn from_env_or_demo(demo_entries: Vec<Entry>) -> Self {
         #[cfg(feature = "ilauncher")]
         if let Ok(path) = std::env::var("ILAUNCHER_SNAPSHOT") {
-            match ilauncher_lib::index_v2::LiveIndex::open(std::path::Path::new(&path)) {
+            match ilauncher_index::index_v2::LiveIndex::open(std::path::Path::new(&path)) {
                 Ok(idx) => {
                     eprintln!("✓ LiveIndex 已加载: {}（{} 行）", path, idx.snapshot().row_count());
                     return Self::Live(idx);

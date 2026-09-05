@@ -37,6 +37,9 @@ tauri-plugin-updater = "2.9.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# 核心索引（无 Tauri 依赖，独立 crate，GPUI 前端共用）
+ilauncher-index = { path = "../ilauncher-index" }
+
 # 异步运行时
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"

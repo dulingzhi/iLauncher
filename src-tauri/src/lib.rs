@@ -11,12 +11,12 @@ mod storage;
 mod statistics;
 mod utils;
 
-// MFT 扫描器模块
+// MFT 扫描器 + 列式快照索引（v3 磁盘格式）已拆至 ilauncher-index crate（无 Tauri 依赖），
+// 这里重导出保持 ilauncher_lib::index_v2 / ilauncher_lib::mft_scanner 路径不变
 #[cfg(target_os = "windows")]
-pub mod mft_scanner;
+pub use ilauncher_index::mft_scanner;
 
-/// IndexV2 列式快照索引（v3 磁盘格式，Phase 1 引入）
-pub mod index_v2;
+pub use ilauncher_index::index_v2;
 
 use std::sync::Arc; // 用于 PluginMarketState
 use tauri::Manager;

@@ -462,7 +462,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
 
 #[cfg(feature = "ilauncher")]
 fn run_snapshot_bench(path: &str) {
-    use ilauncher_lib::index_v2::LiveIndex;
+    use ilauncher_index::index_v2::LiveIndex;
     let t0 = Instant::now();
     let idx = LiveIndex::open(std::path::Path::new(path)).expect("open snapshot");
     println!("SNAPSHOT_OPEN_MS {:.1}（{} 行）", t0.elapsed().as_secs_f64() * 1000.0, idx.snapshot().row_count());

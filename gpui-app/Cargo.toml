@@ -5,8 +5,8 @@ edition = "2024"
 description = "iLauncher GPUI frontend (P0 spike)"
 
 [features]
-# 接 ilauncher_lib：LiveIndex 进程内搜索基准 + 自启动复用
-ilauncher = ["dep:ilauncher_lib"]
+# 接 ilauncher-index：LiveIndex 进程内搜索（无 Tauri 依赖的独立 crate）
+ilauncher = ["dep:ilauncher-index"]
 
 [dependencies]
 # gpui-kit = umbrella（gpui-pre + platform + base + component + assets）
@@ -19,7 +19,7 @@ anyhow = "1"
 # 启动文件/目录（等价 tauri_plugin_opener，无 Tauri 依赖）
 opener = "0.6"
 
-ilauncher_lib = { package = "ilauncher", path = "../src-tauri", optional = true }
+ilauncher-index = { path = "../ilauncher-index", optional = true }
 
 [profile.dev]
 codegen-units = 16
