@@ -12,6 +12,7 @@
 //   ilauncher-gpui --bench              列表滚动帧率基准
 //   ilauncher-gpui --snapshot <path>    LiveIndex 进程内搜索基准（需 feature ilauncher）
 
+mod audit;
 mod autostart;
 mod preview;
 mod search;
@@ -20,6 +21,8 @@ mod settings;
 mod settings_ui;
 mod updater;
 
+#[cfg(windows)]
+mod audit_ui;
 #[cfg(all(feature = "clipboard", target_os = "windows"))]
 mod clipboard_ui;
 
@@ -41,9 +44,7 @@ use search::{Entry, LiveSet, SearchSource};
 
 #[cfg(all(feature = "clipboard", target_os = "windows"))]
 use ilauncher_clipboard::ClipboardStore;
-#[cfg(all(feature = "clipboard", target_os = "windows"))]
 use parking_lot::Mutex;
-#[cfg(all(feature = "clipboard", target_os = "windows"))]
 use std::sync::Arc;
 
 const DEMO_COUNT: usize = 100_000;
@@ -79,6 +80,8 @@ enum AppSignal {
     RebuildIndex,
     /// 托盘"剪贴板历史"：打开/激活历史窗口
     ShowClipboard,
+    /// 托盘"审计日志"：打开/激活审计查看器
+    ShowAudit,
     /// 托盘"设置"：打开/激活设置窗口（窗口逻辑仅 Windows 编译）
     ShowSettings,
     /// 托盘"深色主题"：切换主题模式（true = 深色）
@@ -105,11 +108,18 @@ struct Launcher {
     /// 预览：路径 + 读取结果（Err 为展示用错误文本）
     preview: Option<(std::path::PathBuf, Result<preview::FilePreview, String>)>,
     preview_gen: usize,
+    /// 审计日志（启动文件记 ProgramExecution；后续插件沙盒事件同管道）
+    audit_logger: Arc<Mutex<audit::AuditLogger>>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl Launcher {
-    fn new(window: &mut Window, cx: &mut Context<Self>, source: SearchSource) -> Self {
+    fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        source: SearchSource,
+        audit_logger: Arc<Mutex<audit::AuditLogger>>,
+    ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索应用、文件、命令…（中文 IME 请在这里验证）"));
         let focus = cx.focus_handle();
 
@@ -134,6 +144,7 @@ impl Launcher {
             bench_tick: 0,
             preview: None,
             preview_gen: 0,
+            audit_logger,
             _subscriptions: Vec::new(),
         };
         if this.bench {
@@ -215,15 +226,29 @@ impl Launcher {
         cx.notify();
     }
 
-    /// 启动当前选中项
+    /// 启动当前选中项（并记审计：程序执行）
     fn launch_selected(&mut self, cx: &mut Context<Self>) {
         let Some(entry) = self.entries.get(self.selected) else { return };
         let path = entry.path.clone();
         println!("LAUNCH {}", path);
-        match opener::open(path) {
-            Ok(_) => cx.notify(),
-            Err(e) => eprintln!("⚠ 打开失败: {e}"),
+        let opened = opener::open(&path).is_ok();
+        if !opened {
+            eprintln!("⚠ 打开失败: {path}");
         }
+        // 审计：插件 id 用 ilauncher-core（插件沙盒事件随 PluginManager 接入同管道）
+        self.audit_logger.lock().log(
+            audit::AuditEventType::ProgramExecution {
+                plugin_id: "ilauncher-core".into(),
+                program: path,
+                allowed: true,
+            },
+            if opened {
+                audit::AuditSeverity::Info
+            } else {
+                audit::AuditSeverity::Warning
+            },
+        );
+        cx.notify();
     }
 
     /// 唤起时聚焦输入框（由 Watcher 调）
@@ -519,9 +544,14 @@ struct WindowGuard {
     clipboard_window: Option<(WindowHandle<Root>, Entity<clipboard_ui::ClipboardPanel>)>,
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     clipboard_store: Arc<Mutex<ClipboardStore>>,
+    /// 审计日志（共享 logger：启动器核心 + 后续插件沙盒写入）
+    audit_logger: Arc<Mutex<audit::AuditLogger>>,
     /// 设置窗口
     #[cfg(windows)]
     settings_window: Option<(WindowHandle<Root>, Entity<settings_ui::SettingsView>)>,
+    /// 审计日志查看器窗口
+    #[cfg(windows)]
+    audit_window: Option<(WindowHandle<Root>, Entity<audit_ui::AuditPanel>)>,
 }
 
 impl WindowGuard {
@@ -530,6 +560,7 @@ impl WindowGuard {
         rx: mpsc::Receiver<AppSignal>,
         tx: mpsc::Sender<AppSignal>,
         index_set: LiveSet,
+        audit_logger: Arc<Mutex<audit::AuditLogger>>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -542,8 +573,11 @@ impl WindowGuard {
             clipboard_window: None,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
+            audit_logger,
             #[cfg(windows)]
             settings_window: None,
+            #[cfg(windows)]
+            audit_window: None,
         }
     }
 
@@ -552,6 +586,7 @@ impl WindowGuard {
         rx: mpsc::Receiver<AppSignal>,
         tx: mpsc::Sender<AppSignal>,
         _index_set: LiveSet,
+        audit_logger: Arc<Mutex<audit::AuditLogger>>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -563,8 +598,11 @@ impl WindowGuard {
             clipboard_window: None,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
+            audit_logger,
             #[cfg(windows)]
             settings_window: None,
+            #[cfg(windows)]
+            audit_window: None,
         }
     }
 
@@ -603,9 +641,10 @@ impl WindowGuard {
         // 重建窗口（Esc 销毁后首次唤起 / 初始唤起）
         let options = make_window_options();
         let source = self.make_source();
+        let audit_logger = self.audit_logger.clone();
         let mut launcher_slot: Option<Entity<Launcher>> = None;
         let result = cx.open_window(options, |window, cx| {
-            let launcher = cx.new(|cx| Launcher::new(window, cx, source));
+            let launcher = cx.new(|cx| Launcher::new(window, cx, source, audit_logger));
             launcher_slot = Some(launcher.clone());
             cx.new(|cx| Root::new(launcher, window, cx).bg(cx.theme().background))
         });
@@ -694,6 +733,31 @@ impl WindowGuard {
             Err(e) => eprintln!("⚠ 打开设置窗口失败: {e:#}"),
         }
     }
+
+    /// 打开/激活审计日志查看器
+    #[cfg(windows)]
+    fn summon_audit(&mut self, cx: &mut AsyncApp) {
+        if let Some((handle, _)) = &self.audit_window {
+            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+                return;
+            }
+            self.audit_window = None;
+        }
+        let logger = self.audit_logger.clone();
+        let mut panel_slot: Option<Entity<audit_ui::AuditPanel>> = None;
+        let result = cx.open_window(make_window_options(), |window, cx| {
+            let panel = cx.new(|cx| audit_ui::AuditPanel::new(window, cx, logger));
+            panel_slot = Some(panel.clone());
+            cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
+        });
+        match result {
+            Ok(handle) => {
+                println!("✓ 审计日志窗口已打开");
+                self.audit_window = Some((handle, panel_slot.expect("audit panel entity")));
+            }
+            Err(e) => eprintln!("⚠ 打开审计日志窗口失败: {e:#}"),
+        }
+    }
 }
 
 fn make_window_options() -> WindowOptions {
@@ -744,6 +808,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         let _ = menu.append(&MenuItem::with_id("show", "显示 iLauncher", true, None));
         let _ = menu.append(&MenuItem::with_id("settings", "设置", true, None));
         let _ = menu.append(&MenuItem::with_id("clipboard", "剪贴板历史", true, None));
+        let _ = menu.append(&MenuItem::with_id("audit", "审计日志", true, None));
         let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
         // 开机自启：可勾选项，初始状态读注册表
         let autostart_item =
@@ -787,6 +852,9 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                     }
                     "clipboard" => {
                         let _ = tx.send(AppSignal::ShowClipboard);
+                    }
+                    "audit" => {
+                        let _ = tx.send(AppSignal::ShowAudit);
                     }
                     "rebuild" => {
                         let _ = tx.send(AppSignal::RebuildIndex);
@@ -888,6 +956,24 @@ fn main() {
     #[cfg(not(all(feature = "ilauncher", target_os = "windows")))]
     let index_set = search::LiveSet::empty();
 
+    // ── 审计日志：JSONL 持久化（启动器核心事件已接入；插件沙盒事件随 PluginManager） ──
+    let audit_logger = {
+        let path = std::env::var_os("LOCALAPPDATA")
+            .map(|d| std::path::PathBuf::from(d).join("iLauncher").join("audit.jsonl"))
+            .unwrap_or_else(|| std::path::PathBuf::from("audit.jsonl"));
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let logger = audit::AuditLogger::with_persist(&path, audit::DEFAULT_MAX_ENTRIES)
+            .unwrap_or_else(|e| {
+                eprintln!("⚠️ 审计日志加载失败（降级内存存储）: {e:#}");
+                audit::AuditLogger::in_memory(audit::DEFAULT_MAX_ENTRIES)
+            });
+        let logger = Arc::new(Mutex::new(logger));
+        println!("✓ 审计日志已加载（{} 条）", logger.lock().len());
+        logger
+    };
+
     // ── 剪贴板历史：加载 JSONL + 启动事件监听（feature clipboard） ──────────
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     let clipboard_store = clipboard_ui::init_clipboard();
@@ -920,6 +1006,7 @@ fn main() {
             rx,
             tx,
             index_set,
+            audit_logger,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
         );
@@ -937,12 +1024,14 @@ fn main() {
                 let mut theme_dark: Option<bool> = None;
                 let mut show_clipboard = false;
                 let mut show_settings = false;
+                let mut show_audit = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
                         AppSignal::RebuildIndex => rebuild = true,
                         AppSignal::ShowClipboard => show_clipboard = true,
                         AppSignal::ShowSettings => show_settings = true,
+                        AppSignal::ShowAudit => show_audit = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                     }
                 }
@@ -965,6 +1054,14 @@ fn main() {
                 #[cfg(not(windows))]
                 if show_settings {
                     println!("⚠️ 设置窗口仅 Windows 构建");
+                }
+                #[cfg(windows)]
+                if show_audit {
+                    guard.summon_audit(&mut cx);
+                }
+                #[cfg(not(windows))]
+                if show_audit {
+                    println!("⚠️ 审计查看器仅 Windows 构建");
                 }
                 if let Some(dark) = theme_dark {
                     use gpui_kit::component::theme::ThemeMode;
