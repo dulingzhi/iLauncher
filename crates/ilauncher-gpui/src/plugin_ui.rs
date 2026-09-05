@@ -9,6 +9,7 @@ use gpui_kit::component::list::ListItem;
 use gpui_kit::component::{button::Button, checkbox::Checkbox, input::{Input, InputEvent, InputState}, *};
 use gpui_kit::*;
 
+use crate::i18n::t;
 use crate::plugin::{InstalledPlugin, PluginInstaller, PluginListItem, PluginRegistry, PluginStore, SearchParams};
 
 const PAGE_SIZE: u32 = 20;
@@ -49,7 +50,7 @@ pub struct MarketPanel {
 
 impl MarketPanel {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, state: Arc<MarketState>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索市场插件…"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("plugins.placeholder").to_string()));
         let focus = cx.focus_handle();
 
         let mut this = Self {
@@ -85,7 +86,7 @@ impl MarketPanel {
     /// 初始列表：热门插件
     fn load_market_popular(&mut self, cx: &mut Context<Self>) {
         let Some(client) = crate::http_util::client("iLauncher/plugin-market") else {
-            self.set_status(cx, "HTTP 客户端创建失败");
+            self.set_status(cx, t!("plugins.http_error").to_string());
             return;
         };
         let state = self.state.clone();
@@ -97,9 +98,9 @@ impl MarketPanel {
                 match result {
                     Ok(items) => {
                         this.items = items;
-                        this.set_status(cx, format!("市场热门 {} 个", this.items.len()));
+                        this.set_status(cx, t!("plugins.popular_loaded", count = this.items.len()).to_string());
                     }
-                    Err(e) => this.set_status(cx, format!("加载失败: {e:#}")),
+                    Err(e) => this.set_status(cx, t!("plugins.load_failed", error = format!("{e:#}")).to_string()),
                 }
             });
         })
@@ -122,7 +123,7 @@ impl MarketPanel {
             return;
         }
         let Some(client) = crate::http_util::client("iLauncher/plugin-market") else {
-            self.set_status(cx, "HTTP 客户端创建失败");
+            self.set_status(cx, t!("plugins.http_error").to_string());
             return;
         };
         let state = self.state.clone();
@@ -142,9 +143,9 @@ impl MarketPanel {
                 match result {
                     Ok(result) => {
                         this.items = result.plugins;
-                        this.set_status(cx, format!("{} 条结果", result.total));
+                        this.set_status(cx, t!("plugins.results_count", count = result.total).to_string());
                     }
-                    Err(e) => this.set_status(cx, format!("搜索失败: {e:#}")),
+                    Err(e) => this.set_status(cx, t!("plugins.search_failed", error = format!("{e:#}")).to_string()),
                 }
             });
         })
@@ -157,12 +158,12 @@ impl MarketPanel {
             return;
         }
         let Some(client) = crate::http_util::client("iLauncher/plugin-market") else {
-            self.set_status(cx, "HTTP 客户端创建失败");
+            self.set_status(cx, t!("plugins.http_error").to_string());
             return;
         };
         let state = self.state.clone();
         self.busy = true;
-        self.set_status(cx, format!("正在安装 {plugin_id}…"));
+        self.set_status(cx, t!("plugins.installing", id = plugin_id.clone()).to_string());
         cx.spawn(async move |this, cx| {
             let result = async {
                 let ilp = state.store.download(client.as_ref(), &plugin_id, None).await?;
@@ -173,8 +174,8 @@ impl MarketPanel {
                 this.busy = false;
                 this.installed = this.state.registry.list();
                 match result {
-                    Ok(()) => this.set_status(cx, format!("✓ {plugin_id} 安装完成")),
-                    Err(e) => this.set_status(cx, format!("安装失败: {e:#}")),
+                    Ok(()) => this.set_status(cx, t!("plugins.installed_ok", id = plugin_id.clone()).to_string()),
+                    Err(e) => this.set_status(cx, t!("plugins.install_failed", error = format!("{e:#}")).to_string()),
                 }
             });
         })
@@ -185,9 +186,9 @@ impl MarketPanel {
         match self.state.installer.uninstall(&plugin_id) {
             Ok(()) => {
                 self.installed = self.state.registry.list();
-                self.set_status(cx, format!("✓ {plugin_id} 已卸载"));
+                self.set_status(cx, t!("plugins.uninstalled_ok", id = plugin_id.clone()).to_string());
             }
-            Err(e) => self.set_status(cx, format!("卸载失败: {e:#}")),
+            Err(e) => self.set_status(cx, t!("plugins.uninstall_failed", error = format!("{e:#}")).to_string()),
         }
     }
 
@@ -197,7 +198,7 @@ impl MarketPanel {
                 self.installed = self.state.registry.list();
                 self.set_status(cx, format!("{plugin_id} → {}", if enabled { "启用" } else { "禁用" }));
             }
-            Err(e) => self.set_status(cx, format!("切换失败: {e:#}")),
+            Err(e) => self.set_status(cx, t!("plugins.toggle_failed", error = format!("{e:#}")).to_string()),
         }
     }
 
@@ -243,7 +244,7 @@ impl Render for MarketPanel {
                             .child(
                                 Button::new("market-tab")
                                     .small()
-                                    .label(if mode == MarketMode::Market { "● 市场" } else { "市场" })
+                                    .label(if mode == MarketMode::Market { t!("plugins.tab_market_active").to_string() } else { t!("plugins.tab_market").to_string() })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.switch_mode(MarketMode::Market, cx)
                                     })),
@@ -252,9 +253,9 @@ impl Render for MarketPanel {
                                 Button::new("installed-tab")
                                     .small()
                                     .label(if mode == MarketMode::Installed {
-                                        format!("● 已安装（{}）", installed.len())
+                                        t!("plugins.tab_installed_active", count = installed.len()).to_string()
                                     } else {
-                                        format!("已安装（{}）", installed.len())
+                                        t!("plugins.tab_installed", count = installed.len()).to_string()
                                     })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.switch_mode(MarketMode::Installed, cx)
@@ -265,7 +266,7 @@ impl Render for MarketPanel {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(if busy { "处理中…" } else { "" }),
+                            .child(if busy { t!("plugins.busy").to_string() } else { String::new() }),
                     ),
             );
 
@@ -282,10 +283,7 @@ impl Render for MarketPanel {
                                     .map(|ix| {
                                         let item = &items[ix];
                                         let title = format!("{} v{}", item.name, item.version);
-                                        let subtitle = format!(
-                                            "{} · {} 下载 · {:.1} 分",
-                                            item.description, item.downloads, item.rating
-                                        );
+                                        let subtitle = t!("plugins.subtitle", desc = item.description.clone(), downloads = item.downloads, rating = format!("{:.1}", item.rating)).to_string();
                                         let plugin_id = item.id.clone();
                                         ListItem::new(ix)
                                             .child(
@@ -308,7 +306,7 @@ impl Render for MarketPanel {
                                                     .child(
                                                         Button::new(("install", ix))
                                                             .small()
-                                                            .label("安装")
+                                                            .label(t!("plugins.install").to_string())
                                                             .on_click({
                                                                 let panel = panel.clone();
                                                                 let plugin_id = plugin_id.clone();
@@ -383,7 +381,7 @@ impl Render for MarketPanel {
                                                     .child(
                                                         Button::new(("uninstall", ix))
                                                             .small()
-                                                            .label("卸载")
+                                                            .label(t!("plugins.uninstall").to_string())
                                                             .on_click({
                                                                 let panel = panel.clone();
                                                                 let plugin_id = plugin_id.clone();
@@ -412,12 +410,12 @@ impl Render for MarketPanel {
                     div()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child(if status.is_empty() { "Esc 关闭".to_string() } else { status }),
+                        .child(if status.is_empty() { t!("plugins.footer_hint").to_string() } else { status }),
                 )
                 .child(
                     Button::new("market-refresh")
                         .small()
-                        .label("刷新")
+                        .label(t!("plugins.refresh").to_string())
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.installed = this.state.registry.list();
                             if this.mode == MarketMode::Market {

@@ -1,8 +1,8 @@
 # UI 框架迁移方案：Tauri(React) → GPUI
 
-> 状态：**P0-P4 全部完成**（2026-09-05 更新：React/src-tauri/v2 索引链路均已删除，
-> 发布通道为 gpui 版 NSIS + minisign；遗留：i18n 标签硬编码中文、
-> CI 首次发版前配 MINISIGN_SECRET_KEY_BASE64 secret）
+> 状态：**P0-P4 + i18n 全部完成**（2026-09-05 更新：React/src-tauri/v2 索引链路均已删除，
+> 发布通道为 gpui 版 NSIS + minisign；rust-i18n 中英双语接入完成，设置页可切换
+> （跟随系统/简体中文/English）；CI 首次发版前配 MINISIGN_SECRET_KEY_BASE64 secret）
 > 关联：[FILE_INDEX_OPTIMIZATION_PLAN.md](archive/FILE_INDEX_OPTIMIZATION_PLAN.md)（v3 索引，
 > 迁移后将由 GPUI 进程直接以库调用消费，服务进程文件 IPC 可退役）
 
@@ -188,9 +188,9 @@ gpui-component = { version = "0.6" }
 | P1 索引接入 | ✅ 完成 | `index_service.rs` 常驻 MFT 服务模式：UI 启动时快照齐全但服务未跑 → 静默提权拉起（修 catch-up 盲区）；`--ui-pid` 监控 UI 存活（修复解析越界 bug，服务 2s 内自退）；托盘"重建索引" = `--rebuild` 提权全量重扫（删快照→40s 重扫三盘 709 万行→转常驻）+ UI 轮询 mtime 自动重载；跨盘结果按 fzf score 排序 |
 | P1 开机自启 | ✅ 完成 | `autostart.rs` 读写 HKCU Run 项（值名 iLauncher），托盘可勾选菜单，6 个单测走独立测试子键 |
 | P1 主题 | ✅ 完成 | 全组件走 gpui-component Theme token；托盘「深色主题」可勾选，偏好持久化到 HKCU\Software\iLauncher（无偏好时跟随系统 AppsUseLightTheme） |
-| P1 i18n | ⬜ 未做 | rust-i18n（gpui-component 同款），P2 随设置页一起 |
+| P1 i18n | ✅ 完成 | rust-i18n 4（与 gpui-component 同款主版本）：crate 根 `i18n!` 嵌入 locales/zh-CN.yml + en.yml，fallback zh-CN；启动时按注册表偏好（zh-CN/en/system）set_locale，未设置跟随系统（GetUserDefaultUILanguage 主语言判中文）；设置页通用区语言下拉可切换并持久化，窗口即时刷新（托盘菜单下次启动更新）；主窗口/搜索/剪贴板/审计/插件/工作流/AI 对话/设置/更新器/托盘菜单全部文案抽离（audit.rs 纯逻辑模块的摘要/严重度标签同抽）；断言中文文案的测试统一走 `i18n::test_use_zh()` 固定环境 |
 | P2 剪贴板历史 | ✅ 完成 | 独立 crate `ilauncher-clipboard`：WM_CLIPBOARDUPDATE 监听线程、JSONL 持久化（容量截断、文本连续去重）、搜索/删除/清空；**图片支持**——get_image → 采样哈希 → 落盘 PNG + 全库哈希去重，删除/清空连带删文件，复制按类型分派（copy_text/copy_image）；store 15 单测 + monitor_smoke 真实文本/图片事件路径 |
-| P2 设置页 | ✅ 完成 | gpui-component 现成 `Settings` 组件五分区（通用/外观/剪贴板/索引/关于），`settings_ui.rs` 纯装配层；开机自启、深色模式、剪贴板容量（注册表+运行时 set_capacity）、清空历史、重建索引全部接线真实数据源；托盘「设置」入口；i18n 仍待做（标签暂硬编码中文） |
+| P2 设置页 | ✅ 完成 | gpui-component 现成 `Settings` 组件五分区（通用/外观/剪贴板/索引/关于），`settings_ui.rs` 纯装配层；开机自启、深色模式、剪贴板容量（注册表+运行时 set_capacity）、清空历史、重建索引全部接线真实数据源；托盘「设置」入口；标签文案已全部走 rust-i18n（见 P1 i18n 行） |
 | P2 UpdateChecker | ✅ 完成 | 新模块 `updater.rs` 对接 GitHub releases latest.json（Tauri 同款协议）：检查/下载/minisign 验签（注意两层 base64 坑）/NSIS passive 安装；设置页「检查更新」状态机接线；live 冒烟实测 v0.1.5 验签通过 |
 | P2 PreviewPanel | ✅ 完成 | 新模块 `preview.rs`（9 单测，对齐 Tauri preview 行为）：主窗口 resizable 分栏，选中防抖 120ms 读预览（代次丢弃）；图片原生解码/文本截断 200 行/元信息行；bench 回归 160fps 无退化 |
 | P3 AuditLogViewer | ✅ 完成 | 新模块 `audit.rs`（无 gpui 依赖，跨平台单测）：对齐 Tauri 插件审计事件模型（六类事件/三级严重度/统计语义一致），两处刻意偏离——Unix 秒时间戳、新增 JSONL 持久化（audit.jsonl，启动器审计需可回溯）；`audit_ui.rs` 查看器（cfg windows，仿剪贴板历史）：统计头/搜索防抖/仅违规开关/severity 着色/导出 JSON/清空，500ms 轮询；托盘「审计日志」入口；launch_selected 记 ProgramExecution 作为首个真实事件源，插件沙盒事件待 PluginManager 同管道注入 |

@@ -171,13 +171,18 @@ impl SearchSource {
 
     /// 状态栏文本（非阻塞）
     pub fn status_text(&self) -> String {
+        use crate::i18n::t;
         #[cfg(feature = "ilauncher")]
         if let Self::Live(set) = self {
             let n = set.drive_count();
-            return if n == 0 { "索引加载中…".into() } else { format!("实时索引 {} 盘", n) };
+            return if n == 0 {
+                t!("search.status_loading").into()
+            } else {
+                t!("search.status_live", count = n).into()
+            };
         }
         let _ = self;
-        "演示数据".into()
+        t!("search.status_demo").into()
     }
 }
 

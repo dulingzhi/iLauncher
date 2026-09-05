@@ -1,0 +1,197 @@
+# iLauncher UI strings (English)
+# Key layout mirrors zh-CN.yml; dynamic segments use %{var}
+
+tray:
+  show: Show iLauncher
+  settings: Settings
+  clipboard: Clipboard History
+  audit: Audit Log
+  plugins: Plugins
+  workflows: Workflows
+  ai: AI Assistant
+  rebuild: Rebuild Index
+  autostart: Launch at Login
+  dark_theme: Dark Theme
+  quit: Quit
+
+main:
+  placeholder: Search apps, files, commands…
+  preview_select: Select a file to preview
+  preview_binary: Binary file, no preview available
+  preview_meta_error: Failed to read metadata
+  result_count: "%{count} results · %{elapsed} · ↑↓ select · Enter open · Esc hide%{extra}"
+  quit_button: Quit
+  workflow_fallback: Workflow
+
+search:
+  status_loading: Index loading…
+  status_live: "Live index: %{count} drive(s)"
+  status_demo: Demo data
+
+settings:
+  page_general: General
+  page_appearance: Appearance
+  page_clipboard: Clipboard
+  page_index: Index
+  page_about: About
+  general_group_start: Startup
+  general_autostart: Launch at Login
+  general_autostart_desc: Run iLauncher in the background after signing in to Windows
+  general_hotkey: Summon Hotkey
+  general_hotkey_desc: Current binding; custom hotkeys coming in a later version
+  general_language: Language
+  general_language_desc: Applies to windows immediately; the tray menu updates on next launch
+  lang_system: Follow System
+  appearance_group_theme: Theme
+  appearance_dark: Dark Mode
+  appearance_dark_desc: When off, follow the Windows system appearance
+  clipboard_group_history: History
+  clipboard_capacity: History Capacity
+  clipboard_capacity_desc: Max clipboard entries kept; oldest items are trimmed beyond this (image files are cleaned up too)
+  clipboard_clear: Clear History
+  clipboard_clear_button: Clear All History
+  clipboard_clear_desc: Deletes all text and image records and image files. This cannot be undone
+  index_group_files: File Index
+  index_status: Index Status
+  index_status_desc: Maintained by the resident MFT service; same source as the search window status bar
+  index_rebuild: Rebuild Index
+  index_rebuild_button: Rebuild Now
+  index_rebuild_desc: Elevated full rescan (about 40s); search results may be incomplete meanwhile
+  index_demo: Demo data (ilauncher feature not enabled)
+  about_group_app: Application
+  about_version: Version
+  about_version_value: "%{version} (GPUI Preview)"
+  about_datadir: Data Directory
+  about_datadir_desc: Where clipboard history, images, and index snapshots are stored
+  about_update: Check for Updates
+  about_update_desc: Talks to the GitHub releases latest.json; click the button to check
+  about_update_status: Update Status
+
+updater:
+  button_idle: Check for Updates
+  button_checking: Checking…
+  button_uptodate: Up to date (v%{version})
+  button_available: Download & Install v%{version}
+  button_downloading: Downloading v%{version}…
+  button_ready: Install & Restart (v%{version})
+  button_failed: Retry Check
+  status_idle: Check GitHub releases for new versions
+  status_checking: Fetching latest.json…
+  status_uptodate: You are on the latest version
+  status_available: New version v%{version} found (%{date})
+  status_downloading: Downloading v%{version} installer…
+  status_ready: Installer ready and signature verified; click to quit and launch it
+  status_failed: "Check failed: %{error}"
+  date_unknown: date unknown
+
+clipboard:
+  placeholder: Search clipboard history…
+  copied_image: "Copied image #%{id} (%{preview})"
+  copied_text: "Copied #%{id} (%{chars} chars)"
+  copy_failed: "Copy failed: %{error}"
+  footer: "%{count} entries · ↑↓ select · Enter/click to copy · Esc close"
+
+audit:
+  placeholder: Search plugin / event / detail…
+  violations_on: "Violations: On"
+  violations_off: "Violations: Off"
+  violations_desc: Show only violation attempt events (ViolationAttempt)
+  export: Export JSON
+  clear: Clear
+  footer: "%{count} entries · ↑↓ select · Esc close"
+  cleared: Audit log cleared
+  exported_to: "Exported to %{path}"
+  export_failed: "Export failed: %{error}"
+  ev_perm: "%{plugin} permission check %{permission} → %{verdict}"
+  ev_file: "%{plugin} file %{mode} %{path} → %{verdict}"
+  file_read: read
+  file_write: write
+  ev_network: "%{plugin} network access %{domain} → %{verdict}"
+  ev_exec: "%{plugin} exec %{program} → %{verdict}"
+  ev_violation: "%{plugin} violation attempt %{kind}: %{details}"
+  ev_config: "%{plugin} config %{old} → %{new}"
+  verdict_allow: allowed
+  verdict_deny: denied
+  sev_info: Info
+  sev_warning: Warning
+  sev_critical: Critical
+  serialize_failed: Failed to serialize audit log
+  stats_summary: "Permission checks %{checks} (denied %{denied_checks}) · Files %{files} (denied %{denied_files}) · Network %{network} (denied %{denied_network}) · Violations %{violations}"
+
+plugins:
+  placeholder: Search marketplace plugins…
+  http_error: Failed to create HTTP client
+  popular_loaded: "%{count} popular plugins"
+  load_failed: "Load failed: %{error}"
+  results_count: "%{count} results"
+  search_failed: "Search failed: %{error}"
+  installing: "Installing %{id}…"
+  installed_ok: "✓ %{id} installed"
+  install_failed: "Install failed: %{error}"
+  uninstalled_ok: "✓ %{id} uninstalled"
+  uninstall_failed: "Uninstall failed: %{error}"
+  enabled: Enabled
+  disabled: Disabled
+  toggled: "%{id} → %{state}"
+  toggle_failed: "Toggle failed: %{error}"
+  tab_market_active: "● Market"
+  tab_market: Market
+  tab_installed_active: "● Installed (%{count})"
+  tab_installed: "Installed (%{count})"
+  busy: Working…
+  subtitle: "%{desc} · %{downloads} downloads · %{rating} rating"
+  install: Install
+  uninstall: Uninstall
+  footer_hint: Esc to close
+  refresh: Refresh
+
+workflow:
+  trigger_manual: "Keyword: %{keyword}"
+  trigger_hotkey: "Hotkey: %{key} (stored only, not scheduled)"
+  trigger_schedule: "Schedule: %{cron} (stored only, not scheduled)"
+  trigger_event: "Event: %{event} (stored only, not scheduled)"
+  header: "Workflows (%{count})"
+  refresh: Refresh
+  loaded: "Loaded %{count} workflows"
+  load_failed: "Load failed: %{error}"
+  not_found: "Workflow not found: %{id}"
+  enabled: Enabled
+  disabled: Disabled
+  toggled: "%{id} → %{state}"
+  save_failed: "Save failed: %{error}"
+  deleted_ok: "✓ %{id} deleted"
+  delete_failed: "Delete failed: %{error}"
+  running: "Running %{id}…"
+  run_ok: "✓ %{id} completed"
+  run_failed: "✗ %{id} failed: %{error}"
+  subtitle: "%{trigger} · %{count} step(s)"
+  subtitle_with_desc: "%{subtitle} · %{desc}"
+  run: Run
+  delete: Delete
+  footer_hint: Drop JSON into the workflows directory and press Refresh · Esc to close
+
+ai:
+  placeholder_input: Type a message, Enter to send…
+  placeholder_key: API Key (stored in plaintext locally)
+  placeholder_model: Model, e.g. gpt-3.5-turbo / claude-3-sonnet
+  placeholder_base: Base URL (optional; blank uses the provider default)
+  need_api_key: Please fill in the API Key in the settings area first
+  waiting: Waiting for AI reply…
+  send_failed: "Send failed: %{error}"
+  deleted: Deleted
+  save_failed: "Failed to save config: %{error}"
+  saved: ✓ Config saved
+  save: Save Config
+  new_conversation: ＋ New Chat
+  empty_conversation: (empty chat)
+  title: AI Chat
+  settings_active: ● Settings
+  settings: Settings
+  provider_click: "%{provider} (click to switch)"
+  role_user: You
+  role_ai: AI
+  empty_hint: Type a message to start, or pick a history chat on the left
+  send: Send
+  footer_hint: Esc close · Enter send · Markdown rendering (no syntax highlighting)
+  code: code
+  code_lang: "%{lang} · code"

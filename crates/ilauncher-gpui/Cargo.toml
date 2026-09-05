@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 description = "iLauncher GPUI frontend (P0 spike)"
 
+# rust-i18n 元数据：未调用 apply()/set_locale 前（含单测）的默认语言
+[package.metadata.i18n]
+default_locale = "zh-CN"
+available_locales = ["zh-CN", "en"]
+
 [features]
 # 接 ilauncher-index：LiveIndex 进程内搜索（无 Tauri 依赖的独立 crate）
 ilauncher = ["dep:ilauncher-index"]
@@ -33,6 +38,9 @@ zip = "2.2"
 # AI 助手：Markdown 块级解析（AIChat 渲染消息用，纯函数可单测）
 pulldown-cmark = { version = "0.13", default-features = false }
 
+# i18n：YAML 文案编译期嵌入（gpui-component 同款 rust-i18n 4），fallback zh-CN
+rust-i18n = "4.2"
+
 ilauncher-index = { path = "../ilauncher-index", optional = true }
 ilauncher-clipboard = { path = "../ilauncher-clipboard", optional = true }
 parking_lot = "0.12"
@@ -48,6 +56,7 @@ features = [
     "Win32_System_Registry",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_SystemInformation",
+    "Win32_Globalization", # GetUserDefaultUILanguage：i18n 系统语言检测
     # RegCreateKeyExW 的 SECURITY_ATTRIBUTES 参数需要该 feature
     # （ilauncher-index 碰巧开了它，但 plain 组合不能依赖这种间接统一）
     "Win32_Security",

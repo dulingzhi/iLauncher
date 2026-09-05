@@ -11,15 +11,16 @@ use gpui_kit::component::{button::Button, checkbox::Checkbox, *};
 use gpui_kit::*;
 
 use crate::audit::{AuditEventType, AuditLogger, AuditSeverity};
+use crate::i18n::t;
 use crate::workflow::{Workflow, WorkflowEngine, WorkflowTrigger};
 
 /// 触发器一句话描述（列表副标题用）
 fn trigger_summary(trigger: &WorkflowTrigger) -> String {
     match trigger {
-        WorkflowTrigger::Manual { keyword } => format!("关键词: {keyword}"),
-        WorkflowTrigger::Hotkey { key } => format!("热键: {key}（仅存储，未调度）"),
-        WorkflowTrigger::Schedule { cron } => format!("定时: {cron}（仅存储，未调度）"),
-        WorkflowTrigger::Event { event_type } => format!("事件: {event_type}（仅存储，未调度）"),
+        WorkflowTrigger::Manual { keyword } => t!("workflow.trigger_manual", keyword = keyword.as_str()).to_string(),
+        WorkflowTrigger::Hotkey { key } => t!("workflow.trigger_hotkey", key = key.as_str()).to_string(),
+        WorkflowTrigger::Schedule { cron } => t!("workflow.trigger_schedule", cron = cron.as_str()).to_string(),
+        WorkflowTrigger::Event { event_type } => t!("workflow.trigger_event", event = event_type.as_str()).to_string(),
     }
 }
 
@@ -57,16 +58,16 @@ impl WorkflowPanel {
         match self.engine.load_workflows() {
             Ok(()) => {
                 self.workflows = self.engine.list_workflows();
-                self.set_status(cx, format!("已加载 {} 个工作流", self.workflows.len()));
+                self.set_status(cx, t!("workflow.loaded", count = self.workflows.len()).to_string());
             }
-            Err(e) => self.set_status(cx, format!("加载失败: {e:#}")),
+            Err(e) => self.set_status(cx, t!("workflow.load_failed", error = format!("{e:#}")).to_string()),
         }
     }
 
     /// 启用/禁用：改定义后走引擎 save（内存 + 落盘）
     fn toggle_enabled(&mut self, id: String, enabled: bool, cx: &mut Context<Self>) {
         let Some(mut wf) = self.engine.get_workflow(&id) else {
-            self.set_status(cx, format!("工作流不存在: {id}"));
+            self.set_status(cx, t!("workflow.not_found", id = id.as_str()).to_string());
             return;
         };
         wf.enabled = enabled;
@@ -75,7 +76,7 @@ impl WorkflowPanel {
                 self.workflows = self.engine.list_workflows();
                 self.set_status(cx, format!("{id} → {}", if enabled { "启用" } else { "禁用" }));
             }
-            Err(e) => self.set_status(cx, format!("保存失败: {e:#}")),
+            Err(e) => self.set_status(cx, t!("workflow.save_failed", error = format!("{e:#}")).to_string()),
         }
     }
 
@@ -83,15 +84,15 @@ impl WorkflowPanel {
         match self.engine.delete_workflow(&id) {
             Ok(()) => {
                 self.workflows = self.engine.list_workflows();
-                self.set_status(cx, format!("✓ {id} 已删除"));
+                self.set_status(cx, t!("workflow.deleted_ok", id = id.as_str()).to_string());
             }
-            Err(e) => self.set_status(cx, format!("删除失败: {e:#}")),
+            Err(e) => self.set_status(cx, t!("workflow.delete_failed", error = format!("{e:#}")).to_string()),
         }
     }
 
     /// 运行：与启动器 Enter 分支同一语义——后台执行，副作用回主线程
     fn run(&mut self, id: String, cx: &mut Context<Self>) {
-        self.set_status(cx, format!("正在运行 {id}…"));
+        self.set_status(cx, t!("workflow.running", id = id.as_str()).to_string());
         let engine = self.engine.clone();
         let audit_logger = self.audit_logger.clone();
         cx.spawn(async move |this, cx| {
@@ -101,11 +102,11 @@ impl WorkflowPanel {
                 match result {
                     Ok(_) => {
                         consume_effects(effects, cx);
-                        this.set_status(cx, format!("✓ {id} 运行完成"));
+                        this.set_status(cx, t!("workflow.run_ok", id = id.as_str()).to_string());
                         log_run(&audit_logger, &id, true);
                     }
                     Err(e) => {
-                        this.set_status(cx, format!("✗ {id} 运行失败: {e:#}"));
+                        this.set_status(cx, t!("workflow.run_failed", id = id.as_str(), error = format!("{e:#}")).to_string());
                         log_run(&audit_logger, &id, false);
                     }
                 }
@@ -168,11 +169,11 @@ impl Render for WorkflowPanel {
                     .w_full()
                     .items_center()
                     .justify_between()
-                    .child(div().text_sm().child(format!("工作流（{} 个）", workflows.len())))
+                    .child(div().text_sm().child(t!("workflow.header", count = workflows.len()).to_string()))
                     .child(
                         Button::new("workflow-refresh")
                             .small()
-                            .label("刷新")
+                            .label(t!("workflow.refresh").to_string())
                             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
                     ),
             )
@@ -189,11 +190,7 @@ impl Render for WorkflowPanel {
                                         let wf = &workflows[ix];
                                         let id = wf.id.clone();
                                         let title = wf.name.clone();
-                                        let subtitle = format!(
-                                            "{} · {} 步",
-                                            trigger_summary(&wf.trigger),
-                                            wf.steps.len()
-                                        );
+                                        let subtitle = t!("workflow.subtitle", trigger = trigger_summary(&wf.trigger), count = wf.steps.len()).to_string();
                                         let enabled = wf.enabled;
                                         ListItem::new(ix)
                                             .child(
@@ -232,7 +229,7 @@ impl Render for WorkflowPanel {
                                                                             .child(if wf.description.is_empty() {
                                                                                 subtitle
                                                                             } else {
-                                                                                format!("{} · {}", subtitle, wf.description)
+                                                                                t!("workflow.subtitle_with_desc", subtitle = subtitle.as_str(), desc = wf.description.as_str()).to_string()
                                                                             }),
                                                                     ),
                                                             ),
@@ -243,7 +240,7 @@ impl Render for WorkflowPanel {
                                                             .child(
                                                                 Button::new(("run", ix))
                                                                     .small()
-                                                                    .label("运行")
+                                                                    .label(t!("workflow.run").to_string())
                                                                     .on_click({
                                                                         let panel = panel.clone();
                                                                         let id = id.clone();
@@ -257,7 +254,7 @@ impl Render for WorkflowPanel {
                                                             .child(
                                                                 Button::new(("delete", ix))
                                                                     .small()
-                                                                    .label("删除")
+                                                                    .label(t!("workflow.delete").to_string())
                                                                     .on_click({
                                                                         let panel = panel.clone();
                                                                         move |_, _, cx| {
@@ -284,7 +281,7 @@ impl Render for WorkflowPanel {
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(if status.is_empty() {
-                                "JSON 放入 workflows 目录后点刷新 · Esc 关闭".to_string()
+                                t!("workflow.footer_hint").to_string()
                             } else {
                                 status
                             }),

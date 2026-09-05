@@ -12,6 +12,7 @@ use gpui_kit::component::*;
 use gpui_kit::*;
 
 use crate::ai::{AiChat, DEFAULT_TITLE};
+use crate::i18n::t;
 use crate::markdown::{MdBlock, MdInline, parse_blocks};
 
 /// provider 循环切换顺序（与 ai.rs 支持集一致）
@@ -34,15 +35,15 @@ impl AiChatPanel {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, chat: Arc<AiChat>) -> Self {
         chat.load();
         let config = chat.config();
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("输入消息，Enter 发送…"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("ai.placeholder_input").to_string()));
         let key_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("API Key（本地明文存储）")
+            InputState::new(window, cx).placeholder(t!("ai.placeholder_key").to_string())
         });
         let model_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("模型，如 gpt-3.5-turbo / claude-3-sonnet")
+            InputState::new(window, cx).placeholder(t!("ai.placeholder_model").to_string())
         });
         let base_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Base URL（可选，留空用 provider 默认）")
+            InputState::new(window, cx).placeholder(t!("ai.placeholder_base").to_string())
         });
         let focus = cx.focus_handle();
 
@@ -102,12 +103,12 @@ impl AiChatPanel {
         }
         if self.chat.config().api_key.is_empty() {
             self.settings_open = true;
-            self.set_status(cx, "请先在设置区填写 API Key");
+            self.set_status(cx, t!("ai.need_api_key").to_string());
             return;
         }
         self.input.update(cx, |s, cx| s.set_value(String::new(), window, cx));
         self.busy = true;
-        self.set_status(cx, "等待 AI 回复…");
+        self.set_status(cx, t!("ai.waiting").to_string());
         let chat = self.chat.clone();
         cx.spawn(async move |this, cx| {
             let result = chat.send_message(&message).await;
@@ -115,7 +116,7 @@ impl AiChatPanel {
                 this.busy = false;
                 match result {
                     Ok(_) => this.status = String::new(),
-                    Err(e) => this.status = format!("发送失败: {e:#}"),
+                    Err(e) => this.status = t!("ai.send_failed", error = format!("{e:#}")).to_string(),
                 }
                 cx.notify();
             });
@@ -136,7 +137,7 @@ impl AiChatPanel {
 
     fn delete_conversation(&mut self, id: String, cx: &mut Context<Self>) {
         self.chat.delete_conversation(&id);
-        self.set_status(cx, "已删除");
+        self.set_status(cx, t!("ai.deleted").to_string());
     }
 
     /// provider 循环到下一个
@@ -149,7 +150,7 @@ impl AiChatPanel {
             .unwrap_or(PROVIDERS[0]);
         config.provider = next.into();
         if let Err(e) = self.chat.save_config(config) {
-            self.set_status(cx, format!("保存配置失败: {e:#}"));
+            self.set_status(cx, t!("ai.save_failed", error = format!("{e:#}")).to_string());
         }
         cx.notify();
     }
@@ -161,7 +162,7 @@ impl AiChatPanel {
         let base = self.base_input.read(cx).value().trim().to_string();
         config.base_url = if base.is_empty() { None } else { Some(base) };
         match self.chat.save_config(config) {
-            Ok(()) => self.set_status(cx, "✓ 配置已保存"),
+            Ok(()) => self.set_status(cx, t!("ai.saved").to_string()),
             Err(e) => self.set_status(cx, format!("保存配置失败: {e:#}")),
         }
     }
@@ -220,12 +221,16 @@ fn render_blocks(text: &str, theme: &Theme) -> Vec<AnyElement> {
                     .child(h_flex().flex_wrap().children(render_inlines(runs, theme)))
                     .into_any_element(),
                 MdBlock::Code { lang, text } => {
-                    let label = if lang.is_empty() { String::new() } else { format!("{lang} · ") };
+                    let label = if lang.is_empty() {
+                        t!("ai.code").to_string()
+                    } else {
+                        t!("ai.code_lang", lang = lang).to_string()
+                    };
                     v_flex()
                         .gap_1()
                         .py_1()
                         .child(
-                            div().text_xs().text_color(theme.muted_foreground).child(format!("{label}代码")),
+                            div().text_xs().text_color(theme.muted_foreground).child(label),
                         )
                         .child(
                             div()
@@ -288,7 +293,7 @@ impl Render for AiChatPanel {
             .child(
                 Button::new("ai-new")
                     .small()
-                    .label("＋ 新对话")
+                    .label(t!("ai.new_conversation").to_string())
                     .w_full()
                     .on_click(cx.listener(|this, _, _, cx| this.new_conversation(cx))),
             )
@@ -312,7 +317,7 @@ impl Render for AiChatPanel {
                                                 m.content.chars().take(24).collect();
                                             format!("{}: {}", m.role, preview)
                                         })
-                                        .unwrap_or_else(|| "（空对话）".into());
+                                        .unwrap_or_else(|| t!("ai.empty_conversation").to_string());
                                     ListItem::new(ix)
                                         .child(
                                             v_flex()
@@ -381,12 +386,12 @@ impl Render for AiChatPanel {
                 .w_full()
                 .justify_between()
                 .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(
-                    current.as_ref().map(|c| c.title.clone()).unwrap_or_else(|| "AI 对话".into()),
+                    current.as_ref().map(|c| c.title.clone()).unwrap_or_else(|| t!("ai.title").to_string()),
                 ))
                 .child(
                     Button::new("ai-settings-toggle")
                         .small()
-                        .label(if settings_open { "● 设置" } else { "设置" })
+                        .label(if settings_open { t!("ai.settings_active").to_string() } else { t!("ai.settings").to_string() })
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.settings_open = !this.settings_open;
                             cx.notify();
@@ -407,11 +412,7 @@ impl Render for AiChatPanel {
                         .w_full()
                         .gap_1()
                         .child(
-                            div().text_xs().text_color(theme.muted_foreground).child(if is_user {
-                                "你"
-                            } else {
-                                "AI"
-                            }),
+                            div().text_xs().text_color(theme.muted_foreground).child(if is_user { t!("ai.role_user").to_string() } else { t!("ai.role_ai").to_string() }),
                         )
                         .child(
                             div()
@@ -437,7 +438,7 @@ impl Render for AiChatPanel {
                     div()
                         .text_sm()
                         .text_color(theme.muted_foreground)
-                        .child("输入消息开始对话，或在左侧选择历史会话"),
+                        .child(t!("ai.empty_hint").to_string()),
                 ),
         };
         main = main.child(messages_el);
@@ -460,7 +461,7 @@ impl Render for AiChatPanel {
                             .child(
                                 Button::new("ai-provider")
                                     .small()
-                                    .label(format!("{}（点击切换）", config.provider))
+                                    .label(t!("ai.provider_click", provider = config.provider.clone()).to_string())
                                     .on_click(cx.listener(|this, _, _, cx| this.cycle_provider(cx))),
                             ),
                     )
@@ -470,7 +471,7 @@ impl Render for AiChatPanel {
                     .child(
                         Button::new("ai-save-settings")
                             .small()
-                            .label("保存配置")
+                            .label(t!("ai.save").to_string())
                             .on_click(cx.listener(|this, _, _, cx| this.save_settings(cx))),
                     ),
             );
@@ -486,7 +487,7 @@ impl Render for AiChatPanel {
                 .child(
                     Button::new("ai-send")
                         .small()
-                        .label(if busy { "…" } else { "发送" })
+                        .label(if busy { "…".to_string() } else { t!("ai.send").to_string() })
                         .on_click(cx.listener(|this, _, window, cx| this.send(window, cx))),
                 ),
         );
@@ -497,7 +498,7 @@ impl Render for AiChatPanel {
                 .w_full()
                 .child(
                     div().text_xs().text_color(theme.muted_foreground).child(if status.is_empty() {
-                        "Esc 关闭 · Enter 发送 · Markdown 渲染（无语法高亮）".to_string()
+                        t!("ai.footer_hint").to_string()
                     } else {
                         status
                     }),

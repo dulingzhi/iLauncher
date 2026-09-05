@@ -15,12 +15,16 @@
 mod audit;
 mod autostart;
 mod http_util;
+mod i18n;
 mod plugin;
 mod preview;
 mod search;
 mod settings;
 mod ai;
 mod markdown;
+
+// i18n 文案嵌入（必须在 crate 根：t! 展开引用 crate::_rust_i18n_t）
+rust_i18n::i18n!("locales", fallback = "zh-CN");
 
 #[cfg(test)]
 mod test_util;
@@ -149,7 +153,7 @@ impl Launcher {
         plugins: Arc<plugin::PluginManager>,
         #[cfg(target_os = "windows")] workflows: Arc<workflow::WorkflowEngine>,
     ) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索应用、文件、命令…（中文 IME 请在这里验证）"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(crate::i18n::t!("main.placeholder").to_string()));
         let focus = cx.focus_handle();
 
         let bench = std::env::args().any(|a| a == "--bench");
@@ -225,7 +229,7 @@ impl Launcher {
             for wf in self.workflows.find_by_keyword(&query) {
                 entries.push(search::Entry {
                     name: wf.name.clone(),
-                    path: if wf.description.is_empty() { "工作流".into() } else { wf.description.clone() },
+                    path: if wf.description.is_empty() { crate::i18n::t!("main.workflow_fallback").into() } else { wf.description.clone() },
                     score: 0,
                     origin: search::EntryOrigin::Workflow { workflow_id: wf.id.clone() },
                 });
@@ -406,7 +410,7 @@ impl Launcher {
 
         let Some((path, result)) = &self.preview else {
             return base()
-                .child(div().text_xs().text_color(muted).child("选择文件以预览"))
+                .child(div().text_xs().text_color(muted).child(crate::i18n::t!("main.preview_select").to_string()))
                 .into_any_element();
         };
 
@@ -433,7 +437,7 @@ impl Launcher {
                             preview::format_unix_utc(p.modified_unix),
                         )
                     }
-                    Err(_) => "无法读取元信息".to_string(),
+                    Err(_) => crate::i18n::t!("main.preview_meta_error").to_string(),
                 }),
             );
 
@@ -453,7 +457,7 @@ impl Launcher {
                 FileType::Binary => div()
                     .text_xs()
                     .text_color(muted)
-                    .child("二进制文件，无法预览内容")
+                    .child(crate::i18n::t!("main.preview_binary").to_string())
                     .into_any_element(),
             },
             Err(e) => div().text_xs().text_color(muted).child(e.clone()).into_any_element(),
@@ -653,17 +657,20 @@ impl Render for Launcher {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(format!(
-                                "{} 条结果 · {} · ↑↓ 选择 · Enter 打开 · Esc 隐藏{}",
-                                result_count,
-                                self.source.status_text(),
-                                if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
-                            )),
+                            .child(
+                                crate::i18n::t!(
+                                    "main.result_count",
+                                    count = result_count,
+                                    elapsed = self.source.status_text(),
+                                    extra = if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
+                                )
+                                .to_string(),
+                            ),
                     )
                     .child(
                         Button::new("quit")
                             .small()
-                            .label("退出")
+                            .label(crate::i18n::t!("main.quit_button").as_ref())
                             .on_click(|_, _, _| std::process::exit(0)),
                     ),
             );
@@ -1037,30 +1044,32 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
     std::thread::spawn(move || {
         use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
         use tray_icon::TrayIconBuilder;
+        use crate::i18n::t;
 
+        // 菜单文案在启动时按当前语言定型（切换语言后托盘菜单下次启动更新）
         let menu = Menu::new();
-        let _ = menu.append(&MenuItem::with_id("show", "显示 iLauncher", true, None));
-        let _ = menu.append(&MenuItem::with_id("settings", "设置", true, None));
-        let _ = menu.append(&MenuItem::with_id("clipboard", "剪贴板历史", true, None));
-        let _ = menu.append(&MenuItem::with_id("audit", "审计日志", true, None));
-        let _ = menu.append(&MenuItem::with_id("plugins", "插件", true, None));
-        let _ = menu.append(&MenuItem::with_id("workflows", "工作流", true, None));
-        let _ = menu.append(&MenuItem::with_id("ai", "AI 助手", true, None));
-        let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
+        let _ = menu.append(&MenuItem::with_id("show", t!("tray.show"), true, None));
+        let _ = menu.append(&MenuItem::with_id("settings", t!("tray.settings"), true, None));
+        let _ = menu.append(&MenuItem::with_id("clipboard", t!("tray.clipboard"), true, None));
+        let _ = menu.append(&MenuItem::with_id("audit", t!("tray.audit"), true, None));
+        let _ = menu.append(&MenuItem::with_id("plugins", t!("tray.plugins"), true, None));
+        let _ = menu.append(&MenuItem::with_id("workflows", t!("tray.workflows"), true, None));
+        let _ = menu.append(&MenuItem::with_id("ai", t!("tray.ai"), true, None));
+        let _ = menu.append(&MenuItem::with_id("rebuild", t!("tray.rebuild"), true, None));
         // 开机自启：可勾选项，初始状态读注册表
         let autostart_item =
-            CheckMenuItem::with_id("autostart", "开机自启动", true, autostart::is_enabled(), None);
+            CheckMenuItem::with_id("autostart", t!("tray.autostart"), true, autostart::is_enabled(), None);
         let _ = menu.append(&autostart_item);
         // 深色主题：可勾选项；未持久化过时跟随系统设置
         let dark_item = CheckMenuItem::with_id(
             "dark_theme",
-            "深色主题",
+            t!("tray.dark_theme"),
             true,
             settings::load_theme_dark().unwrap_or_else(settings::system_prefers_dark),
             None,
         );
         let _ = menu.append(&dark_item);
-        let _ = menu.append(&MenuItem::with_id("quit", "退出", true, None));
+        let _ = menu.append(&MenuItem::with_id("quit", t!("tray.quit"), true, None));
         let _tray = match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("iLauncher (gpui P1)")
@@ -1169,6 +1178,7 @@ fn run_snapshot_bench(_path: &str) {
 
 fn main() {
     start_time();
+    i18n::apply(); // 语言偏好 → 全局 locale（托盘/窗口文案在此之后定型）
     let args: Vec<String> = std::env::args().collect();
 
     // ── 常驻 MFT 服务模式（提权子进程，UI 退出后自动停止） ──────────────────

@@ -11,6 +11,7 @@ use gpui_kit::*;
 use parking_lot::Mutex;
 
 use crate::audit::{AuditLogEntry, AuditLogger, AuditSeverity};
+use crate::i18n::t;
 
 const PAGE_LIMIT: usize = 200;
 const POLL_MS: u64 = 500;
@@ -29,7 +30,7 @@ pub struct AuditPanel {
 
 impl AuditPanel {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, logger: Arc<Mutex<AuditLogger>>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索插件 / 事件 / 详情…"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("audit.placeholder").to_string()));
         let focus = cx.focus_handle();
 
         let mut this = Self {
@@ -114,7 +115,7 @@ impl AuditPanel {
 
     fn clear_all(&mut self, cx: &mut Context<Self>) {
         self.logger.lock().clear();
-        self.status = "审计日志已清空".into();
+        self.status = t!("audit.cleared").to_string();
         self.refresh(cx);
     }
 
@@ -136,8 +137,8 @@ impl AuditPanel {
             Ok(path)
         })();
         self.status = match result {
-            Ok(p) => format!("已导出到 {}", p.display()),
-            Err(e) => format!("导出失败: {e:#}"),
+            Ok(p) => t!("audit.exported_to", path = p.display().to_string()).to_string(),
+            Err(e) => t!("audit.export_failed", error = format!("{e:#}")).to_string(),
         };
         cx.notify();
     }
@@ -186,7 +187,7 @@ impl Render for AuditPanel {
                     .child(
                         Button::new("audit-violations-toggle")
                             .small()
-                            .label(if self.violations_only { "仅违规：开" } else { "仅违规：关" })
+                            .label(if self.violations_only { t!("audit.violations_on").to_string() } else { t!("audit.violations_off").to_string() })
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.violations_only = !this.violations_only;
                                 this.refresh(cx);
@@ -196,7 +197,7 @@ impl Render for AuditPanel {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child("仅显示违规尝试事件（ViolationAttempt）"),
+                            .child(t!("audit.violations_desc").to_string()),
                     ),
             )
             .child(Input::new(&self.input).w_full())
@@ -274,7 +275,7 @@ impl Render for AuditPanel {
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(if status.is_empty() {
-                                format!("{} 条审计 · ↑↓ 选择 · Esc 关闭", total)
+                                t!("audit.footer", count = total).to_string()
                             } else {
                                 status
                             }),
@@ -285,13 +286,13 @@ impl Render for AuditPanel {
                             .child(
                                 Button::new("audit-export")
                                     .small()
-                                    .label("导出 JSON")
+                                    .label(t!("audit.export").to_string())
                                     .on_click(cx.listener(|this, _, _, cx| this.export(cx))),
                             )
                             .child(
                                 Button::new("audit-clear")
                                     .small()
-                                    .label("清空")
+                                    .label(t!("audit.clear").to_string())
                                     .on_click(cx.listener(|this, _, _, cx| this.clear_all(cx))),
                             ),
                     ),

@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::i18n::t;
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
@@ -75,44 +76,80 @@ impl AuditEventType {
                 plugin_id,
                 permission,
                 allowed,
-            } => format!("{plugin_id} 权限检查 {permission} → {}", verdict(*allowed)),
+            } => t!(
+                "audit.ev_perm",
+                plugin = plugin_id,
+                permission = permission,
+                verdict = verdict(*allowed)
+            )
+            .to_string(),
             AuditEventType::FileAccess {
                 plugin_id,
                 path,
                 write,
                 allowed,
-            } => format!(
-                "{plugin_id} 文件{} {} → {}",
-                if *write { "写入" } else { "读取" },
-                path,
-                verdict(*allowed),
-            ),
+            } => t!(
+                "audit.ev_file",
+                plugin = plugin_id,
+                mode = if *write { t!("audit.file_write") } else { t!("audit.file_read") },
+                path = path,
+                verdict = verdict(*allowed)
+            )
+            .to_string(),
             AuditEventType::NetworkAccess {
                 plugin_id,
                 domain,
                 allowed,
-            } => format!("{plugin_id} 网络访问 {domain} → {}", verdict(*allowed)),
+            } => t!(
+                "audit.ev_network",
+                plugin = plugin_id,
+                domain = domain,
+                verdict = verdict(*allowed)
+            )
+            .to_string(),
             AuditEventType::ProgramExecution {
                 plugin_id,
                 program,
                 allowed,
-            } => format!("{plugin_id} 执行 {program} → {}", verdict(*allowed)),
+            } => t!(
+                "audit.ev_exec",
+                plugin = plugin_id,
+                program = program,
+                verdict = verdict(*allowed)
+            )
+            .to_string(),
             AuditEventType::ViolationAttempt {
                 plugin_id,
                 violation_type,
                 details,
-            } => format!("{plugin_id} 违规尝试 {violation_type}: {details}"),
+            } => t!(
+                "audit.ev_violation",
+                plugin = plugin_id,
+                kind = violation_type,
+                details = details
+            )
+            .to_string(),
             AuditEventType::ConfigChange {
                 plugin_id,
                 old_level,
                 new_level,
-            } => format!("{plugin_id} 配置 {old_level} → {new_level}"),
+            } => t!(
+                "audit.ev_config",
+                plugin = plugin_id,
+                old = old_level,
+                new = new_level
+            )
+            .to_string(),
         }
     }
 }
 
-fn verdict(allowed: bool) -> &'static str {
-    if allowed { "允许" } else { "拒绝" }
+fn verdict(allowed: bool) -> String {
+    if allowed {
+        t!("audit.verdict_allow").to_string()
+    } else {
+        t!("audit.verdict_deny").to_string()
+    }
 }
 
 /// 审计严重程度
@@ -124,11 +161,11 @@ pub enum AuditSeverity {
 }
 
 impl AuditSeverity {
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            AuditSeverity::Info => "信息",
-            AuditSeverity::Warning => "警告",
-            AuditSeverity::Critical => "严重",
+            AuditSeverity::Info => t!("audit.sev_info").to_string(),
+            AuditSeverity::Warning => t!("audit.sev_warning").to_string(),
+            AuditSeverity::Critical => t!("audit.sev_critical").to_string(),
         }
     }
 }
@@ -156,16 +193,17 @@ pub struct AuditStatistics {
 impl AuditStatistics {
     /// 查看器状态栏单行摘要
     pub fn summarize(&self) -> String {
-        format!(
-            "权限检查 {}（拒 {}）· 文件 {}（拒 {}）· 网络 {}（拒 {}）· 违规 {}",
-            self.total_checks,
-            self.denied_checks,
-            self.file_accesses,
-            self.denied_file_accesses,
-            self.network_accesses,
-            self.denied_network_accesses,
-            self.violations,
+        t!(
+            "audit.stats_summary",
+            checks = self.total_checks,
+            denied_checks = self.denied_checks,
+            files = self.file_accesses,
+            denied_files = self.denied_file_accesses,
+            network = self.network_accesses,
+            denied_network = self.denied_network_accesses,
+            violations = self.violations
         )
+        .to_string()
     }
 }
 
@@ -249,7 +287,7 @@ impl AuditLogger {
 
     /// 导出全部日志为 pretty JSON
     pub fn export_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(&self.entries).context("审计日志序列化失败")
+        serde_json::to_string_pretty(&self.entries).context(t!("audit.serialize_failed").to_string())
     }
 
     pub fn statistics(&self) -> AuditStatistics {
@@ -360,6 +398,7 @@ mod tests {
 
     #[test]
     fn statistics_match_legacy_semantics() {
+        crate::i18n::test_use_zh();
         let mut logger = AuditLogger::in_memory(100);
         logger.log(perm_check("t", true), AuditSeverity::Info);
         logger.log(perm_check("t", false), AuditSeverity::Warning);
@@ -438,6 +477,7 @@ mod tests {
 
     #[test]
     fn summarize_covers_all_event_variants() {
+        crate::i18n::test_use_zh();
         let cases = [
             (
                 perm_check("p", true),

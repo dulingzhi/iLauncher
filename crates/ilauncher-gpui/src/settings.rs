@@ -61,6 +61,23 @@ mod imp {
         write_value(SETTINGS_KEY, THEME_VALUE, if dark { "dark" } else { "light" })
     }
 
+    /// 界面语言值名："zh-CN" / "en" / "system"；不存在或非法 = 跟随系统
+    const LANGUAGE_VALUE: &str = "Language";
+
+    /// 读取语言偏好：Some("zh-CN"/"en"/"system")；未设置/非法返回 None（跟随系统）
+    pub fn load_language() -> Option<String> {
+        let v = read_value(SETTINGS_KEY, LANGUAGE_VALUE)?;
+        match v.as_str() {
+            "zh-CN" | "en" | "system" => Some(v),
+            _ => None,
+        }
+    }
+
+    /// 保存语言偏好（调用方负责传合法值；i18n::switch_to 会再解析）
+    pub fn save_language(lang: &str) -> anyhow::Result<()> {
+        write_value(SETTINGS_KEY, LANGUAGE_VALUE, lang)
+    }
+
     /// Windows 系统当前是否深色模式（AppsUseLightTheme=0）。
     /// 读取失败时返回 false（浅色），与 gpui-component 默认一致。
     pub fn system_prefers_dark() -> bool {
@@ -178,6 +195,32 @@ mod imp {
         }
 
         #[test]
+        fn language_roundtrip_and_invalid() {
+            let name = "Language";
+            cleanup(name);
+            assert_eq!(load_language_from(TEST_KEY, name), None);
+            write_value(TEST_KEY, name, "en").unwrap();
+            assert_eq!(load_language_from(TEST_KEY, name).as_deref(), Some("en"));
+            write_value(TEST_KEY, name, "zh-CN").unwrap();
+            assert_eq!(load_language_from(TEST_KEY, name).as_deref(), Some("zh-CN"));
+            write_value(TEST_KEY, name, "system").unwrap();
+            assert_eq!(load_language_from(TEST_KEY, name).as_deref(), Some("system"));
+            // 非法值按未设置处理（跟随系统）
+            write_value(TEST_KEY, name, "fr").unwrap();
+            assert_eq!(load_language_from(TEST_KEY, name), None);
+            cleanup(name);
+        }
+
+        /// 测试走独立（子键, 值名）的 load（生产 load_language 硬编码 SETTINGS_KEY/LANGUAGE_VALUE）
+        fn load_language_from(key: &str, name: &str) -> Option<String> {
+            let v = read_value(key, name)?;
+            match v.as_str() {
+                "zh-CN" | "en" | "system" => Some(v),
+                _ => None,
+            }
+        }
+
+        #[test]
         fn disabled_plugins_parse_and_clean() {
             let name = "disabled_plugins";
             cleanup(name);
@@ -201,8 +244,8 @@ mod imp {
 
 #[cfg(windows)]
 pub use imp::{
-    load_clipboard_capacity, load_disabled_plugins, load_theme_dark, save_theme_dark,
-    system_prefers_dark,
+    load_clipboard_capacity, load_disabled_plugins, load_language, load_theme_dark,
+    save_language, save_theme_dark, system_prefers_dark,
 };
 // 容量写/夹取常量仅在剪贴板设置项存在时使用
 #[cfg(all(windows, feature = "clipboard"))]

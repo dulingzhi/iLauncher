@@ -130,14 +130,21 @@ pub enum UpdateState {
 
 impl UpdateState {
     pub fn button_label(&self) -> String {
+        use crate::i18n::t;
         match self {
-            UpdateState::Idle => "检查更新".into(),
-            UpdateState::Checking => "检查中…".into(),
-            UpdateState::UpToDate(v) => format!("已是最新（v{v}）"),
-            UpdateState::Available(info) => format!("下载并安装 v{}", info.version),
-            UpdateState::Downloading(v) => format!("下载中（v{v}）…"),
-            UpdateState::Ready { version, .. } => format!("安装并重启（v{version}）"),
-            UpdateState::Failed(_) => "重试检查".into(),
+            UpdateState::Idle => t!("updater.button_idle").into(),
+            UpdateState::Checking => t!("updater.button_checking").into(),
+            UpdateState::UpToDate(v) => t!("updater.button_uptodate", version = v.as_str()).into(),
+            UpdateState::Available(info) => {
+                t!("updater.button_available", version = info.version.as_str()).into()
+            }
+            UpdateState::Downloading(v) => {
+                t!("updater.button_downloading", version = v.as_str()).into()
+            }
+            UpdateState::Ready { version, .. } => {
+                t!("updater.button_ready", version = version.as_str()).into()
+            }
+            UpdateState::Failed(_) => t!("updater.button_failed").into(),
         }
     }
 
@@ -151,16 +158,22 @@ impl UpdateState {
 
     /// 设置项描述行（构建页时取当前状态）
     pub fn status_text(&self) -> String {
+        use crate::i18n::t;
         match self {
-            UpdateState::Idle => "从 GitHub releases 检查新版本".into(),
-            UpdateState::Checking => "正在获取 latest.json…".into(),
-            UpdateState::UpToDate(_) => "当前已是最新版本".into(),
-            UpdateState::Available(info) => {
-                format!("发现新版本 v{}（{}）", info.version, info.pub_date.as_deref().unwrap_or("日期待定"))
+            UpdateState::Idle => t!("updater.status_idle").into(),
+            UpdateState::Checking => t!("updater.status_checking").into(),
+            UpdateState::UpToDate(_) => t!("updater.status_uptodate").into(),
+            UpdateState::Available(info) => t!(
+                "updater.status_available",
+                version = info.version.as_str(),
+                date = info.pub_date.as_deref().unwrap_or(t!("updater.date_unknown").as_ref())
+            )
+            .into(),
+            UpdateState::Downloading(v) => {
+                t!("updater.status_downloading", version = v.as_str()).into()
             }
-            UpdateState::Downloading(v) => format!("正在下载 v{v} 安装包…"),
-            UpdateState::Ready { .. } => "安装包已就绪并通过签名校验，点击后退出并启动安装程序".into(),
-            UpdateState::Failed(e) => format!("检查失败：{e}"),
+            UpdateState::Ready { .. } => t!("updater.status_ready").into(),
+            UpdateState::Failed(e) => t!("updater.status_failed", error = e.as_str()).into(),
         }
     }
 }
@@ -315,6 +328,7 @@ mod tests {
 
     #[test]
     fn state_button_and_clickable_consistency() {
+        crate::i18n::test_use_zh();
         assert_eq!(UpdateState::Idle.button_label(), "检查更新");
         assert!(UpdateState::Idle.can_click());
         assert!(!UpdateState::Checking.can_click());

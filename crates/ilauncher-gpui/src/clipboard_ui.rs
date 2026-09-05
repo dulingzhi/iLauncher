@@ -7,6 +7,8 @@ use gpui_kit::component::{input::{Input, InputEvent, InputState}, *};
 use gpui_kit::*;
 use ilauncher_clipboard::{ClipboardItem, ClipboardStore, DEFAULT_CAPACITY};
 use parking_lot::Mutex;
+
+use crate::i18n::t;
 use std::sync::Arc;
 
 const PAGE_LIMIT: usize = 100;
@@ -49,7 +51,7 @@ pub struct ClipboardPanel {
 
 impl ClipboardPanel {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, store: Arc<Mutex<ClipboardStore>>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索剪贴板历史…"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("clipboard.placeholder").to_string()));
         let focus = cx.focus_handle();
 
         let mut this = Self {
@@ -139,10 +141,10 @@ impl ClipboardPanel {
         let Some(item) = self.entries.get(self.selected) else { return };
         let result = if item.kind == "image" {
             ilauncher_clipboard::copy_image(&item.content)
-                .map(|()| format!("已复制图片 #{}（{}）", item.id, item.preview))
+                .map(|()| t!("clipboard.copied_image", id = item.id, preview = item.preview.clone()).to_string())
         } else {
             ilauncher_clipboard::copy_text(&item.content)
-                .map(|()| format!("已复制 #{}（{} 字符）", item.id, item.content.chars().count()))
+                .map(|()| t!("clipboard.copied_text", id = item.id, chars = item.content.chars().count()).to_string())
         };
         match result {
             Ok(msg) => {
@@ -236,7 +238,7 @@ impl Render for ClipboardPanel {
                     .text_xs()
                     .text_color(theme.muted_foreground)
                     .child(if status.is_empty() {
-                        format!("{} 条历史 · ↑↓ 选择 · Enter/点击 复制 · Esc 关闭", total)
+                        t!("clipboard.footer", count = total).to_string()
                     } else {
                         status
                     }),

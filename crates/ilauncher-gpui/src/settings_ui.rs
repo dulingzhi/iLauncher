@@ -15,6 +15,7 @@ use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, Sett
 use gpui_kit::component::*;
 use gpui_kit::*;
 
+use crate::i18n::{self, t};
 use crate::search::LiveSet;
 use crate::updater;
 use crate::AppSignal;
@@ -31,6 +32,8 @@ pub struct SettingsModel {
     pub theme_dark: bool,
     pub autostart: bool,
     pub clipboard_capacity: usize,
+    /// 界面语言（注册表原始值："zh-CN" / "en" / "system"；未设置按跟随系统处理）
+    pub language: String,
     /// 检查更新状态机（updater::UpdateState）
     pub update_state: updater::UpdateState,
 }
@@ -47,6 +50,8 @@ pub fn init_model(cx: &mut App) {
             .unwrap_or_else(crate::settings::system_prefers_dark),
         autostart: crate::autostart::is_enabled(),
         clipboard_capacity: clipboard_capacity_or_default(),
+        language: crate::settings::load_language()
+            .unwrap_or_else(|| i18n::FOLLOW_SYSTEM.to_string()),
         update_state: updater::UpdateState::Idle,
     };
     let entity = cx.new(|_| model);
@@ -75,11 +80,14 @@ fn model(cx: &App) -> Entity<SettingsModel> {
 }
 
 /// 设置页标题表（单测直接验证它；build_pages 末尾 debug_assert 对账防脱节）
-pub(crate) fn page_titles() -> Vec<&'static str> {
-    let mut v = vec!["通用", "外观"];
+pub(crate) fn page_titles() -> Vec<String> {
+    let mut v = vec![t!("settings.page_general").to_string(), t!("settings.page_appearance").to_string()];
     #[cfg(feature = "clipboard")]
-    v.push("剪贴板");
-    v.extend(["索引", "关于"]);
+    v.push(t!("settings.page_clipboard").to_string());
+    v.extend([
+        t!("settings.page_index").to_string(),
+        t!("settings.page_about").to_string(),
+    ]);
     v
 }
 
@@ -88,14 +96,14 @@ pub(crate) fn build_pages(
     index_set: &LiveSet,
     tx: &mpsc::Sender<AppSignal>,
     #[cfg(feature = "clipboard")] store: &Arc<Mutex<ClipboardStore>>,
-) -> Vec<(&'static str, SettingPage)> {
-    // ── 通用：自启动（真实写入注册表 Run 项）、热键（暂只读展示） ──
-    let general = SettingPage::new("通用")
+) -> Vec<(String, SettingPage)> {
+    // ── 通用：自启动（真实写入注册表 Run 项）、热键（暂只读展示）、界面语言 ──
+    let general = SettingPage::new(t!("settings.page_general").to_string())
         .icon(IconName::Settings2)
         .group(
-            SettingGroup::new().title("启动").item(
+            SettingGroup::new().title(t!("settings.general_group_start").to_string()).item(
                 SettingItem::new(
-                    "开机自启动",
+                    t!("settings.general_autostart").to_string(),
                     SettingField::switch(
                         |cx: &App| model(cx).read(cx).autostart,
                         |on, cx: &mut App| {
@@ -110,25 +118,45 @@ pub(crate) fn build_pages(
                         },
                     ),
                 )
-                .description("登录 Windows 后自动在后台运行 iLauncher"),
+                .description(t!("settings.general_autostart_desc").to_string()),
             ).item(
                 // 热键注册在全局热键线程里，自定义绑定留待后续版本
                 SettingItem::new(
-                    "唤起热键",
+                    t!("settings.general_hotkey").to_string(),
                     SettingField::input(|_: &App| "Ctrl+Space".into(), |_, _| {}),
                 )
                 .disabled(true)
-                .description("当前绑定；自定义热键将在后续版本开放"),
+                .description(t!("settings.general_hotkey_desc").to_string()),
+            ).item(
+                SettingItem::new(
+                    t!("settings.general_language").to_string(),
+                    SettingField::dropdown(
+                        vec![
+                            (i18n::FOLLOW_SYSTEM.into(), t!("settings.lang_system").to_string().into()),
+                            (i18n::ZH_CN.into(), "简体中文".into()),
+                            (i18n::EN.into(), "English".into()),
+                        ],
+                        |cx: &App| model(cx).read(cx).language.clone().into(),
+                        |value, cx: &mut App| {
+                            let lang = value.to_string();
+                            if i18n::switch_to(&lang).is_ok() {
+                                model(cx).update(cx, |m, _| m.language = lang);
+                            }
+                            cx.refresh_windows();
+                        },
+                    ),
+                )
+                .description(t!("settings.general_language_desc").to_string()),
             ),
         );
 
     // ── 外观：深色模式（注册表 + 全局主题切换，与托盘菜单等价） ──
-    let appearance = SettingPage::new("外观")
+    let appearance = SettingPage::new(t!("settings.page_appearance").to_string())
         .icon(IconName::Palette)
         .group(
-            SettingGroup::new().title("主题").item(
+            SettingGroup::new().title(t!("settings.appearance_group_theme").to_string()).item(
                 SettingItem::new(
-                    "深色模式",
+                    t!("settings.appearance_dark").to_string(),
                     SettingField::switch(
                         |cx: &App| model(cx).read(cx).theme_dark,
                         |dark, cx: &mut App| {
@@ -144,22 +172,25 @@ pub(crate) fn build_pages(
                         },
                     ),
                 )
-                .description("关闭时跟随 Windows 系统外观"),
+                .description(t!("settings.appearance_dark_desc").to_string()),
             ),
         );
 
-    let mut pages = vec![("通用", general), ("外观", appearance)];
+    let mut pages = vec![
+        (t!("settings.page_general").to_string(), general),
+        (t!("settings.page_appearance").to_string(), appearance),
+    ];
 
     // ── 剪贴板：容量（注册表 + 运行时 set_capacity）、清空历史 ──
     #[cfg(feature = "clipboard")]
     {
         let store = store.clone();
-        let clipboard = SettingPage::new("剪贴板")
+        let clipboard = SettingPage::new(t!("settings.page_clipboard").to_string())
             .icon(IconName::Copy)
             .group(
-                SettingGroup::new().title("历史记录").item(
+                SettingGroup::new().title(t!("settings.clipboard_group_history").to_string()).item(
                     SettingItem::new(
-                        "历史容量",
+                        t!("settings.clipboard_capacity").to_string(),
                         SettingField::number_input(
                             NumberFieldOptions {
                                 min: crate::settings::CLIPBOARD_CAPACITY_MIN as f64,
@@ -179,26 +210,26 @@ pub(crate) fn build_pages(
                         )
                         .default_value(ilauncher_clipboard::DEFAULT_CAPACITY as f64),
                     )
-                    .description("保存的剪贴板条目上限，超出后按最旧截断（图片文件一并清理）"),
+                    .description(t!("settings.clipboard_capacity_desc").to_string()),
                 ).item(
                     SettingItem::new(
-                        "清空历史",
+                        t!("settings.clipboard_clear").to_string(),
                         SettingField::render({
                             let store = store.clone();
                             move |_, _, _| {
                                 let store = store.clone();
                                 Button::new("clear-clipboard-history")
-                                    .label("清空全部历史")
+                                    .label(t!("settings.clipboard_clear_button").to_string())
                                     .on_click(move |_, _, _| {
                                         store.lock().clear();
                                     })
                             }
                         }),
                     )
-                    .description("删除全部文本与图片记录，图片文件一并删除，不可恢复"),
+                    .description(t!("settings.clipboard_clear_desc").to_string()),
                 ),
             );
-        pages.push(("剪贴板", clipboard));
+        pages.push((t!("settings.page_clipboard").to_string(), clipboard));
     }
 
     // ── 索引：状态展示 + 重建（复用托盘同一信号通道） ──
@@ -214,64 +245,68 @@ pub(crate) fn build_pages(
             #[cfg(not(feature = "ilauncher"))]
             {
                 let _ = &index_set;
-                SharedString::from("演示数据（未启用 ilauncher feature）")
+                SharedString::from(t!("settings.index_demo").to_string())
             }
         }
     };
     let rebuild_tx = tx.clone();
-    let index = SettingPage::new("索引")
+    let index = SettingPage::new(t!("settings.page_index").to_string())
         .icon(IconName::HardDrive)
         .group(
-            SettingGroup::new().title("文件索引").item(
+            SettingGroup::new().title(t!("settings.index_group_files").to_string()).item(
                 SettingItem::new(
-                    "索引状态",
+                    t!("settings.index_status").to_string(),
                     SettingField::input(index_status, |_, _| {}),
                 )
                 .disabled(true)
-                .description("常驻 MFT 服务维护；搜索窗口状态栏同源自适应"),
+                .description(t!("settings.index_status_desc").to_string()),
             ).item(
                 SettingItem::new(
-                    "重建索引",
+                    t!("settings.index_rebuild").to_string(),
                     SettingField::render(move |_, _, _| {
                         let tx = rebuild_tx.clone();
                         Button::new("rebuild-index")
-                            .label("立即重建")
+                            .label(t!("settings.index_rebuild_button").to_string())
                             .on_click(move |_, _, _| {
                                 let _ = tx.send(AppSignal::RebuildIndex);
                             })
                     }),
                 )
-                .description("提权全量重扫（约 40 秒），期间搜索结果可能不全"),
+                .description(t!("settings.index_rebuild_desc").to_string()),
             ),
         );
-    pages.push(("索引", index));
+    pages.push((t!("settings.page_index").to_string(), index));
 
     // ── 关于：版本 / 数据目录 / 更新检查（占位） ──
-    let about = SettingPage::new("关于")
+    let about = SettingPage::new(t!("settings.page_about").to_string())
         .icon(IconName::Info)
         .group(
-            SettingGroup::new().title("应用").item(
+            SettingGroup::new().title(t!("settings.about_group_app").to_string()).item(
                 SettingItem::new(
-                    "版本",
+                    t!("settings.about_version").to_string(),
                     SettingField::input(
-                        |_: &App| format!("{}（GPUI 预览版）", env!("CARGO_PKG_VERSION")).into(),
+                        |_: &App| {
+                            t!("settings.about_version_value", version = env!("CARGO_PKG_VERSION"))
+                                .to_string()
+                                .into()
+                        },
                         |_, _| {},
                     ),
                 )
                 .disabled(true),
             ).item(
                 SettingItem::new(
-                    "数据目录",
+                    t!("settings.about_datadir").to_string(),
                     SettingField::input(
                         |_: &App| data_dir().to_string_lossy().into_owned().into(),
                         |_, _| {},
                     ),
                 )
                 .disabled(true)
-                .description("剪贴板历史、图片与索引快照存放位置"),
+                .description(t!("settings.about_datadir_desc").to_string()),
             ).item(
                 SettingItem::new(
-                    "检查更新",
+                    t!("settings.about_update").to_string(),
                     SettingField::render(move |_, _, cx: &mut App| {
                         let state = model(cx).read(cx).update_state.clone();
                         Button::new("check-update")
@@ -280,13 +315,11 @@ pub(crate) fn build_pages(
                             .on_click(move |_, _, cx| dispatch_update_action(cx))
                     }),
                 )
-                .description(
-                    "对接 GitHub releases latest.json（Tauri 同款协议）；点击按钮开始检查",
-                ),
+                .description(t!("settings.about_update_desc").to_string()),
             ).item(
                 // 动态状态行：进度 / 新版本号 / 失败原因都在这里显示
                 SettingItem::new(
-                    "更新状态",
+                    t!("settings.about_update_status").to_string(),
                     SettingField::input(
                         |cx: &App| model(cx).read(cx).update_state.status_text().into(),
                         |_, _| {},
@@ -295,7 +328,7 @@ pub(crate) fn build_pages(
                 .disabled(true),
             ),
         );
-    pages.push(("关于", about));
+    pages.push((t!("settings.page_about").to_string(), about));
 
     debug_assert_eq!(
         pages.len(),
@@ -450,10 +483,12 @@ mod tests {
 
     #[test]
     fn page_titles_cover_core_sections() {
-        let mut expected = vec!["通用", "外观"];
+        // 默认 locale zh-CN：标题表即中文文案（i18n 默认语言）
+        crate::i18n::test_use_zh();
+        let mut expected = vec!["通用".to_string(), "外观".to_string()];
         #[cfg(feature = "clipboard")]
-        expected.push("剪贴板");
-        expected.extend(["索引", "关于"]);
+        expected.push("剪贴板".to_string());
+        expected.extend(["索引".to_string(), "关于".to_string()]);
         assert_eq!(page_titles(), expected);
     }
 }
