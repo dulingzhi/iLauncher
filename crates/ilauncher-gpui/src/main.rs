@@ -161,12 +161,17 @@ impl Launcher {
         // 失去焦点自动隐藏（启动器惯例）：销毁窗口，唤起时由 WindowGuard 重建。
         // on_focus_lost 只在「焦点从有变无（元素被移除）」时触发，窗口 deactivate
         // （点别的应用）不触发，必须用 observe_window_activation。
-        // 订阅必须持有（ dropped 即失效），挂到 _subscriptions
-        let focus_lost_sub = cx.observe_window_activation(window, |_, window, _| {
-            if !window.is_window_active() {
-                window.remove_window();
-            }
-        });
+        // 订阅必须持有（ dropped 即失效），挂到 _subscriptions。
+        // ILAUNCHER_NO_AUTOHIDE=1 时禁用（自动化冒烟用，窗口不随失焦销毁）
+        let focus_lost_sub = if std::env::var("ILAUNCHER_NO_AUTOHIDE").is_err() {
+            Some(cx.observe_window_activation(window, |_, window, _| {
+                if !window.is_window_active() {
+                    window.remove_window();
+                }
+            }))
+        } else {
+            None
+        };
         let bench = std::env::args().any(|a| a == "--bench");
         // bench 模式保持 10 万条全量以测虚拟列表；正常运行空查询显示空（启动器惯例）
         let entries = if bench { std::rc::Rc::new(demo_entries()) } else { std::rc::Rc::new(Vec::new()) };
@@ -207,7 +212,9 @@ impl Launcher {
                 }
             }
         }));
-        this._subscriptions.push(focus_lost_sub);
+        if let Some(sub) = focus_lost_sub {
+            this._subscriptions.push(sub);
+        }
         this
     }
 
@@ -836,8 +843,16 @@ impl WindowGuard {
         });
         match result {
             Ok(handle) => {
+                let launcher = launcher_slot.expect("launcher entity");
+                // 新窗口显式前台激活 + 聚焦搜索框——否则热键/托盘唤起后
+                // 键盘焦点不在输入框，用户还得先点一下（Esc/失焦销毁后的
+                // 重建路径是唤起的主路径，必须与 activate_existing 路径一致）
+                let _ = handle.update(cx, |_, window, cx| {
+                    window.activate_window();
+                    launcher.update(cx, |l, cx| l.focus_input(window, cx));
+                });
                 println!("SUMMON_REOPEN_MS {:.1}", pressed_at.elapsed().as_secs_f64() * 1000.0);
-                self.window = Some((handle, launcher_slot.expect("launcher entity")));
+                self.window = Some((handle, launcher));
             }
             Err(e) => eprintln!("⚠ 重建窗口失败: {e:#}"),
         }
