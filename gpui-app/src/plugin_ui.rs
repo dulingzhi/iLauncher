@@ -77,13 +77,6 @@ impl MarketPanel {
         this
     }
 
-    /// HTTP 客户端（与 settings_ui 更新检查同模式）
-    fn http_client() -> Option<Arc<dyn gpui_kit::http_client::HttpClient>> {
-        reqwest_client::ReqwestClient::user_agent("iLauncher/plugin-market")
-            .ok()
-            .map(|c| Arc::new(c) as Arc<dyn gpui_kit::http_client::HttpClient>)
-    }
-
     fn set_status(&mut self, cx: &mut Context<Self>, status: impl Into<String>) {
         self.status = status.into();
         cx.notify();
@@ -91,7 +84,7 @@ impl MarketPanel {
 
     /// 初始列表：热门插件
     fn load_market_popular(&mut self, cx: &mut Context<Self>) {
-        let Some(client) = Self::http_client() else {
+        let Some(client) = crate::http_util::client("iLauncher/plugin-market") else {
             self.set_status(cx, "HTTP 客户端创建失败");
             return;
         };
@@ -128,7 +121,7 @@ impl MarketPanel {
             self.load_market_popular(cx);
             return;
         }
-        let Some(client) = Self::http_client() else {
+        let Some(client) = crate::http_util::client("iLauncher/plugin-market") else {
             self.set_status(cx, "HTTP 客户端创建失败");
             return;
         };
@@ -163,7 +156,7 @@ impl MarketPanel {
         if self.busy {
             return;
         }
-        let Some(client) = Self::http_client() else {
+        let Some(client) = crate::http_util::client("iLauncher/plugin-market") else {
             self.set_status(cx, "HTTP 客户端创建失败");
             return;
         };

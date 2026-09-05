@@ -286,12 +286,11 @@ impl AuditLogger {
     fn persist_append(&self) {
         let Some(path) = &self.persist_path else { return };
         let Some(last) = self.entries.last() else { return };
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            if let Ok(line) = serde_json::to_string(last) {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+            && let Ok(line) = serde_json::to_string(last) {
                 use std::io::Write as _;
                 let _ = writeln!(f, "{line}");
             }
-        }
     }
 
     fn persist_rewrite(&self) {
@@ -312,9 +311,7 @@ mod tests {
     use super::*;
 
     fn temp_path(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("ilauncher_audit_test_{}_{}.jsonl", tag, std::process::id()));
-        let _ = std::fs::remove_file(&p);
-        p
+        crate::test_util::tempdir(&format!("audit_{tag}")).join("audit.jsonl")
     }
 
     fn perm_check(plugin: &str, allowed: bool) -> AuditEventType {

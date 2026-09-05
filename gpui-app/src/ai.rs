@@ -229,16 +229,14 @@ impl AiChat {
 
     /// 加载配置与会话（文件缺失/损坏时静默用默认值，不影响启动）
     pub fn load(&self) {
-        if let Ok(text) = std::fs::read_to_string(self.dir.join("ai-config.json")) {
-            if let Ok(cfg) = serde_json::from_str(&text) {
+        if let Ok(text) = std::fs::read_to_string(self.dir.join("ai-config.json"))
+            && let Ok(cfg) = serde_json::from_str(&text) {
                 *self.config.write() = cfg;
             }
-        }
-        if let Ok(text) = std::fs::read_to_string(self.dir.join("ai-conversations.json")) {
-            if let Ok(convs) = serde_json::from_str(&text) {
+        if let Ok(text) = std::fs::read_to_string(self.dir.join("ai-conversations.json"))
+            && let Ok(convs) = serde_json::from_str(&text) {
                 *self.conversations.write() = convs;
             }
-        }
     }
 
     pub fn config(&self) -> AIConfig {
@@ -386,31 +384,7 @@ impl AiChat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_kit::http_client::http::{Request as HttpRequest, Response, StatusCode};
-
-    /// 返回预设状态码 + 响应体的 Mock（请求体不校验；纯函数 build_request 已覆盖请求形状）
-    struct MockHttp {
-        body: Vec<u8>,
-        status: u16,
-    }
-
-    impl HttpClient for MockHttp {
-        fn user_agent(&self) -> Option<&gpui_kit::http_client::http::HeaderValue> {
-            None
-        }
-        fn proxy(&self) -> Option<&gpui_kit::http_client::Url> {
-            None
-        }
-        fn send(&self, _req: HttpRequest<AsyncBody>) -> futures::future::BoxFuture<'static, Result<Response<AsyncBody>>> {
-            let body = self.body.clone();
-            let status = self.status;
-            Box::pin(async move {
-                let mut resp = Response::new(AsyncBody::from(body));
-                *resp.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
-                Ok(resp)
-            })
-        }
-    }
+    use crate::test_util::{self, MockHttp};
 
     fn cfg(provider: &str) -> AIConfig {
         AIConfig { provider: provider.into(), api_key: "sk-test".into(), ..Default::default() }
@@ -421,9 +395,7 @@ mod tests {
     }
 
     fn engine(tag: &str, http: Arc<dyn HttpClient>) -> Arc<AiChat> {
-        let dir = std::env::temp_dir().join(format!("ilauncher_ai_test_{}_{}", tag, std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        Arc::new(AiChat::new(http, dir))
+        Arc::new(AiChat::new(http, test_util::tempdir(tag)))
     }
 
     fn cleanup(chat: &AiChat) {
@@ -531,10 +503,7 @@ mod tests {
 
     #[test]
     fn send_message_appends_both_and_renames_title() {
-        let chat = engine("flow", Arc::new(MockHttp {
-            body: r#"{"choices":[{"message":{"content":"收到"}}]}"#.as_bytes().to_vec(),
-            status: 200,
-        }));
+        let chat = engine("flow", MockHttp::arc(r#"{"choices":[{"message":{"content":"收到"}}]}"#.as_bytes(), 200));
         chat.save_config(cfg("openai")).unwrap();
         let reply = futures::executor::block_on(chat.send_message("介绍一下 Rust 语言的特点")).unwrap();
         assert_eq!(reply, "收到");
@@ -551,17 +520,14 @@ mod tests {
 
     #[test]
     fn send_message_without_key_errors() {
-        let chat = engine("nokey", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let chat = engine("nokey", MockHttp::arc(&[], 200));
         assert!(futures::executor::block_on(chat.send_message("hi")).is_err());
         cleanup(&chat);
     }
 
     #[test]
     fn http_error_includes_status_and_body() {
-        let chat = engine("httperr", Arc::new(MockHttp {
-            body: br#"{"error":"invalid key"}"#.to_vec(),
-            status: 401,
-        }));
+        let chat = engine("httperr", MockHttp::arc(br#"{"error":"invalid key"}"#, 401));
         chat.save_config(cfg("openai")).unwrap();
         let err = futures::executor::block_on(chat.send_message("hi")).unwrap_err();
         let text = format!("{err:#}");
@@ -572,7 +538,7 @@ mod tests {
 
     #[test]
     fn conversation_crud() {
-        let chat = engine("crud", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let chat = engine("crud", MockHttp::arc(&[], 200));
         let a = chat.create_conversation(DEFAULT_TITLE.into());
         let b = chat.create_conversation("b".into());
         assert_eq!(chat.current_conversation().unwrap().id, b, "最新创建为当前");

@@ -170,7 +170,7 @@ fn extract_filename(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_kit::http_client::http::{HeaderValue, Response};
+    use gpui_kit::http_client::http::HeaderValue;
 
     #[test]
     fn build_search_url_all_params() {
@@ -229,40 +229,19 @@ mod tests {
         assert_eq!(result.plugins[0].keywords, Vec::<String>::new());
     }
 
-    /// 假 HttpClient：按 URL 返回预制响应（验证 search 流程不触网）
-    struct MockClient {
-        body: Vec<u8>,
-        status: u16,
-    }
-
-    impl HttpClient for MockClient {
-        fn user_agent(&self) -> Option<&gpui_kit::http_client::http::HeaderValue> {
-            None
-        }
-        fn proxy(&self) -> Option<&gpui_kit::http_client::Url> {
-            None
-        }
-        fn send(
-            &self,
-            _req: gpui_kit::http_client::http::Request<AsyncBody>,
-        ) -> futures::future::BoxFuture<'static, anyhow::Result<Response<AsyncBody>>> {
-            let body = self.body.clone();
-            let status = self.status;
-            Box::pin(async move {
-                let mut resp = Response::new(AsyncBody::from(body));
-                *resp.status_mut() = gpui_kit::http_client::http::StatusCode::from_u16(status).unwrap();
-                Ok(resp)
-            })
+    /// Mock HTTP 客户端（共享实现在 test_util）
+    fn mock(body: serde_json::Value, status: u16) -> crate::test_util::MockHttp {
+        crate::test_util::MockHttp {
+            body: serde_json::to_vec(&body).unwrap(),
+            status,
         }
     }
 
     #[test]
     fn search_flow_with_mock_client() {
-        let body = serde_json::to_vec(&serde_json::json!({
+        let client = mock(serde_json::json!({
             "total": 0, "page": 1, "per_page": 20, "plugins": []
-        }))
-        .unwrap();
-        let client = MockClient { body, status: 200 };
+        }), 200);
         let store = PluginStore::with_base_url("https://x.test/api", PathBuf::from("."));
         let result = futures::executor::block_on(store.search(
             &client,
@@ -274,7 +253,7 @@ mod tests {
 
     #[test]
     fn search_flow_http_error() {
-        let client = MockClient { body: Vec::new(), status: 500 };
+        let client = mock(serde_json::json!(null), 500);
         let store = PluginStore::with_base_url("https://x.test/api", PathBuf::from("."));
         assert!(futures::executor::block_on(store.popular(&client, 10)).is_err());
     }

@@ -100,43 +100,47 @@ impl WorkflowPanel {
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(_) => {
-                        for effect in effects {
-                            match effect {
-                                crate::workflow::WorkflowEffect::CopyToClipboard(text) => {
-                                    println!("WORKFLOW_COPY {}", text);
-                                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                                }
-                                crate::workflow::WorkflowEffect::ShowNotification { title, message } => {
-                                    println!("WORKFLOW_NOTIFY {}: {}", title, message);
-                                }
-                            }
-                        }
+                        consume_effects(effects, cx);
                         this.set_status(cx, format!("✓ {id} 运行完成"));
-                        audit_logger.lock().log(
-                            AuditEventType::ProgramExecution {
-                                plugin_id: "workflow".into(),
-                                program: id,
-                                allowed: true,
-                            },
-                            AuditSeverity::Info,
-                        );
+                        log_run(&audit_logger, &id, true);
                     }
                     Err(e) => {
                         this.set_status(cx, format!("✗ {id} 运行失败: {e:#}"));
-                        audit_logger.lock().log(
-                            AuditEventType::ProgramExecution {
-                                plugin_id: "workflow".into(),
-                                program: id,
-                                allowed: false,
-                            },
-                            AuditSeverity::Warning,
-                        );
+                        log_run(&audit_logger, &id, false);
                     }
                 }
             });
         })
         .detach();
     }
+}
+
+/// 消费工作流副作用（启动器 Enter 与管理窗口"运行"共用）：
+/// 剪贴板写主线程剪贴板；通知走控制台（gpui 无内建通知组件）
+pub fn consume_effects(effects: Vec<crate::workflow::WorkflowEffect>, cx: &mut App) {
+    for effect in effects {
+        match effect {
+            crate::workflow::WorkflowEffect::CopyToClipboard(text) => {
+                println!("WORKFLOW_COPY {}", text);
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
+            crate::workflow::WorkflowEffect::ShowNotification { title, message } => {
+                println!("WORKFLOW_NOTIFY {}: {}", title, message);
+            }
+        }
+    }
+}
+
+/// 工作流执行审计（两入口共用）：ProgramExecution，来源标记 "workflow"
+pub fn log_run(audit_logger: &Arc<Mutex<AuditLogger>>, id: &str, allowed: bool) {
+    audit_logger.lock().log(
+        AuditEventType::ProgramExecution {
+            plugin_id: "workflow".into(),
+            program: id.into(),
+            allowed,
+        },
+        if allowed { AuditSeverity::Info } else { AuditSeverity::Warning },
+    );
 }
 
 impl Render for WorkflowPanel {

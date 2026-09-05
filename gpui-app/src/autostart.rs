@@ -35,10 +35,7 @@ pub(crate) mod imp {
         delete_value(RUN_KEY, VALUE_NAME)
     }
 
-    /// 当前自启命令（调试用）
-
     // ── 底层原语：对任意（子键, 值名）操作，测试用独立子键隔离 ──────────────
-
     pub(crate) fn read_value(key_path: &str, value_name: &str) -> Option<String> {
         use std::os::windows::ffi::OsStrExt;
         let name_wide: Vec<u16> =

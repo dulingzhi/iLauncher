@@ -355,10 +355,9 @@ fn dispatch_update_action(cx: &mut App) {
     }
 }
 
+/// 更新检查/下载共用的 HTTP 客户端（构造收敛在 http_util）
 fn http_client() -> Option<std::sync::Arc<dyn gpui_kit::http_client::HttpClient>> {
-    reqwest_client::ReqwestClient::user_agent(&format!("iLauncher/{}", updater::CURRENT_VERSION))
-        .ok()
-        .map(|c| std::sync::Arc::new(c) as std::sync::Arc<dyn gpui_kit::http_client::HttpClient>)
+    crate::http_util::client(&format!("iLauncher/{}", updater::CURRENT_VERSION))
 }
 
 async fn run_check() -> updater::UpdateState {

@@ -125,10 +125,12 @@ pub enum WorkflowCondition {
 
 /// 错误处理策略
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum ErrorHandling {
     /// 继续执行
     Continue,
     /// 停止工作流
+    #[default]
     Stop,
     /// 重试
     Retry { max_attempts: u32, delay_ms: u64 },
@@ -136,11 +138,6 @@ pub enum ErrorHandling {
     Fallback { steps: Vec<WorkflowStep> },
 }
 
-impl Default for ErrorHandling {
-    fn default() -> Self {
-        ErrorHandling::Stop
-    }
-}
 
 /// 执行期间收集的副作用（调用层执行：剪贴板写入 / 系统通知）
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -291,11 +288,10 @@ impl WorkflowEngine {
     ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             // 条件不满足 → 跳过（Ok，不算错误）
-            if let Some(condition) = &step.condition {
-                if !self.evaluate_condition(condition, context).await? {
+            if let Some(condition) = &step.condition
+                && !self.evaluate_condition(condition, context).await? {
                     return Ok(());
                 }
-            }
 
             match &step.action {
                 WorkflowAction::ExecuteCommand { command, args, working_dir } => {
@@ -386,11 +382,10 @@ impl WorkflowEngine {
                 WorkflowAction::Loop { count, condition, steps } => {
                     if let Some(max_count) = count {
                         for _ in 0..*max_count {
-                            if let Some(cond) = condition {
-                                if !self.evaluate_condition(cond, context).await? {
+                            if let Some(cond) = condition
+                                && !self.evaluate_condition(cond, context).await? {
                                     break;
                                 }
-                            }
                             for sub in steps {
                                 self.execute_step(sub, context, effects).await?;
                             }
@@ -508,7 +503,7 @@ fn now_local_minutes() -> u16 {
     {
         use windows::Win32::System::SystemInformation::GetLocalTime;
         let st = unsafe { GetLocalTime() };
-        return st.wHour as u16 * 60 + st.wMinute as u16;
+        st.wHour as u16 * 60 + st.wMinute as u16
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -586,40 +581,10 @@ fn sleep_ms(ms: u64) -> impl Future<Output = ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_kit::http_client::http::{Request as HttpRequest2, Response};
-    use gpui_kit::http_client::http::StatusCode;
-
-    /// Mock HttpClient（与 plugin/store.rs 测试同款模式）
-    struct MockHttp {
-        body: Vec<u8>,
-        status: u16,
-    }
-
-    impl HttpClient for MockHttp {
-        fn user_agent(&self) -> Option<&gpui_kit::http_client::http::HeaderValue> {
-            None
-        }
-        fn proxy(&self) -> Option<&gpui_kit::http_client::Url> {
-            None
-        }
-        fn send(
-            &self,
-            _req: HttpRequest2<AsyncBody>,
-        ) -> BoxFuture<'static, Result<Response<AsyncBody>>> {
-            let body = self.body.clone();
-            let status = self.status;
-            Box::pin(async move {
-                let mut resp = Response::new(AsyncBody::from(body));
-                *resp.status_mut() = StatusCode::from_u16(status).unwrap();
-                Ok(resp)
-            })
-        }
-    }
+    use crate::test_util::{self, MockHttp};
 
     fn engine(tag: &str, http: Arc<dyn HttpClient>) -> WorkflowEngine {
-        let dir = std::env::temp_dir().join(format!("ilauncher_wf_test_{tag}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        WorkflowEngine::new(dir, http)
+        WorkflowEngine::new(test_util::tempdir(tag), http)
     }
 
     fn wf(id: &str, keyword: &str, steps: Vec<WorkflowStep>) -> Workflow {
@@ -650,10 +615,10 @@ mod tests {
 
     #[test]
     fn persistence_roundtrip() {
-        let e = engine("persist", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("persist", MockHttp::arc(&[], 200));
         e.save_workflow(wf("w1", "go", vec![])).unwrap();
         // 新引擎从同一目录加载（模拟重启）
-        let e2 = WorkflowEngine::new(e.storage_path.clone(), Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e2 = WorkflowEngine::new(e.storage_path.clone(), MockHttp::arc(&[], 200));
         e2.load_workflows().unwrap();
         assert_eq!(e2.list_workflows().len(), 1);
         e2.delete_workflow("w1").unwrap();
@@ -664,7 +629,7 @@ mod tests {
 
     #[test]
     fn find_by_keyword_requires_enabled_manual() {
-        let e = engine("kw", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("kw", MockHttp::arc(&[], 200));
         e.save_workflow(wf("a", "deploy", vec![])).unwrap();
         let mut disabled = wf("b", "deploy", vec![]);
         disabled.enabled = false;
@@ -682,7 +647,7 @@ mod tests {
 
     #[test]
     fn execution_set_variable_and_condition_skip() {
-        let e = engine("exec", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("exec", MockHttp::arc(&[], 200));
         e.save_workflow(wf("w", "go", vec![
             step("s1", WorkflowAction::SetVariable { name: "env".into(), value: "prod".into() }),
             WorkflowStep {
@@ -710,7 +675,7 @@ mod tests {
 
     #[test]
     fn disabled_workflow_rejected() {
-        let e = engine("disabled", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("disabled", MockHttp::arc(&[], 200));
         let mut w = wf("w", "go", vec![]);
         w.enabled = false;
         e.save_workflow(w).unwrap();
@@ -727,7 +692,7 @@ mod tests {
             working_dir: None,
         });
         // Continue：失败后继续
-        let e = engine("cont", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("cont", MockHttp::arc(&[], 200));
         e.save_workflow(wf("w", "go", vec![
             WorkflowStep { on_error: ErrorHandling::Continue, ..failing.clone() },
             step("after", WorkflowAction::SetVariable { name: "after".into(), value: "1".into() }),
@@ -738,7 +703,7 @@ mod tests {
         assert_eq!(ctx.get_variable("after").unwrap(), &serde_json::json!("1"));
 
         // Fallback：失败后执行替代步骤
-        let e2 = engine("fb", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e2 = engine("fb", MockHttp::arc(&[], 200));
         e2.save_workflow(wf("w", "go", vec![WorkflowStep {
             on_error: ErrorHandling::Fallback {
                 steps: vec![step("fb", WorkflowAction::SetVariable { name: "fb".into(), value: "ran".into() })],
@@ -751,7 +716,7 @@ mod tests {
         assert_eq!(ctx2.get_variable("fb").unwrap().as_str().unwrap(), "ran");
 
         // Stop：失败即整体失败
-        let e3 = engine("stop", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e3 = engine("stop", MockHttp::arc(&[], 200));
         e3.save_workflow(wf("w", "go", vec![failing.clone()])).unwrap();
         let mut effects3 = Vec::new();
         assert!(futures::executor::block_on(e3.execute_workflow("w", HashMap::new(), &mut effects3)).is_err());
@@ -759,7 +724,7 @@ mod tests {
 
     #[test]
     fn if_and_loop_structures() {
-        let e = engine("ifloop", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("ifloop", MockHttp::arc(&[], 200));
         e.save_workflow(wf("w", "go", vec![
             step("init", WorkflowAction::SetVariable { name: "ran".into(), value: "no".into() }),
             WorkflowStep {
@@ -793,7 +758,7 @@ mod tests {
 
     #[test]
     fn clipboard_and_notification_effects_collected() {
-        let e = engine("effects", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("effects", MockHttp::arc(&[], 200));
         e.save_workflow(wf("w", "go", vec![
             step("v", WorkflowAction::SetVariable { name: "x".into(), value: "42".into() }),
             step("c", WorkflowAction::CopyToClipboard { content: "值=${x}".into() }),
@@ -813,7 +778,7 @@ mod tests {
 
     #[test]
     fn http_request_step_with_mock() {
-        let e = engine("http", Arc::new(MockHttp { body: br#"{"ok":true}"#.to_vec(), status: 200 }));
+        let e = engine("http", MockHttp::arc(br#"{"ok":true}"#, 200));
         e.save_workflow(wf("w", "go", vec![step(
             "req",
             WorkflowAction::HttpRequest {
@@ -833,7 +798,7 @@ mod tests {
 
     #[test]
     fn conditions_logic_composition() {
-        let e = engine("conds", Arc::new(MockHttp { body: vec![], status: 200 }));
+        let e = engine("conds", MockHttp::arc(&[], 200));
         let ctx = WorkflowContext::new(HashMap::from([("s".to_string(), serde_json::json!("hello world"))]));
         let cond = |c: &WorkflowCondition| {
             futures::executor::block_on(e.evaluate_condition(c, &ctx)).expect("条件求值")

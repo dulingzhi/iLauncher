@@ -14,12 +14,16 @@
 
 mod audit;
 mod autostart;
+mod http_util;
 mod plugin;
 mod preview;
 mod search;
 mod settings;
 mod ai;
 mod markdown;
+
+#[cfg(test)]
+mod test_util;
 
 #[cfg(windows)]
 mod ai_ui;
@@ -359,37 +363,12 @@ impl Launcher {
                     let _ = this.update(cx, |_, cx| {
                         match result {
                             Ok(_) => {
-                                for effect in effects {
-                                    match effect {
-                                        workflow::WorkflowEffect::CopyToClipboard(text) => {
-                                            println!("WORKFLOW_COPY {}", text);
-                                            cx.write_to_clipboard(ClipboardItem::new_string(text));
-                                        }
-                                        workflow::WorkflowEffect::ShowNotification { title, message } => {
-                                            // 系统 Toast 未接入：状态走控制台（gpui 无内建通知组件）
-                                            println!("WORKFLOW_NOTIFY {}: {}", title, message);
-                                        }
-                                    }
-                                }
-                                audit_logger.lock().log(
-                                    audit::AuditEventType::ProgramExecution {
-                                        plugin_id: "workflow".into(),
-                                        program: workflow_id,
-                                        allowed: true,
-                                    },
-                                    audit::AuditSeverity::Info,
-                                );
+                                workflow_ui::consume_effects(effects, cx);
+                                workflow_ui::log_run(&audit_logger, &workflow_id, true);
                             }
                             Err(e) => {
                                 eprintln!("⚠ 工作流执行失败（{workflow_id}）: {e:#}");
-                                audit_logger.lock().log(
-                                    audit::AuditEventType::ProgramExecution {
-                                        plugin_id: "workflow".into(),
-                                        program: workflow_id,
-                                        allowed: false,
-                                    },
-                                    audit::AuditSeverity::Warning,
-                                );
+                                workflow_ui::log_run(&audit_logger, &workflow_id, false);
                             }
                         }
                     });
@@ -520,8 +499,8 @@ impl Launcher {
     /// on_next_frame 自续帧计数：帧率 = 合成器实际交付的帧数 / 时间
     fn count_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.frame_count += 1;
-        if let Some(t0) = self.bench_t0 {
-            if t0.elapsed().as_secs() >= 5 {
+        if let Some(t0) = self.bench_t0
+            && t0.elapsed().as_secs() >= 5 {
                 let fps = self.frame_count as f64 / t0.elapsed().as_secs_f64();
                 let avg_render_ms = if self.render_count > 0 {
                     self.render_total_ms / self.render_count as f64
@@ -542,7 +521,6 @@ impl Launcher {
                 std::fs::write("gpui-p0-result.json", serde_json::to_string_pretty(&result).unwrap()).ok();
                 std::process::exit(0);
             }
-        }
         cx.on_next_frame(window, |this, window, cx| this.count_frame(window, cx));
     }
 }
@@ -699,6 +677,26 @@ impl Render for Launcher {
 // 不用 GPUI 实体承载（实体在 app 初始化闭包返回后会被释放），
 // 改为纯异步任务直接持有状态（rx + 窗口句柄），随任务存活。
 
+/// 窗口间共享的单例依赖（WindowGuard 与各类 summon 窗口统一入口）
+struct Deps {
+    /// 审计日志（启动器核心 + 插件沙盒 + 工作流共用管道）
+    audit_logger: Arc<Mutex<audit::AuditLogger>>,
+    /// 插件管理器（主窗口搜索扇出 + 执行分发）
+    plugins: Arc<plugin::PluginManager>,
+    /// 插件市场状态（注册表 + 安装器 + 商店客户端）
+    #[cfg(windows)]
+    market: Arc<plugin_ui::MarketState>,
+    /// 工作流引擎（关键词触发 + 管理窗口共享）
+    #[cfg(target_os = "windows")]
+    workflows: Arc<workflow::WorkflowEngine>,
+    /// AI 对话引擎（配置 + 会话持久化）
+    #[cfg(windows)]
+    ai_chat: Arc<ai::AiChat>,
+    /// 剪贴板历史存储（feature clipboard）
+    #[cfg(all(feature = "clipboard", target_os = "windows"))]
+    clipboard_store: Arc<Mutex<ClipboardStore>>,
+}
+
 struct WindowGuard {
     rx: mpsc::Receiver<AppSignal>,
     /// 信号发送端：设置页"重建索引"等 UI 内按钮复用同一通道
@@ -706,128 +704,53 @@ struct WindowGuard {
     window: Option<(WindowHandle<Root>, Entity<Launcher>)>,
     #[cfg(feature = "ilauncher")]
     index_set: LiveSet,
+    deps: Deps,
     /// 剪贴板历史窗口（feature clipboard）
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     clipboard_window: Option<(WindowHandle<Root>, Entity<clipboard_ui::ClipboardPanel>)>,
-    #[cfg(all(feature = "clipboard", target_os = "windows"))]
-    clipboard_store: Arc<Mutex<ClipboardStore>>,
-    /// 审计日志（共享 logger：启动器核心 + 插件沙盒写入）
-    audit_logger: Arc<Mutex<audit::AuditLogger>>,
-    /// 插件管理器（主窗口搜索扇出 + 执行分发）
-    plugins: Arc<plugin::PluginManager>,
     /// 设置窗口
     #[cfg(windows)]
     settings_window: Option<(WindowHandle<Root>, Entity<settings_ui::SettingsView>)>,
     /// 审计日志查看器窗口
     #[cfg(windows)]
     audit_window: Option<(WindowHandle<Root>, Entity<audit_ui::AuditPanel>)>,
-    /// 插件市场状态（注册表 + 安装器 + 商店客户端，窗口间共享）
-    #[cfg(windows)]
-    market: Arc<plugin_ui::MarketState>,
     /// 插件市场/管理窗口
     #[cfg(windows)]
     plugins_window: Option<(WindowHandle<Root>, Entity<plugin_ui::MarketPanel>)>,
-    /// 工作流引擎（启动器关键词触发 + 管理窗口共享）
-    #[cfg(windows)]
-    workflows: Arc<workflow::WorkflowEngine>,
     /// 工作流管理窗口
     #[cfg(windows)]
     workflow_window: Option<(WindowHandle<Root>, Entity<workflow_ui::WorkflowPanel>)>,
-    /// AI 对话引擎（配置 + 会话持久化，窗口共享）
-    #[cfg(windows)]
-    ai_chat: Arc<ai::AiChat>,
     /// AI 对话窗口
     #[cfg(windows)]
     ai_window: Option<(WindowHandle<Root>, Entity<ai_ui::AiChatPanel>)>,
 }
 
 impl WindowGuard {
-    #[cfg(feature = "ilauncher")]
     fn new(
         rx: mpsc::Receiver<AppSignal>,
         tx: mpsc::Sender<AppSignal>,
         index_set: LiveSet,
-        audit_logger: Arc<Mutex<audit::AuditLogger>>,
-        plugins: Arc<plugin::PluginManager>,
-        #[cfg(windows)]
-        market: Arc<plugin_ui::MarketState>,
-        #[cfg(windows)]
-        workflows: Arc<workflow::WorkflowEngine>,
-        #[cfg(windows)]
-        ai_chat: Arc<ai::AiChat>,
-        #[cfg(all(feature = "clipboard", target_os = "windows"))]
-        clipboard_store: Arc<Mutex<ClipboardStore>>,
+        deps: Deps,
     ) -> Self {
+        #[cfg(not(feature = "ilauncher"))]
+        let _ = index_set;
         Self {
             rx,
             tx,
             window: None,
+            #[cfg(feature = "ilauncher")]
             index_set,
+            deps,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_window: None,
-            #[cfg(all(feature = "clipboard", target_os = "windows"))]
-            clipboard_store,
-            audit_logger,
-            plugins,
             #[cfg(windows)]
             settings_window: None,
             #[cfg(windows)]
             audit_window: None,
             #[cfg(windows)]
-            market,
-            #[cfg(windows)]
             plugins_window: None,
             #[cfg(windows)]
-            workflows,
-            #[cfg(windows)]
             workflow_window: None,
-            #[cfg(windows)]
-            ai_chat,
-            #[cfg(windows)]
-            ai_window: None,
-        }
-    }
-
-    #[cfg(not(feature = "ilauncher"))]
-    fn new(
-        rx: mpsc::Receiver<AppSignal>,
-        tx: mpsc::Sender<AppSignal>,
-        _index_set: LiveSet,
-        audit_logger: Arc<Mutex<audit::AuditLogger>>,
-        plugins: Arc<plugin::PluginManager>,
-        #[cfg(windows)]
-        market: Arc<plugin_ui::MarketState>,
-        #[cfg(windows)]
-        workflows: Arc<workflow::WorkflowEngine>,
-        #[cfg(windows)]
-        ai_chat: Arc<ai::AiChat>,
-        #[cfg(all(feature = "clipboard", target_os = "windows"))]
-        clipboard_store: Arc<Mutex<ClipboardStore>>,
-    ) -> Self {
-        Self {
-            rx,
-            tx,
-            window: None,
-            #[cfg(all(feature = "clipboard", target_os = "windows"))]
-            clipboard_window: None,
-            #[cfg(all(feature = "clipboard", target_os = "windows"))]
-            clipboard_store,
-            audit_logger,
-            plugins,
-            #[cfg(windows)]
-            settings_window: None,
-            #[cfg(windows)]
-            audit_window: None,
-            #[cfg(windows)]
-            market,
-            #[cfg(windows)]
-            plugins_window: None,
-            #[cfg(windows)]
-            workflows,
-            #[cfg(windows)]
-            workflow_window: None,
-            #[cfg(windows)]
-            ai_chat,
             #[cfg(windows)]
             ai_window: None,
         }
@@ -868,10 +791,10 @@ impl WindowGuard {
         // 重建窗口（Esc 销毁后首次唤起 / 初始唤起）
         let options = make_window_options();
         let source = self.make_source();
-        let audit_logger = self.audit_logger.clone();
-        let plugins = self.plugins.clone();
+        let audit_logger = self.deps.audit_logger.clone();
+        let plugins = self.deps.plugins.clone();
         #[cfg(target_os = "windows")]
-        let workflows = self.workflows.clone();
+        let workflows = self.deps.workflows.clone();
         let mut launcher_slot: Option<Entity<Launcher>> = None;
         let result = cx.open_window(options, |window, cx| {
             let launcher = cx.new(|cx| {
@@ -900,13 +823,10 @@ impl WindowGuard {
     /// 打开/激活剪贴板历史窗口（feature clipboard）
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     fn summon_clipboard(&mut self, cx: &mut AsyncApp) {
-        if let Some((handle, _)) = &self.clipboard_window {
-            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-                return;
-            }
-            self.clipboard_window = None;
+        if Self::activate_existing(&mut self.clipboard_window, cx) {
+            return;
         }
-        let store = self.clipboard_store.clone();
+        let store = self.deps.clipboard_store.clone();
         let mut panel_slot: Option<Entity<clipboard_ui::ClipboardPanel>> = None;
         let result = cx.open_window(make_window_options(), |window, cx| {
             let panel = cx.new(|cx| clipboard_ui::ClipboardPanel::new(window, cx, store));
@@ -925,11 +845,8 @@ impl WindowGuard {
     /// 打开/激活设置窗口（gpui-component Settings 组件，五分区）
     #[cfg(windows)]
     fn summon_settings(&mut self, cx: &mut AsyncApp) {
-        if let Some((handle, _)) = &self.settings_window {
-            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-                return;
-            }
-            self.settings_window = None;
+        if Self::activate_existing(&mut self.settings_window, cx) {
+            return;
         }
         let index_set = {
             #[cfg(feature = "ilauncher")]
@@ -943,7 +860,7 @@ impl WindowGuard {
         };
         let tx = self.tx.clone();
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
-        let store = self.clipboard_store.clone();
+        let store = self.deps.clipboard_store.clone();
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds {
                 origin: Point { x: px(160.), y: px(120.) },
@@ -974,16 +891,27 @@ impl WindowGuard {
         }
     }
 
+    /// 副窗口通用前缀：句柄存活则前台激活并返回 true；失效则清槽位返回 false
+    fn activate_existing<T: 'static>(
+        slot: &mut Option<(WindowHandle<Root>, Entity<T>)>,
+        cx: &mut AsyncApp,
+    ) -> bool {
+        if let Some((handle, _)) = slot {
+            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+                return true;
+            }
+            *slot = None;
+        }
+        false
+    }
+
     /// 打开/激活审计日志查看器
     #[cfg(windows)]
     fn summon_audit(&mut self, cx: &mut AsyncApp) {
-        if let Some((handle, _)) = &self.audit_window {
-            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-                return;
-            }
-            self.audit_window = None;
+        if Self::activate_existing(&mut self.audit_window, cx) {
+            return;
         }
-        let logger = self.audit_logger.clone();
+        let logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<audit_ui::AuditPanel>> = None;
         let result = cx.open_window(make_window_options(), |window, cx| {
             let panel = cx.new(|cx| audit_ui::AuditPanel::new(window, cx, logger));
@@ -1002,13 +930,10 @@ impl WindowGuard {
     /// 打开/激活插件市场/管理窗口
     #[cfg(windows)]
     fn summon_plugins(&mut self, cx: &mut AsyncApp) {
-        if let Some((handle, _)) = &self.plugins_window {
-            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-                return;
-            }
-            self.plugins_window = None;
+        if Self::activate_existing(&mut self.plugins_window, cx) {
+            return;
         }
-        let state = self.market.clone();
+        let state = self.deps.market.clone();
         let mut panel_slot: Option<Entity<plugin_ui::MarketPanel>> = None;
         let result = cx.open_window(make_window_options(), |window, cx| {
             let panel = cx.new(|cx| plugin_ui::MarketPanel::new(window, cx, state));
@@ -1027,14 +952,11 @@ impl WindowGuard {
     /// 打开/激活工作流管理窗口
     #[cfg(windows)]
     fn summon_workflows(&mut self, cx: &mut AsyncApp) {
-        if let Some((handle, _)) = &self.workflow_window {
-            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-                return;
-            }
-            self.workflow_window = None;
+        if Self::activate_existing(&mut self.workflow_window, cx) {
+            return;
         }
-        let engine = self.workflows.clone();
-        let audit_logger = self.audit_logger.clone();
+        let engine = self.deps.workflows.clone();
+        let audit_logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<workflow_ui::WorkflowPanel>> = None;
         let result = cx.open_window(make_window_options(), |window, cx| {
             let panel = cx.new(|cx| workflow_ui::WorkflowPanel::new(window, cx, engine, audit_logger));
@@ -1053,13 +975,10 @@ impl WindowGuard {
     /// 打开/激活 AI 对话窗口
     #[cfg(windows)]
     fn summon_ai(&mut self, cx: &mut AsyncApp) {
-        if let Some((handle, _)) = &self.ai_window {
-            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-                return;
-            }
-            self.ai_window = None;
+        if Self::activate_existing(&mut self.ai_window, cx) {
+            return;
         }
-        let chat = self.ai_chat.clone();
+        let chat = self.deps.ai_chat.clone();
         let mut panel_slot: Option<Entity<ai_ui::AiChatPanel>> = None;
         let result = cx.open_window(make_window_options(), |window, cx| {
             let panel = cx.new(|cx| ai_ui::AiChatPanel::new(window, cx, chat));
@@ -1102,11 +1021,10 @@ fn spawn_hotkey_thread(tx: mpsc::Sender<AppSignal>) {
         println!("✓ 全局热键已注册: Ctrl+Space");
         let receiver = GlobalHotKeyEvent::receiver();
         loop {
-            if let Ok(event) = receiver.recv() {
-                if event.state == global_hotkey::HotKeyState::Pressed {
+            if let Ok(event) = receiver.recv()
+                && event.state == global_hotkey::HotKeyState::Pressed {
                     let _ = tx.send(AppSignal::Show(Instant::now()));
                 }
-            }
         }
     });
 }
@@ -1271,12 +1189,11 @@ fn main() {
     }
 
     // --snapshot：不启动 UI，直接测 LiveIndex 进程内搜索
-    if let Some(pos) = args.iter().position(|a| a == "--snapshot") {
-        if let Some(path) = args.get(pos + 1) {
+    if let Some(pos) = args.iter().position(|a| a == "--snapshot")
+        && let Some(path) = args.get(pos + 1) {
             run_snapshot_bench(path);
             return;
         }
-    }
 
     // ── 索引加载：feature 下后台线程拉起服务并填充 LiveSet；否则 Demo ──────
     #[cfg(all(feature = "ilauncher", target_os = "windows"))]
@@ -1341,9 +1258,7 @@ fn main() {
             .map(|d| std::path::PathBuf::from(d).join("iLauncher").join("workflows"))
             .unwrap_or_else(|| std::path::PathBuf::from("iLauncher").join("workflows"));
         let _ = std::fs::create_dir_all(&dir);
-        let http = reqwest_client::ReqwestClient::user_agent("iLauncher/workflow")
-            .map(|c| Arc::new(c) as Arc<dyn gpui_kit::http_client::HttpClient>)
-            .unwrap_or_else(|e| panic!("工作流 HTTP 客户端创建失败: {e:#}"));
+        let http = http_util::client("iLauncher/workflow").expect("工作流 HTTP 客户端创建失败");
         let engine = Arc::new(workflow::WorkflowEngine::new(dir, http));
         match engine.load_workflows() {
             Ok(()) => println!("✓ 工作流已加载（{} 个）", engine.list_workflows().len()),
@@ -1359,9 +1274,7 @@ fn main() {
             .map(|d| std::path::PathBuf::from(d).join("iLauncher"))
             .unwrap_or_else(|| std::path::PathBuf::from("iLauncher"));
         let _ = std::fs::create_dir_all(&dir);
-        let http = reqwest_client::ReqwestClient::user_agent("iLauncher/ai-chat")
-            .map(|c| Arc::new(c) as Arc<dyn gpui_kit::http_client::HttpClient>)
-            .unwrap_or_else(|e| panic!("AI HTTP 客户端创建失败: {e:#}"));
+        let http = http_util::client("iLauncher/ai-chat").expect("AI HTTP 客户端创建失败");
         Arc::new(ai::AiChat::new(http, dir))
     };
 
@@ -1389,10 +1302,7 @@ fn main() {
         // 设置页 model 全局实体（字段值闭包的数据源，托盘/设置页共用）
         #[cfg(windows)]
         settings_ui::init_model(cx);
-        let mut guard = WindowGuard::new(
-            rx,
-            tx,
-            index_set,
+        let deps = Deps {
             audit_logger,
             plugins,
             #[cfg(windows)]
@@ -1403,7 +1313,8 @@ fn main() {
             ai_chat,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
-        );
+        };
+        let mut guard = WindowGuard::new(rx, tx, index_set, deps);
         cx.spawn(move |cx: &mut AsyncApp| {
             let mut cx = cx.clone();
             async move {

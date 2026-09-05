@@ -181,12 +181,11 @@ impl SandboxManager {
                 for perm in &effective_perms {
                     match perm {
                         PluginPermission::FileSystemRead(allowed_path)
-                        | PluginPermission::FileSystemWrite(allowed_path) => {
-                            if path.starts_with(allowed_path) {
+                        | PluginPermission::FileSystemWrite(allowed_path)
+                            if path.starts_with(allowed_path) => {
                                 allowed = true;
                                 break;
                             }
-                        }
                         _ => {}
                     }
                 }
@@ -208,12 +207,11 @@ impl SandboxManager {
                                 allowed = true;
                                 break;
                             }
-                            (NetworkScope::Domain(domain), NetworkScope::Domain(allowed_domain)) => {
-                                if domain == allowed_domain {
+                            (NetworkScope::Domain(domain), NetworkScope::Domain(allowed_domain))
+                                if domain == allowed_domain => {
                                     allowed = true;
                                     break;
                                 }
-                            }
                             _ => {}
                         }
                     }

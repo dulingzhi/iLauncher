@@ -220,8 +220,8 @@ impl Plugin for CalculatorPlugin {
         }
 
         // 3. 数学表达式
-        if Self::is_expr_chars(query) {
-            if let Ok(result) = self.calculate(query) {
+        if Self::is_expr_chars(query)
+            && let Ok(result) = self.calculate(query) {
                 let result_str = Self::format_number(result);
                 results.push(
                     QueryResult::new(result_str.clone(), result_str.clone())
@@ -231,7 +231,6 @@ impl Plugin for CalculatorPlugin {
                         .with_action(PluginAction::default_action("copy", "复制")),
                 );
             }
-        }
 
         Ok(results)
     }

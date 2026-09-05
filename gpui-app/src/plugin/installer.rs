@@ -354,12 +354,11 @@ mod tests {
     use std::io::Write as _;
     use zip::write::SimpleFileOptions;
 
-    /// 独立临时目录（测试名派生，避免并行冲突）
-    fn tempdir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ilauncher_installer_test_{tag}_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn setup(tag: &str) -> (PathBuf, Arc<PluginRegistry>, PluginInstaller) {
+        let dir = crate::test_util::tempdir(&format!("installer_{tag}"));
+        let registry = Arc::new(PluginRegistry::new(dir.join("plugins")));
+        let installer = PluginInstaller::new(registry.clone());
+        (dir, registry, installer)
     }
 
     fn sample_manifest(id: &str) -> PluginManifest {
@@ -390,13 +389,6 @@ mod tests {
         writer.write_all(b"console.log('hi');").unwrap();
         writer.finish().unwrap();
         path
-    }
-
-    fn setup(tag: &str) -> (PathBuf, Arc<PluginRegistry>, PluginInstaller) {
-        let dir = tempdir(tag);
-        let registry = Arc::new(PluginRegistry::new(dir.join("plugins")));
-        let installer = PluginInstaller::new(registry.clone());
-        (dir, registry, installer)
     }
 
     #[test]

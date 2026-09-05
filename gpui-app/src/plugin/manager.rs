@@ -102,7 +102,7 @@ impl PluginManager {
                 Err(e) => eprintln!("⚠ 插件 {} 查询失败: {e:#}", plugin.metadata().name),
             }
         }
-        results.sort_by(|(_, a), (_, b)| b.score.cmp(&a.score));
+        results.sort_by_key(|(_, r)| -r.score);
         results
     }
 
