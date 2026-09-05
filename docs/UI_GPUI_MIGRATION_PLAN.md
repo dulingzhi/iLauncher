@@ -192,7 +192,11 @@ gpui-component = { version = "0.6" }
 | P2 设置页 | ✅ 完成 | gpui-component 现成 `Settings` 组件五分区（通用/外观/剪贴板/索引/关于），`settings_ui.rs` 纯装配层；开机自启、深色模式、剪贴板容量（注册表+运行时 set_capacity）、清空历史、重建索引全部接线真实数据源；托盘「设置」入口；i18n 仍待做（标签暂硬编码中文） |
 | P2 UpdateChecker | ✅ 完成 | 新模块 `updater.rs` 对接 GitHub releases latest.json（Tauri 同款协议）：检查/下载/minisign 验签（注意两层 base64 坑）/NSIS passive 安装；设置页「检查更新」状态机接线；live 冒烟实测 v0.1.5 验签通过 |
 | P2 PreviewPanel | ✅ 完成 | 新模块 `preview.rs`（9 单测，对齐 Tauri preview 行为）：主窗口 resizable 分栏，选中防抖 120ms 读预览（代次丢弃）；图片原生解码/文本截断 200 行/元信息行；bench 回归 160fps 无退化 |
-| P3/P4 | ⬜ 未开始 | |
+| P3 AuditLogViewer | ✅ 完成 | 新模块 `audit.rs`（无 gpui 依赖，跨平台单测）：对齐 Tauri 插件审计事件模型（六类事件/三级严重度/统计语义一致），两处刻意偏离——Unix 秒时间戳、新增 JSONL 持久化（audit.jsonl，启动器审计需可回溯）；`audit_ui.rs` 查看器（cfg windows，仿剪贴板历史）：统计头/搜索防抖/仅违规开关/severity 着色/导出 JSON/清空，500ms 轮询；托盘「审计日志」入口；launch_selected 记 ProgramExecution 作为首个真实事件源，插件沙盒事件待 PluginManager 同管道注入 |
+| P3 PluginManager/Market | ⬜ 未开始 | Tauri 版在 `src-tauri/src/plugin/` + `commands/plugin_market.rs`；是审计日志的真正事件源（PermissionCheck/ProgramExecution 等） |
+| P3 WorkflowManager | ⬜ 未开始 | |
+| P3 AIChat | ⬜ 未开始 | 降级纯文本+Markdown（comrak/pulldown-cmark + syntect）也可接受 |
+| P4 切换与退役 | ⬜ 未开始 | |
 
 **与 4.4-5 的偏差说明**：
 
