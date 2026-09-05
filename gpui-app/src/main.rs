@@ -14,6 +14,7 @@
 
 mod autostart;
 mod search;
+mod settings;
 
 #[cfg(all(feature = "ilauncher", target_os = "windows"))]
 mod index_service;
@@ -60,6 +61,8 @@ enum AppSignal {
     Show(Instant),
     /// 托盘"重建索引"：提权全量重扫 + 自动重载
     RebuildIndex,
+    /// 托盘"深色主题"：切换主题模式（true = 深色）
+    SetTheme(bool),
 }
 
 // ── 主视图 ──────────────────────────────────────────────────────────────────
@@ -477,6 +480,15 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         let autostart_item =
             CheckMenuItem::with_id("autostart", "开机自启动", true, autostart::is_enabled(), None);
         let _ = menu.append(&autostart_item);
+        // 深色主题：可勾选项；未持久化过时跟随系统设置
+        let dark_item = CheckMenuItem::with_id(
+            "dark_theme",
+            "深色主题",
+            true,
+            settings::load_theme_dark().unwrap_or_else(settings::system_prefers_dark),
+            None,
+        );
+        let _ = menu.append(&dark_item);
         let _ = menu.append(&MenuItem::with_id("quit", "退出", true, None));
         let _tray = match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
@@ -525,6 +537,15 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                         };
                         autostart_item.set_checked(now_enabled);
                         println!("✓ 开机自启 → {}", if now_enabled { "已启用" } else { "已关闭" });
+                    }
+                    "dark_theme" => {
+                        // muda 点击可勾选项后内部状态已翻转，is_checked() 即目标态
+                        let want_dark = dark_item.is_checked();
+                        if let Err(e) = settings::save_theme_dark(want_dark) {
+                            println!("⚠️ 保存主题偏好失败: {e:#}");
+                        }
+                        let _ = tx.send(AppSignal::SetTheme(want_dark));
+                        println!("✓ 主题 → {}", if want_dark { "深色" } else { "浅色" });
                     }
                     "quit" => std::process::exit(0),
                     _ => {}
@@ -601,6 +622,18 @@ fn main() {
     let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
         gpui_kit::init(cx);
+        // 主题：持久化偏好 > 系统设置（gpui-component init 默认 Light，这里覆盖）
+        {
+            use gpui_kit::component::theme::ThemeMode;
+            let dark =
+                settings::load_theme_dark().unwrap_or_else(settings::system_prefers_dark);
+            gpui_kit::component::theme::Theme::change(
+                if dark { ThemeMode::Dark } else { ThemeMode::Light },
+                None,
+                cx,
+            );
+            println!("✓ 主题初始化 → {}", if dark { "深色" } else { "浅色" });
+        }
         let mut guard = WindowGuard::new(rx, index_set);
         cx.spawn(move |cx: &mut AsyncApp| {
             let mut cx = cx.clone();
@@ -613,15 +646,30 @@ fn main() {
 
                 let mut latest: Option<Instant> = None;
                 let mut rebuild = false;
+                let mut theme_dark: Option<bool> = None;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
                         AppSignal::RebuildIndex => rebuild = true,
+                        AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                     }
                 }
                 if rebuild {
                     #[cfg(all(feature = "ilauncher", target_os = "windows"))]
                     index_service::imp::request_rebuild(&guard.index_set);
+                }
+                if let Some(dark) = theme_dark {
+                    use gpui_kit::component::theme::ThemeMode;
+                    cx.update(|cx| {
+                        gpui_kit::component::theme::Theme::change(
+                            if dark { ThemeMode::Dark } else { ThemeMode::Light },
+                            None,
+                            cx,
+                        );
+                        // Theme::change 只刷新传入的窗口（这里 None），
+                        // 手动刷新全部已开窗口让背景色等一次性生效
+                        cx.refresh_windows();
+                    });
                 }
                 if let Some(t) = latest {
                     guard.summon(t, &mut cx);

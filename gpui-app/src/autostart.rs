@@ -2,7 +2,7 @@
 //! 不依赖 gpui，纯注册表读写 + 独立测试子键，可单测。
 
 #[cfg(windows)]
-mod imp {
+pub(crate) mod imp {
     use anyhow::{Context, Result};
     use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
     use windows::Win32::System::Registry::{
@@ -39,7 +39,7 @@ mod imp {
 
     // ── 底层原语：对任意（子键, 值名）操作，测试用独立子键隔离 ──────────────
 
-    fn read_value(key_path: &str, value_name: &str) -> Option<String> {
+    pub(crate) fn read_value(key_path: &str, value_name: &str) -> Option<String> {
         use std::os::windows::ffi::OsStrExt;
         let name_wide: Vec<u16> =
             std::ffi::OsStr::new(value_name).encode_wide().chain(std::iter::once(0)).collect();
@@ -66,7 +66,7 @@ mod imp {
         String::from_utf16(&buf[..len]).ok()
     }
 
-    fn write_value(key_path: &str, value_name: &str, data: &str) -> Result<()> {
+    pub(crate) fn write_value(key_path: &str, value_name: &str, data: &str) -> Result<()> {
         use std::os::windows::ffi::OsStrExt;
         let name_wide: Vec<u16> =
             std::ffi::OsStr::new(value_name).encode_wide().chain(std::iter::once(0)).collect();
@@ -113,7 +113,7 @@ mod imp {
         Ok(())
     }
 
-    fn delete_value(key_path: &str, value_name: &str) -> Result<()> {
+    pub(crate) fn delete_value(key_path: &str, value_name: &str) -> Result<()> {
         use std::os::windows::ffi::OsStrExt;
         let name_wide: Vec<u16> =
             std::ffi::OsStr::new(value_name).encode_wide().chain(std::iter::once(0)).collect();
