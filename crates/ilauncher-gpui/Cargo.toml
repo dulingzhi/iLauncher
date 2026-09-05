@@ -60,3 +60,7 @@ features = [
     # （ilauncher-index 碰巧开了它，但 plain 组合不能依赖这种间接统一）
     "Win32_Security",
 ]
+
+# exe 图标资源嵌入（build.rs → assets/app.rc → rc.exe）
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "2"

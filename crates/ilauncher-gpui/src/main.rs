@@ -11,6 +11,12 @@
 //   ILAUNCHER_SNAPSHOT=<path> ilauncher-gpui   真实快照搜索（需 --features ilauncher 构建）
 //   ilauncher-gpui --bench              列表滚动帧率基准
 //   ilauncher-gpui --snapshot <path>    LiveIndex 进程内搜索基准（需 feature ilauncher）
+//   ilauncher-gpui --dump-icon <path>   导出 128×128 RGBA 品牌像素（生成 exe 图标用）
+
+// release 用 GUI 子系统：双击启动不再弹控制台窗口（println! 在无 stdout 时
+// 被 Rust std 静默丢弃；重定向到文件/管道不受影响，冒烟日志照常用）。
+// debug 构建保留控制台，方便开发期看日志。
+#![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
 mod audit;
 mod autostart;
@@ -1337,6 +1343,19 @@ fn main() {
     if let Some(pos) = args.iter().position(|a| a == "--snapshot")
         && let Some(path) = args.get(pos + 1) {
             run_snapshot_bench(path);
+            return;
+        }
+
+    // --dump-icon <path>：把托盘同款 128×128 RGBA 标志导出（生成 exe 图标用），导完即退
+    if let Some(pos) = args.iter().position(|a| a == "--dump-icon")
+        && let Some(path) = args.get(pos + 1) {
+            #[cfg(target_os = "windows")]
+            {
+                std::fs::write(path, tray_icon_gen::rgba_pixels()).expect("写图标像素失败");
+                println!("✓ 图标像素已导出: {path} ({} 字节)", tray_icon_gen::rgba_pixels().len());
+            }
+            #[cfg(not(target_os = "windows"))]
+            eprintln!("--dump-icon 仅 Windows 构建支持");
             return;
         }
 

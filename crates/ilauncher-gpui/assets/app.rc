@@ -1,0 +1,4 @@
+; iLauncher 主图标资源：IDI 1 为 exe 图标（任务栏 / Alt+Tab / 资源管理器显示用）
+; 图标文件由托盘同款程序化像素生成：
+;   ilauncher-gpui --dump-icon icon.rgba  →  PIL 转多尺寸 app.ico
+1 ICON "app.ico"
