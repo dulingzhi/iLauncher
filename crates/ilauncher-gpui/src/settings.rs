@@ -78,6 +78,20 @@ mod imp {
         write_value(SETTINGS_KEY, LANGUAGE_VALUE, lang)
     }
 
+    /// 皮肤值名：skins.rs SKINS 清单里的 id（"default" / "nord-night"…）；
+    /// 不存在或未知 = 默认皮肤（skins::current_skin 再做白名单校验）
+    const SKIN_VALUE: &str = "Skin";
+
+    /// 读取皮肤偏好：Some(id)；未设置返回 None
+    pub fn load_skin() -> Option<String> {
+        read_value(SETTINGS_KEY, SKIN_VALUE).filter(|v| !v.is_empty())
+    }
+
+    /// 保存皮肤偏好（调用方负责传合法 id；skins::select_skin 会做白名单校验）
+    pub fn save_skin(id: &str) -> anyhow::Result<()> {
+        write_value(SETTINGS_KEY, SKIN_VALUE, id)
+    }
+
     /// Windows 系统当前是否深色模式（AppsUseLightTheme=0）。
     /// 读取失败时返回 false（浅色），与 gpui-component 默认一致。
     pub fn system_prefers_dark() -> bool {
@@ -221,6 +235,24 @@ mod imp {
         }
 
         #[test]
+        fn skin_roundtrip_and_cleanup() {
+            let name = "Skin";
+            cleanup(name);
+            assert_eq!(load_skin_from(TEST_KEY, name), None);
+            write_value(TEST_KEY, name, "nord-night").unwrap();
+            assert_eq!(load_skin_from(TEST_KEY, name).as_deref(), Some("nord-night"));
+            // 空串按未设置处理（skins::current_skin 回退 default）
+            write_value(TEST_KEY, name, "").unwrap();
+            assert_eq!(load_skin_from(TEST_KEY, name), None);
+            cleanup(name);
+        }
+
+        /// 测试走独立（子键, 值名）的 load（生产 load_skin 硬编码 SETTINGS_KEY/SKIN_VALUE）
+        fn load_skin_from(key: &str, name: &str) -> Option<String> {
+            read_value(key, name).filter(|v| !v.is_empty())
+        }
+
+        #[test]
         fn disabled_plugins_parse_and_clean() {
             let name = "disabled_plugins";
             cleanup(name);
@@ -244,8 +276,8 @@ mod imp {
 
 #[cfg(windows)]
 pub use imp::{
-    load_clipboard_capacity, load_disabled_plugins, load_language, load_theme_dark,
-    save_language, save_theme_dark, system_prefers_dark,
+    load_clipboard_capacity, load_disabled_plugins, load_language, load_skin, load_theme_dark,
+    save_language, save_skin, save_theme_dark, system_prefers_dark,
 };
 // 容量写/夹取常量仅在剪贴板设置项存在时使用
 #[cfg(all(windows, feature = "clipboard"))]

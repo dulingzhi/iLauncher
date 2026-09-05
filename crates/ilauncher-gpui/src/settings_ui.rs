@@ -30,6 +30,8 @@ use std::sync::Arc;
 /// 设置快照（App 全局实体）。真实来源是注册表与各服务，这里只做会话内显示缓存。
 pub struct SettingsModel {
     pub theme_dark: bool,
+    /// 当前皮肤 id（skins.rs SKINS 清单；"default" = 内置明暗主题）
+    pub skin: String,
     pub autostart: bool,
     pub clipboard_capacity: usize,
     /// 界面语言（注册表原始值："zh-CN" / "en" / "system"；未设置按跟随系统处理）
@@ -48,6 +50,7 @@ pub fn init_model(cx: &mut App) {
     let model = SettingsModel {
         theme_dark: crate::settings::load_theme_dark()
             .unwrap_or_else(crate::settings::system_prefers_dark),
+        skin: crate::skins::current_skin(),
         autostart: crate::autostart::is_enabled(),
         clipboard_capacity: clipboard_capacity_or_default(),
         language: crate::settings::load_language()
@@ -73,6 +76,11 @@ fn clipboard_capacity_or_default() -> usize {
 /// 托盘切换主题后同步 model（设置页开关显示与托盘一致）
 pub fn sync_theme_model(cx: &mut App, dark: bool) {
     model(cx).update(cx, |m, _| m.theme_dark = dark);
+}
+
+/// 托盘/其他入口切换皮肤后同步 model（设置页下拉框显示一致）
+pub fn sync_skin_model(cx: &mut App, skin: &str) {
+    model(cx).update(cx, |m, _| m.skin = skin.to_string());
 }
 
 fn model(cx: &App) -> Entity<SettingsModel> {
@@ -150,25 +158,35 @@ pub(crate) fn build_pages(
             ),
         );
 
-    // ── 外观：深色模式（注册表 + 全局主题切换，与托盘菜单等价） ──
+    // ── 外观：皮肤选择 + 深色模式（注册表 + 全局主题切换，与托盘菜单等价） ──
+    let skin_options: Vec<(SharedString, SharedString)> = crate::skins::SKINS
+        .iter()
+        .map(|(id, key)| ((*id).into(), t!(*key).to_string().into()))
+        .collect();
     let appearance = SettingPage::new(t!("settings.page_appearance").to_string())
         .icon(IconName::Palette)
         .group(
             SettingGroup::new().title(t!("settings.appearance_group_theme").to_string()).item(
                 SettingItem::new(
+                    t!("settings.appearance_skin").to_string(),
+                    SettingField::dropdown(
+                        skin_options,
+                        |cx: &App| model(cx).read(cx).skin.clone().into(),
+                        |value, cx: &mut App| {
+                            let id = value.to_string();
+                            crate::skins::select_skin(&id, cx);
+                        },
+                    ),
+                )
+                .description(t!("settings.appearance_skin_desc").to_string()),
+            ).item(
+                SettingItem::new(
                     t!("settings.appearance_dark").to_string(),
                     SettingField::switch(
                         |cx: &App| model(cx).read(cx).theme_dark,
                         |dark, cx: &mut App| {
-                            let _ = crate::settings::save_theme_dark(dark);
                             model(cx).update(cx, |m, _| m.theme_dark = dark);
-                            use gpui_kit::component::theme::ThemeMode;
-                            gpui_kit::component::theme::Theme::change(
-                                if dark { ThemeMode::Dark } else { ThemeMode::Light },
-                                None,
-                                cx,
-                            );
-                            cx.refresh_windows();
+                            crate::skins::set_dark_mode(dark, cx);
                         },
                     ),
                 )

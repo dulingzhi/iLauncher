@@ -43,8 +43,10 @@ settings:
   general_language_desc: Applies to windows immediately; the tray menu updates on next launch
   lang_system: Follow System
   appearance_group_theme: Theme
+  appearance_skin: Interface Skin
+  appearance_skin_desc: Built-in color styles; toggling dark/light while a custom skin is active reverts to the default skin
   appearance_dark: Dark Mode
-  appearance_dark_desc: When off, follow the Windows system appearance
+  appearance_dark_desc: Switchable under the default skin; when off, follows the Windows system appearance
   clipboard_group_history: History
   clipboard_capacity: History Capacity
   clipboard_capacity_desc: Max clipboard entries kept; oldest items are trimmed beyond this (image files are cleaned up too)
@@ -66,6 +68,14 @@ settings:
   about_update: Check for Updates
   about_update_desc: Talks to the GitHub releases latest.json; click the button to check
   about_update_status: Update Status
+
+skin:
+  default: Default (follows dark/light)
+  nord_night: Nord Night
+  cyber_neon: Cyber Neon
+  catppuccin: Catppuccin Mocha
+  warm_paper: Warm Paper
+  mint_mist: Mint Mist
 
 updater:
   button_idle: Check for Updates

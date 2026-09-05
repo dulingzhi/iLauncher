@@ -28,6 +28,7 @@ mod plugin;
 mod preview;
 mod search;
 mod settings;
+mod skins;
 mod ai;
 mod markdown;
 
@@ -1469,20 +1470,8 @@ fn main() {
         // 默认 QuitMode::LastWindowClosed（非 macOS）：Esc/失焦销毁主窗口会直接退出进程。
         // 常驻托盘应用改为 Explicit——只有托盘「退出」/主窗「退出」按钮结束进程
         cx.set_quit_mode(gpui_kit::QuitMode::Explicit);
-        // 主题：持久化偏好 > 系统设置（gpui-component init 默认 Light，这里覆盖）
-        {
-            use gpui_kit::component::theme::ThemeMode;
-            let dark =
-                settings::load_theme_dark().unwrap_or_else(settings::system_prefers_dark);
-            gpui_kit::component::theme::Theme::change(
-                if dark { ThemeMode::Dark } else { ThemeMode::Light },
-                None,
-                cx,
-            );
-            println!("✓ 主题初始化 → {}", if dark { "深色" } else { "浅色" });
-        }
-        #[cfg(target_os = "windows")]
-        apply_cjk_font(cx);
+        // 主题：皮肤系统统一初始化（持久化皮肤偏好 > 默认皮肤深/浅偏好 > 系统设置）
+        skins::apply_saved(cx);
         // 设置页 model 全局实体（字段值闭包的数据源，托盘/设置页共用）
         #[cfg(windows)]
         settings_ui::init_model(cx);
@@ -1583,21 +1572,11 @@ fn main() {
                     println!("⚠️ AI 对话窗口仅 Windows 构建");
                 }
                 if let Some(dark) = theme_dark {
-                    use gpui_kit::component::theme::ThemeMode;
                     cx.update(|cx| {
-                        gpui_kit::component::theme::Theme::change(
-                            if dark { ThemeMode::Dark } else { ThemeMode::Light },
-                            None,
-                            cx,
-                        );
-                        // Theme::change 只刷新传入的窗口（这里 None），
-                        // 手动刷新全部已开窗口让背景色等一次性生效
-                        cx.refresh_windows();
+                        // 皮肤系统统一处理：自定义皮肤下切深/浅 = 回退默认皮肤
+                        skins::set_dark_mode(dark, cx);
                         // 同步设置页 model，避免托盘切换后设置页显示过期值
                         settings_ui::sync_theme_model(cx, dark);
-                        // Theme::change 会重置 font_family，CJK 字体需重刷
-                        #[cfg(target_os = "windows")]
-                        apply_cjk_font(cx);
                     });
                 }
                 if let Some(t) = latest {
