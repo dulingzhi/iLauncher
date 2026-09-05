@@ -188,7 +188,7 @@ gpui-component = { version = "0.6" }
 | P1 主题 | ✅ 完成 | 全组件走 gpui-component Theme token；托盘「深色主题」可勾选，偏好持久化到 HKCU\Software\iLauncher（无偏好时跟随系统 AppsUseLightTheme） |
 | P1 i18n | ⬜ 未做 | rust-i18n（gpui-component 同款），P2 随设置页一起 |
 | P2 剪贴板历史 | ✅ 完成 | 独立 crate `ilauncher-clipboard`：WM_CLIPBOARDUPDATE 监听线程、JSONL 持久化（容量截断、文本连续去重）、搜索/删除/清空；**图片支持**——get_image → 采样哈希 → 落盘 PNG + 全库哈希去重，删除/清空连带删文件，复制按类型分派（copy_text/copy_image）；store 15 单测 + monitor_smoke 真实文本/图片事件路径 |
-| P2 设置页 | ⬜ 未开始 | 骨架 + 通用/主题/剪贴板/索引/关于分区 |
+| P2 设置页 | ✅ 完成 | gpui-component 现成 `Settings` 组件五分区（通用/外观/剪贴板/索引/关于），`settings_ui.rs` 纯装配层；开机自启、深色模式、剪贴板容量（注册表+运行时 set_capacity）、清空历史、重建索引全部接线真实数据源；托盘「设置」入口；i18n 仍待做（标签暂硬编码中文） |
 | P2 UpdateChecker | ⬜ 未开始 | self_update 接现有 JSON 协议 |
 | P2 PreviewPanel | ⬜ 未开始 | |
 | P3/P4 | ⬜ 未开始 | |
