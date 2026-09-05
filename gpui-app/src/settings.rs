@@ -44,38 +44,42 @@ mod imp {
         use super::*;
         use crate::autostart::imp::delete_value;
 
-        fn cleanup() {
-            let _ = delete_value(TEST_KEY, THEME_VALUE);
+        /// 每个测试独立值名——cargo 并行跑共享同一值名会互相踩
+        fn cleanup(name: &str) {
+            let _ = delete_value(TEST_KEY, name);
         }
 
         #[test]
         fn save_then_load_roundtrip() {
-            cleanup();
-            write_value(TEST_KEY, THEME_VALUE, "dark").unwrap();
-            assert_eq!(load_theme_dark_from(TEST_KEY), Some(true));
-            write_value(TEST_KEY, THEME_VALUE, "light").unwrap();
-            assert_eq!(load_theme_dark_from(TEST_KEY), Some(false));
-            cleanup();
+            let name = "roundtrip";
+            cleanup(name);
+            write_value(TEST_KEY, name, "dark").unwrap();
+            assert_eq!(load_from(TEST_KEY, name), Some(true));
+            write_value(TEST_KEY, name, "light").unwrap();
+            assert_eq!(load_from(TEST_KEY, name), Some(false));
+            cleanup(name);
         }
 
         #[test]
         fn missing_pref_returns_none() {
-            cleanup();
-            assert_eq!(load_theme_dark_from(TEST_KEY), None);
-            cleanup();
+            let name = "missing";
+            cleanup(name);
+            assert_eq!(load_from(TEST_KEY, name), None);
+            cleanup(name);
         }
 
         #[test]
         fn invalid_value_returns_none() {
-            cleanup();
-            write_value(TEST_KEY, THEME_VALUE, "neon").unwrap();
-            assert_eq!(load_theme_dark_from(TEST_KEY), None);
-            cleanup();
+            let name = "invalid";
+            cleanup(name);
+            write_value(TEST_KEY, name, "neon").unwrap();
+            assert_eq!(load_from(TEST_KEY, name), None);
+            cleanup(name);
         }
 
-        /// 测试走独立子键版的 load（生产 load_theme_dark 硬编码 SETTINGS_KEY）
-        fn load_theme_dark_from(key: &str) -> Option<bool> {
-            match read_value(key, THEME_VALUE)?.to_lowercase().as_str() {
+        /// 测试走独立（子键, 值名）的 load（生产 load_theme_dark 硬编码 SETTINGS_KEY/THEME_VALUE）
+        fn load_from(key: &str, name: &str) -> Option<bool> {
+            match read_value(key, name)?.to_lowercase().as_str() {
                 "dark" => Some(true),
                 "light" => Some(false),
                 _ => None,

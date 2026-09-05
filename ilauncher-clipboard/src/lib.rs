@@ -10,4 +10,21 @@ pub mod store;
 #[cfg(target_os = "windows")]
 pub mod monitor;
 
+/// 写文本到系统剪贴板（历史条目点选回写用）
+#[cfg(target_os = "windows")]
+pub fn copy_text(text: &str) -> anyhow::Result<()> {
+    let mut cb = arboard_clipboard()?;
+    cb.set_text(text).map_err(|e| anyhow::anyhow!("写入剪贴板失败: {e}"))
+}
+
+#[cfg(target_os = "windows")]
+fn arboard_clipboard() -> anyhow::Result<arboard::Clipboard> {
+    arboard::Clipboard::new().map_err(|e| anyhow::anyhow!("访问剪贴板失败: {e}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn copy_text(_text: &str) -> anyhow::Result<()> {
+    anyhow::bail!("copy_text 仅在 Windows 可用")
+}
+
 pub use store::{ClipboardItem, ClipboardStore, DEFAULT_CAPACITY, MAX_TEXT_LEN, PREVIEW_CHARS};
