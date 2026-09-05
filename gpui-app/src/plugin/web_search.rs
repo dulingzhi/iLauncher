@@ -29,8 +29,9 @@ impl SearchEngine {
 }
 
 /// application/x-www-form-urlencoded 百分号编码（对齐 Tauri urlencoding::encode 语义：
-/// 非 [A-Za-z0-9-_.~] 一律 %XX，空格 %20 非 +）
-fn encode_query(s: &str) -> String {
+/// 非 [A-Za-z0-9-_.~] 一律 %XX，空格 %20 非 +）。
+/// pub(crate)：market store 客户端复用（不引入 urlencoding 依赖）
+pub(crate) fn encode_query(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for &b in s.as_bytes() {
         match b {

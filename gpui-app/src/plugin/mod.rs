@@ -10,11 +10,15 @@
 //!     plugin_type（GPUI 版暂无消费方）；QueryContext 只保留 search（无 Selection 路径）
 
 mod calculator;
+mod installer;
 mod manager;
 mod sandbox;
+mod store;
 mod web_search;
 
+pub use installer::{InstalledPlugin, PluginInstaller, PluginRegistry};
 pub use manager::PluginManager;
+pub use store::{PluginListItem, PluginStore, SearchParams};
 
 use anyhow::Result;
 

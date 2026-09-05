@@ -24,6 +24,8 @@ mod updater;
 
 #[cfg(windows)]
 mod audit_ui;
+#[cfg(windows)]
+mod plugin_ui;
 #[cfg(all(feature = "clipboard", target_os = "windows"))]
 mod clipboard_ui;
 
@@ -83,6 +85,8 @@ enum AppSignal {
     ShowClipboard,
     /// 托盘"审计日志"：打开/激活审计查看器
     ShowAudit,
+    /// 托盘"插件"：打开/激活插件市场/管理窗口
+    ShowPlugins,
     /// 托盘"设置"：打开/激活设置窗口（窗口逻辑仅 Windows 编译）
     ShowSettings,
     /// 托盘"深色主题"：切换主题模式（true = 深色）
@@ -634,6 +638,12 @@ struct WindowGuard {
     /// 审计日志查看器窗口
     #[cfg(windows)]
     audit_window: Option<(WindowHandle<Root>, Entity<audit_ui::AuditPanel>)>,
+    /// 插件市场状态（注册表 + 安装器 + 商店客户端，窗口间共享）
+    #[cfg(windows)]
+    market: Arc<plugin_ui::MarketState>,
+    /// 插件市场/管理窗口
+    #[cfg(windows)]
+    plugins_window: Option<(WindowHandle<Root>, Entity<plugin_ui::MarketPanel>)>,
 }
 
 impl WindowGuard {
@@ -644,6 +654,8 @@ impl WindowGuard {
         index_set: LiveSet,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
         plugins: Arc<plugin::PluginManager>,
+        #[cfg(windows)]
+        market: Arc<plugin_ui::MarketState>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -662,6 +674,10 @@ impl WindowGuard {
             settings_window: None,
             #[cfg(windows)]
             audit_window: None,
+            #[cfg(windows)]
+            market,
+            #[cfg(windows)]
+            plugins_window: None,
         }
     }
 
@@ -672,6 +688,8 @@ impl WindowGuard {
         _index_set: LiveSet,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
         plugins: Arc<plugin::PluginManager>,
+        #[cfg(windows)]
+        market: Arc<plugin_ui::MarketState>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -689,6 +707,10 @@ impl WindowGuard {
             settings_window: None,
             #[cfg(windows)]
             audit_window: None,
+            #[cfg(windows)]
+            market,
+            #[cfg(windows)]
+            plugins_window: None,
         }
     }
 
@@ -845,6 +867,31 @@ impl WindowGuard {
             Err(e) => eprintln!("⚠ 打开审计日志窗口失败: {e:#}"),
         }
     }
+
+    /// 打开/激活插件市场/管理窗口
+    #[cfg(windows)]
+    fn summon_plugins(&mut self, cx: &mut AsyncApp) {
+        if let Some((handle, _)) = &self.plugins_window {
+            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+                return;
+            }
+            self.plugins_window = None;
+        }
+        let state = self.market.clone();
+        let mut panel_slot: Option<Entity<plugin_ui::MarketPanel>> = None;
+        let result = cx.open_window(make_window_options(), |window, cx| {
+            let panel = cx.new(|cx| plugin_ui::MarketPanel::new(window, cx, state));
+            panel_slot = Some(panel.clone());
+            cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
+        });
+        match result {
+            Ok(handle) => {
+                println!("✓ 插件窗口已打开");
+                self.plugins_window = Some((handle, panel_slot.expect("market panel entity")));
+            }
+            Err(e) => eprintln!("⚠ 打开插件窗口失败: {e:#}"),
+        }
+    }
 }
 
 fn make_window_options() -> WindowOptions {
@@ -896,6 +943,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         let _ = menu.append(&MenuItem::with_id("settings", "设置", true, None));
         let _ = menu.append(&MenuItem::with_id("clipboard", "剪贴板历史", true, None));
         let _ = menu.append(&MenuItem::with_id("audit", "审计日志", true, None));
+        let _ = menu.append(&MenuItem::with_id("plugins", "插件", true, None));
         let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
         // 开机自启：可勾选项，初始状态读注册表
         let autostart_item =
@@ -942,6 +990,9 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                     }
                     "audit" => {
                         let _ = tx.send(AppSignal::ShowAudit);
+                    }
+                    "plugins" => {
+                        let _ = tx.send(AppSignal::ShowPlugins);
                     }
                     "rebuild" => {
                         let _ = tx.send(AppSignal::RebuildIndex);
@@ -1075,6 +1126,24 @@ fn main() {
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     let clipboard_store = clipboard_ui::init_clipboard();
 
+    // ── 插件市场：已安装注册表加载 + 商店缓存目录（Windows 窗口用） ──────────
+    #[cfg(windows)]
+    let market = {
+        let data_dir = std::env::var_os("LOCALAPPDATA")
+            .map(|d| std::path::PathBuf::from(d).join("iLauncher"))
+            .unwrap_or_else(|| std::path::PathBuf::from("iLauncher"));
+        let _ = std::fs::create_dir_all(&data_dir);
+        let market = Arc::new(plugin_ui::MarketState::new(
+            data_dir.join("plugins"),
+            data_dir.join("plugin-cache"),
+        ));
+        if let Err(e) = market.registry.load_installed() {
+            eprintln!("⚠️ 已安装插件扫描失败: {e:#}");
+        }
+        println!("✓ 插件市场已就绪（已安装 {} 个）", market.registry.list().len());
+        market
+    };
+
     let (tx, rx) = mpsc::channel();
     setup_tray(tx.clone());
     spawn_hotkey_thread(tx.clone());
@@ -1105,6 +1174,8 @@ fn main() {
             index_set,
             audit_logger,
             plugins,
+            #[cfg(windows)]
+            market,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
         );
@@ -1123,6 +1194,7 @@ fn main() {
                 let mut show_clipboard = false;
                 let mut show_settings = false;
                 let mut show_audit = false;
+                let mut show_plugins = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
@@ -1130,6 +1202,7 @@ fn main() {
                         AppSignal::ShowClipboard => show_clipboard = true,
                         AppSignal::ShowSettings => show_settings = true,
                         AppSignal::ShowAudit => show_audit = true,
+                        AppSignal::ShowPlugins => show_plugins = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                     }
                 }
@@ -1160,6 +1233,14 @@ fn main() {
                 #[cfg(not(windows))]
                 if show_audit {
                     println!("⚠️ 审计查看器仅 Windows 构建");
+                }
+                #[cfg(windows)]
+                if show_plugins {
+                    guard.summon_plugins(&mut cx);
+                }
+                #[cfg(not(windows))]
+                if show_plugins {
+                    println!("⚠️ 插件市场窗口仅 Windows 构建");
                 }
                 if let Some(dark) = theme_dark {
                     use gpui_kit::component::theme::ThemeMode;
