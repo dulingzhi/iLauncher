@@ -194,7 +194,7 @@ gpui-component = { version = "0.6" }
 | P2 PreviewPanel | ✅ 完成 | 新模块 `preview.rs`（9 单测，对齐 Tauri preview 行为）：主窗口 resizable 分栏，选中防抖 120ms 读预览（代次丢弃）；图片原生解码/文本截断 200 行/元信息行；bench 回归 160fps 无退化 |
 | P3 AuditLogViewer | ✅ 完成 | 新模块 `audit.rs`（无 gpui 依赖，跨平台单测）：对齐 Tauri 插件审计事件模型（六类事件/三级严重度/统计语义一致），两处刻意偏离——Unix 秒时间戳、新增 JSONL 持久化（audit.jsonl，启动器审计需可回溯）；`audit_ui.rs` 查看器（cfg windows，仿剪贴板历史）：统计头/搜索防抖/仅违规开关/severity 着色/导出 JSON/清空，500ms 轮询；托盘「审计日志」入口；launch_selected 记 ProgramExecution 作为首个真实事件源，插件沙盒事件待 PluginManager 同管道注入 |
 | P3 PluginManager/Market | ✅ 完成 | 切片 A（c272b5d）：插件框架 trait 同步化 + ExecuteOutcome 副作用上移 Launcher；沙盒四级权限模型对齐，审计 logger 注入共享管道（纠正 Tauri 黑洞）；calculator/web_search 样板插件接入主搜索扇出。切片 B（af92920）：.ilp 安装管线（manifest/ID/依赖/权限白名单/解压）+ 商店客户端（ReqwestClient，URL 构建纯函数）+ 市场/已安装双页签窗口（托盘"插件"入口）；JS/WASM 包与内置 Rust 插件两套并存对齐 Tauri |
-| P3 WorkflowManager | ⬜ 未开始 | |
+| P3 WorkflowManager | ✅ 完成 | `workflow.rs` 引擎对齐 Tauri（aa0553e）：serde 类型模型一致；删死变体 PluginQuery/PluginExecute；副作用收集 WorkflowEffect（剪贴板/通知由调用层执行）；TimeRange 真实现（纯函数+GetLocalTime）；ProcessRunning 用 Toolhelp32；无条件 Loop 加 1 万次防护；Retry 保持 Tauri"全失败仍继续"语义；12 单测（MockHttp 注入）。启动器关键词精确匹配触发（EntryOrigin::Workflow）；`workflow_ui.rs` 管理窗口（列表/启用开关/运行/删除，托盘"工作流"入口）；编辑器 UI 不做，JSON 直接放 workflows 目录 |
 | P3 AIChat | ⬜ 未开始 | 降级纯文本+Markdown（comrak/pulldown-cmark + syntect）也可接受 |
 | P4 切换与退役 | ⬜ 未开始 | |
 
