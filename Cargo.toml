@@ -10,6 +10,12 @@ members = [
 [profile.dev]
 codegen-units = 16
 
+# 发布体积优化：全量 LTO + 单编译单元让链接器跨 crate 死代码消除，
+# 33MB → 预期 20MB 上下（实测以构建产物为准）
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
 [profile.dev.package]
 taffy = { opt-level = 3 }
 smol = { opt-level = 3 }

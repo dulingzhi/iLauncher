@@ -18,7 +18,6 @@ clipboard = ["dep:ilauncher-clipboard"]
 [dependencies]
 # gpui-kit = umbrella（gpui-pre + platform + base + component + assets）
 gpui-kit = { version = "0.6" }
-global-hotkey = "0.7"
 tray-icon = "0.20"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

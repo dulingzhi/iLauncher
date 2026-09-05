@@ -11,7 +11,8 @@
 //   UI 进程：
 //     · init_index_loader：增量加载（已有盘立即打开，缺失盘服务构建完补上）；
 //       快照齐全但服务未运行时也静默拉起服务（保证持续 catch-up）
-//     · request_rebuild：清 LiveSet（释放 mmap）→ 提权 --rebuild →
+//     · request_rebuild：清 LiveSet（释放 mmap）→ 写 rebuild.request 哨兵
+//       （服务在跑，就地重建）或提权 --rebuild（服务未跑）→
 //       轮询快照 mtime 变化 → 重新加载
 //
 // 仅 Windows + feature ilauncher 编译。
@@ -51,6 +52,12 @@ pub mod imp {
 
     fn snapshot_path(drive: char) -> PathBuf {
         snapshot_dir().join(format!("{}.snapshot", drive))
+    }
+
+    /// 就地重建哨兵路径：UI 写、服务读（服务持有快照文件，UI 无法独占重建，
+    /// 运行时重建改由服务在 catch-up 循环里发现哨兵后就地执行）
+    fn rebuild_request_path() -> PathBuf {
+        snapshot_dir().join("rebuild.request")
     }
 
     /// 服务互斥锁名（NUL 结尾宽字符串，调用期间有效）
@@ -172,13 +179,16 @@ pub mod imp {
             println!("⚠ 未提供 --ui-pid，服务将持续运行直到手动结束");
         }
 
-        // 每盘一个线程跑 V3DriveService（启动决策 + 周期 catch-up + compact）
+        // 每盘一个线程跑 V3DriveService（启动决策 + 周期 catch-up + 就地重建哨兵 + compact）
+        let watch_path = rebuild_request_path();
         let mut handles = Vec::new();
         for drive in drives {
             let out = out_dir.clone();
             let flag = running.clone();
+            let watch = ilauncher_index::mft_scanner::v3_service::RebuildWatch::new(watch_path.clone());
             handles.push(std::thread::spawn(move || {
-                let service = V3DriveService::new(drive, out);
+                let mut service =
+                    V3DriveService::new(drive, out).with_rebuild_watch(watch);
                 if let Err(e) = service.run(flag) {
                     eprintln!("❌ [v3] 盘 {} 服务线程出错: {:#}", drive, e);
                 }
@@ -285,16 +295,11 @@ pub mod imp {
         set
     }
 
-    /// 托盘"重建索引"：清 LiveSet（释放 mmap 文件占用）→ 提权 --rebuild →
-    /// 轮询快照 mtime 全部变化 → 重新加载
+    /// 托盘/设置页"重建索引"：
+    ///   服务在跑（常态）→ 写哨兵文件，服务 catch-up 循环发现后就地全量重建
+    ///   服务未跑（边界：启动时 UAC 被拒/服务崩溃）→ 提权 --rebuild 起新服务重建
+    /// 两条路都以「全部盘快照 mtime 变化」为完成信号，随后重新加载进 LiveSet
     pub fn request_rebuild(set: &LiveSet) {
-        if !service_running() {
-            // 正常路径：没有服务占用快照文件，直接走 rebuild
-        } else {
-            eprintln!("⚠ 服务正在运行，无法重建（请先退出主程序使服务停止）");
-            return;
-        }
-
         // 记录当前快照 mtime 作为变化基准（None = 文件不存在）
         let marks: Vec<(char, Option<SystemTime>)> = detect_drives()
             .into_iter()
@@ -306,8 +311,22 @@ pub mod imp {
         }
 
         set.clear();
-        println!("🗑 已释放内存索引，请求提权重建…");
-        spawn_elevated(&format!("--rebuild --ui-pid {}", std::process::id()));
+
+        let request_path = rebuild_request_path();
+        if service_running() {
+            // 先删再写，保证重复点击（哪怕同一毫秒内）mtime 也严格更新
+            let _ = std::fs::remove_file(&request_path);
+            match std::fs::write(&request_path, format!("rebuild at {:?}\n", std::time::SystemTime::now())) {
+                Ok(()) => println!("✓ 已通知索引服务就地重建，等待完成…"),
+                Err(e) => {
+                    eprintln!("❌ 写入重建哨兵失败: {:#}", e);
+                    return;
+                }
+            }
+        } else {
+            println!("🗑 已释放内存索引，请求提权重建…");
+            spawn_elevated(&format!("--rebuild --ui-pid {}", std::process::id()));
+        }
 
         let set = set.clone();
         std::thread::spawn(move || {
@@ -331,6 +350,8 @@ pub mod imp {
                 std::thread::sleep(WAIT_POLL_INTERVAL);
             }
             println!("✓ 重建完成，重新加载索引…");
+            // 服务端已消费（水位推进），清理哨兵
+            let _ = std::fs::remove_file(&request_path);
             load_all(&set);
         });
     }

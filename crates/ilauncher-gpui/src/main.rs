@@ -1101,27 +1101,6 @@ fn apply_cjk_font(cx: &mut gpui_kit::App) {
     });
 }
 
-// ── 热键线程 ────────────────────────────────────────────────────────────────
-
-fn spawn_hotkey_thread(tx: mpsc::Sender<AppSignal>) {
-    use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
-
-    std::thread::spawn(move || {
-        let manager = GlobalHotKeyManager::new().expect("hotkey manager");
-        // Ctrl+Space 唤起（P0/P1 测试绑定）
-        let hotkey = HotKey::new(Some(global_hotkey::hotkey::Modifiers::CONTROL), global_hotkey::hotkey::Code::Space);
-        manager.register(hotkey).expect("register hotkey");
-        println!("✓ 全局热键已注册: Ctrl+Space");
-        let receiver = GlobalHotKeyEvent::receiver();
-        loop {
-            if let Ok(event) = receiver.recv()
-                && event.state == global_hotkey::HotKeyState::Pressed {
-                    let _ = tx.send(AppSignal::Show(Instant::now()));
-                }
-        }
-    });
-}
-
 // ── 托盘（菜单事件：显示 / 退出） ────────────────────────────────────────────
 
 fn setup_tray(tx: mpsc::Sender<AppSignal>) {
@@ -1178,18 +1157,45 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         // 关键：tray-icon 的隐藏窗口和 muda 菜单子类都挂在窗口过程（wndproc）上，
         // 而 wndproc 只在创建窗口的线程检索消息时才被调用——本线程不泵消息的话，
         // 点击事件根本到不了 wndproc，左右键会全部无响应（首测复现的正是此问题）
+        // 全局热键也注册在本线程：WM_HOTKEY 发到线程消息队列，
+        // 只有泵消息的线程能收到。global-hotkey crate 只建隐藏窗口不泵消息，
+        // 事件永远到不了 wndproc（与此前托盘点击失灵的根因同类），故直接用 Win32 API
+        const HOTKEY_ID: i32 = 0x1A;
+        unsafe {
+            use windows::Win32::UI::Input::KeyboardAndMouse::{
+                RegisterHotKey, MOD_CONTROL, MOD_NOREPEAT, VK_SPACE,
+            };
+            if RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_NOREPEAT, VK_SPACE.0 as u32).is_ok() {
+                println!("✓ 全局热键已注册: Ctrl+Space");
+            } else {
+                eprintln!(
+                    "⚠ 注册 Ctrl+Space 失败（错误码 {:?}），热键可能被输入法或其他程序占用",
+                    windows::core::Error::from_win32()
+                );
+            }
+        }
+
         let receiver = MenuEvent::receiver();
         let tray_events = tray_icon::TrayIconEvent::receiver();
         loop {
+            let mut got_msg = false;
             unsafe {
                 use windows::Win32::UI::WindowsAndMessaging::{
-                    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+                    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE, WM_HOTKEY,
                 };
                 let mut msg = MSG::default();
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                    got_msg = true;
+                    if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == HOTKEY_ID {
+                        let _ = tx.send(AppSignal::Show(Instant::now()));
+                    }
                     let _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 }
+            }
+            if !got_msg {
+                // PeekMessage 无等待立即返回，空转时必须休眠，否则忙等烧满一个核
+                std::thread::sleep(std::time::Duration::from_millis(5));
             }
             // 左键点托盘图标 → 唤起主窗口（菜单仅右键弹出）
             while let Ok(tray_icon::TrayIconEvent::Click {
@@ -1404,7 +1410,6 @@ fn main() {
 
     let (tx, rx) = mpsc::channel();
     setup_tray(tx.clone());
-    spawn_hotkey_thread(tx.clone());
     // 启动即显示主窗口（含 bench 模式）；之后 Esc 隐藏、热键/托盘唤起
     let _ = tx.send(AppSignal::Show(Instant::now()));
     // 开发调试：ILAUNCHER_DEV_OPEN=settings|clipboard|audit|plugins|workflows|ai

@@ -76,11 +76,47 @@ impl CompactPolicy {
     }
 }
 
+/// 就地重建哨兵（纯文件逻辑，可单测）。
+///
+/// UI 进程重建索引时服务通常正在运行（服务持有快照文件，UI 无法独占重建），
+/// 由 UI 写哨兵文件、服务在 catch-up 循环里发现哨兵 mtime 更新后对本盘就地全量重建。
+/// 水位 = 上次处理的哨兵 mtime；哨兵 mtime 晚于水位即视为有新请求。
+#[derive(Debug, Clone)]
+pub struct RebuildWatch {
+    path: PathBuf,
+    watermark: std::time::SystemTime,
+}
+
+impl RebuildWatch {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            watermark: std::time::SystemTime::now(),
+        }
+    }
+
+    /// 哨兵 mtime 晚于水位 → 有新重建请求
+    pub fn pending(&self) -> bool {
+        std::fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .map(|t| t > self.watermark)
+            .unwrap_or(false)
+    }
+
+    /// 重建完成后把水位推到当前哨兵 mtime（同一请求不重复触发）
+    pub fn mark_done(&mut self) {
+        if let Ok(t) = std::fs::metadata(&self.path).and_then(|m| m.modified()) {
+            self.watermark = t;
+        }
+    }
+}
+
 /// 单盘 V3 索引服务
 pub struct V3DriveService {
     drive: char,
     output_dir: String,
     policy: CompactPolicy,
+    rebuild_watch: Option<RebuildWatch>,
 }
 
 impl V3DriveService {
@@ -89,7 +125,14 @@ impl V3DriveService {
             drive,
             output_dir,
             policy: CompactPolicy::default(),
+            rebuild_watch: None,
         }
+    }
+
+    /// 挂接就地重建哨兵（服务进程用；不挂则不支持就地重建）
+    pub fn with_rebuild_watch(mut self, watch: RebuildWatch) -> Self {
+        self.rebuild_watch = Some(watch);
+        self
     }
 
     fn snapshot_path(&self) -> PathBuf {
@@ -135,7 +178,7 @@ impl V3DriveService {
     }
 
     /// 阻塞式运行，直到 running 置 false
-    pub fn run(&self, running: Arc<AtomicBool>) -> Result<()> {
+    pub fn run(&mut self, running: Arc<AtomicBool>) -> Result<()> {
         info!("👀 [v3] Starting v3 index service for drive {}", self.drive);
 
         let path = self.snapshot_path();
@@ -188,6 +231,26 @@ impl V3DriveService {
                     warn!("⚠️  [v3] Drive {}: unexpected baseline reset at usn {}", self.drive, usn);
                 }
                 Err(e) => warn!("⚠️  [v3] Drive {}: catch-up failed (transient): {:#}", self.drive, e),
+            }
+
+            // 就地重建请求（UI 写哨兵文件）：全量重建本盘快照并重开
+            let requested = self
+                .rebuild_watch
+                .as_ref()
+                .is_some_and(|w| w.pending());
+            if requested {
+                info!("🔨 [v3] Drive {}: in-place rebuild requested", self.drive);
+                match self.rebuild().and_then(|()| LiveIndex::open(&self.snapshot_path())) {
+                    Ok(fresh) => {
+                        index = fresh;
+                        last_compact = Instant::now();
+                    }
+                    Err(e) => error!("❌ [v3] Drive {}: in-place rebuild failed: {:#}", self.drive, e),
+                }
+                // 无论成败都推进水位：一次请求只尝试一次，避免失败时每 2s 无限重试刷屏
+                if let Some(watch) = self.rebuild_watch.as_mut() {
+                    watch.mark_done();
+                }
             }
 
             // compact 策略
@@ -249,5 +312,50 @@ mod tests {
             min_interval: Duration::from_secs(0),
         };
         assert!(aggressive.should_compact(10, Duration::from_secs(0)));
+    }
+
+    /// 哨兵测试用的临时文件路径（进程 id + 测试名唯一化，避免并行测试冲突）
+    fn watch_tmp(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("ilauncher-watch-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_file(&path);
+        path
+    }
+
+    #[test]
+    fn test_rebuild_watch_no_file_not_pending() {
+        let path = watch_tmp("no-file");
+        let watch = RebuildWatch::new(path.clone());
+        assert!(!watch.pending());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_rebuild_watch_pending_and_mark_done() {
+        let path = watch_tmp("cycle");
+        // 水位设为远古时间：任何已存在的哨兵都算新请求（不依赖 mtime 精度）
+        let mut watch = RebuildWatch {
+            path: path.clone(),
+            watermark: std::time::SystemTime::UNIX_EPOCH,
+        };
+        assert!(!watch.pending(), "哨兵不存在时不得触发");
+        std::fs::write(&path, b"rebuild").unwrap();
+        assert!(watch.pending(), "哨兵 mtime 晚于水位应触发");
+        watch.mark_done();
+        assert!(!watch.pending(), "mark_done 后同一请求不得重复触发");
+        // 删除后再写（模拟用户再次点击重建）→ mtime 更新，应再次触发
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&path, b"rebuild again").unwrap();
+        assert!(watch.pending(), "哨兵重写后应再次触发");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_rebuild_watch_default_watermark_ignores_stale_sentinel() {
+        let path = watch_tmp("stale");
+        std::fs::write(&path, b"old request").unwrap();
+        // 服务启动后才创建的 watch：早于启动时刻的哨兵是残留，不得触发
+        let watch = RebuildWatch::new(path.clone());
+        assert!(!watch.pending());
+        let _ = std::fs::remove_file(&path);
     }
 }
