@@ -185,8 +185,8 @@ gpui-component = { version = "0.6" }
 | P1 主循环 | ✅ 完成 | 搜索防抖 80ms、↑↓ 导航、Enter 经 opener 启动、Esc 销毁窗口由 WindowGuard 异步任务重建；列表行已换 gpui-component `ListItem`（选中/hover 全走 theme token，bench 回归 144.3fps 无退化） |
 | P1 索引接入 | ✅ 完成 | `index_service.rs` 常驻 MFT 服务模式：UI 启动时快照齐全但服务未跑 → 静默提权拉起（修 catch-up 盲区）；`--ui-pid` 监控 UI 存活（修复解析越界 bug，服务 2s 内自退）；托盘"重建索引" = `--rebuild` 提权全量重扫（删快照→40s 重扫三盘 709 万行→转常驻）+ UI 轮询 mtime 自动重载；跨盘结果按 fzf score 排序 |
 | P1 开机自启 | ✅ 完成 | `autostart.rs` 读写 HKCU Run 项（值名 iLauncher），托盘可勾选菜单，6 个单测走独立测试子键 |
-| P1 主题 | 🚧 部分 | 全组件已走 gpui-component Theme token；暗/明切换 UI 未做 |
-| P1 i18n | ⬜ 未做 | |
+| P1 主题 | ✅ 完成 | 全组件走 gpui-component Theme token；托盘「深色主题」可勾选，偏好持久化到 HKCU\Software\iLauncher（无偏好时跟随系统 AppsUseLightTheme） |
+| P1 i18n | ⬜ 未做 | rust-i18n（gpui-component 同款），P2 随设置页一起 |
 | P2 数据环 | ⬜ 未开始 | ClipboardHistory / 设置页 / UpdateChecker / PreviewPanel |
 | P3/P4 | ⬜ 未开始 | |
 
