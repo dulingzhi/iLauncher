@@ -16,10 +16,14 @@ tray:
 
 main:
   placeholder: Search apps, files, commands…
+  empty_hint: Type to search apps, files and commands
   preview_select: Select a file to preview
   preview_binary: Binary file, no preview available
   preview_meta_error: Failed to read metadata
-  result_count: "%{count} results · %{elapsed} · ↑↓ select · Enter open · Esc hide%{extra}"
+  result_count: "%{count} results · %{elapsed}%{extra}"
+  hint_select: ↑↓ select
+  hint_open: Enter open
+  hint_hide: Esc hide
   quit_button: Quit
   workflow_fallback: Workflow
 

@@ -16,10 +16,14 @@ tray:
 
 main:
   placeholder: 搜索应用、文件、命令…
+  empty_hint: 输入关键词，搜索应用、文件与命令
   preview_select: 选择文件以预览
   preview_binary: 二进制文件，无法预览内容
   preview_meta_error: 无法读取元信息
-  result_count: "%{count} 条结果 · %{elapsed} · ↑↓ 选择 · Enter 打开 · Esc 隐藏%{extra}"
+  result_count: "%{count} 条结果 · %{elapsed}%{extra}"
+  hint_select: ↑↓ 选择
+  hint_open: Enter 打开
+  hint_hide: Esc 隐藏
   quit_button: 退出
   workflow_fallback: 工作流
 

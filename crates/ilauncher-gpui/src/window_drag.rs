@@ -17,11 +17,14 @@ use gpui_kit::component::theme::Theme;
 pub fn drag_strip(label: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {
     h_flex()
         .id("window-drag-strip")
-        .h(px(28.))
+        .h(px(32.))
         .w_full()
         .flex_shrink_0()
         .items_center()
-        .pl_3()
+        .px_3()
+        .gap_2()
+        .border_b_1()
+        .border_color(theme.border)
         // 拖动区：占满除关闭按钮外的全部宽度
         .child(
             h_flex()
@@ -29,10 +32,14 @@ pub fn drag_strip(label: impl Into<SharedString>, theme: &Theme) -> impl IntoEle
                 .flex_1()
                 .h_full()
                 .items_center()
+                .gap(px(6.))
                 .window_control_area(WindowControlArea::Drag)
+                // 品牌圆点：全窗口唯一的彩色标记，其余保持安静
+                .child(div().size(px(8.)).rounded_full().bg(theme.primary))
                 .child(
                     div()
                         .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
                         .text_color(theme.muted_foreground)
                         .child(label.into()),
                 ),

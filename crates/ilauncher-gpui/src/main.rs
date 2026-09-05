@@ -417,7 +417,8 @@ impl Launcher {
         self.input.update(cx, |state, cx| state.focus(window, cx));
     }
 
-    /// 预览面板：元信息头 + 按类型分派的内容区（图片 / 文本 / 二进制 / 错误）
+    /// 预览面板：卡片式（全窗口唯一的"盒子"：圆角 + 细边框 + 分隔头），
+    /// 与结果列表的呼吸感形成视觉层级；内容区按类型分派（图片/文本/二进制/错误）
     fn render_preview_panel(
         &self,
         theme: &gpui_kit::component::theme::Theme,
@@ -425,18 +426,33 @@ impl Launcher {
         use preview::FileType;
 
         let muted = theme.muted_foreground;
-        let base = || {
+        let card = || {
             v_flex()
                 .id("preview-panel")
                 .size_full()
-                .p_3()
-                .gap_2()
+                .rounded(theme.radius_lg)
+                .border_1()
+                .border_color(theme.border)
                 .bg(theme.background)
+                .overflow_hidden()
         };
 
         let Some((path, result)) = &self.preview else {
-            return base()
-                .child(div().text_xs().text_color(muted).child(crate::i18n::t!("main.preview_select").to_string()))
+            return card()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .child(
+                    Icon::new(IconName::Inbox)
+                        .size(px(22.))
+                        .text_color(muted),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(crate::i18n::t!("main.preview_select").to_string()),
+                )
                 .into_any_element();
         };
 
@@ -444,27 +460,51 @@ impl Launcher {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
-        let header = v_flex()
-            .gap_1()
-            .child(div().text_sm().font_weight(FontWeight::BOLD).child(name))
+        // 头：文件图标 + 文件名（截断）+ 元信息（类型/大小/修改时间）
+        let header = h_flex()
+            .w_full()
+            .flex_shrink_0()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .border_b_1()
+            .border_color(theme.border)
             .child(
-                div().text_xs().text_color(muted).child(match result {
-                    Ok(p) => {
-                        let ext = if p.extension.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" (.{})", p.extension)
-                        };
-                        format!(
-                            "{}{} · {} · 修改 {} UTC",
-                            p.file_type.label(),
-                            ext,
-                            preview::human_size(p.size),
-                            preview::format_unix_utc(p.modified_unix),
-                        )
-                    }
-                    Err(_) => crate::i18n::t!("main.preview_meta_error").to_string(),
-                }),
+                Icon::new(IconName::FileText)
+                    .size(px(14.))
+                    .text_color(muted),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .truncate()
+                    .child(name),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(match result {
+                        Ok(p) => {
+                            let ext = if p.extension.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" (.{})", p.extension)
+                            };
+                            format!(
+                                "{}{} · {} · 修改 {} UTC",
+                                p.file_type.label(),
+                                ext,
+                                preview::human_size(p.size),
+                                preview::format_unix_utc(p.modified_unix),
+                            )
+                        }
+                        Err(_) => crate::i18n::t!("main.preview_meta_error").to_string(),
+                    }),
             );
 
         let body: gpui_kit::AnyElement = match result {
@@ -475,21 +515,33 @@ impl Launcher {
                     .into_any_element(),
                 FileType::Text | FileType::Markdown | FileType::Json | FileType::Code => div()
                     .id("preview-text")
-                    .flex_1()
+                    .size_full()
                     .overflow_y_scroll()
+                    .p_3()
                     .text_xs()
                     .child(preview::head_lines(&p.content, preview::MAX_PREVIEW_LINES).to_string())
                     .into_any_element(),
                 FileType::Binary => div()
+                    .size_full()
+                    .items_center()
+                    .justify_center()
                     .text_xs()
                     .text_color(muted)
                     .child(crate::i18n::t!("main.preview_binary").to_string())
                     .into_any_element(),
             },
-            Err(e) => div().text_xs().text_color(muted).child(e.clone()).into_any_element(),
+            Err(e) => div()
+                .size_full()
+                .items_center()
+                .justify_center()
+                .p_3()
+                .text_xs()
+                .text_color(muted)
+                .child(e.clone())
+                .into_any_element(),
         };
 
-        base().child(header).child(body).into_any_element()
+        card().child(header).child(body).into_any_element()
     }
 
     /// --bench：后台 8ms 一次滚动驱动 + on_next_frame 自续计数，测真实交付帧率
@@ -555,6 +607,46 @@ impl Launcher {
     }
 }
 
+/// 键盘提示胶囊：底部状态区右侧的圆角小药丸（↑↓ 选择 / Enter 打开 / Esc 隐藏）。
+/// 用"按键形状"提示按键，而不是把提示混进一句话里——文字只留给状态信息。
+fn kbd_pill(
+    label: impl Into<SharedString>,
+    theme: &gpui_kit::component::theme::Theme,
+) -> impl IntoElement {
+    div()
+        .px(px(6.))
+        .py(px(2.))
+        .rounded(theme.radius)
+        .border_1()
+        .border_color(theme.border)
+        .text_xs()
+        .text_color(theme.muted_foreground)
+        .child(label.into())
+}
+
+/// 空状态：无查询时的主区内容——邀请行动，而不是留白。
+/// 图标 + 一句话，居中，全部用弱化色。
+fn empty_state(theme: &gpui_kit::component::theme::Theme) -> gpui_kit::AnyElement {
+    v_flex()
+        .id("empty-state")
+        .size_full()
+        .items_center()
+        .justify_center()
+        .gap_3()
+        .child(
+            Icon::new(IconName::Search)
+                .size(px(28.))
+                .text_color(theme.muted_foreground),
+        )
+        .child(
+            div()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(crate::i18n::t!("main.empty_hint").to_string()),
+        )
+        .into_any_element()
+}
+
 impl Render for Launcher {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.first_render_done.is_none() {
@@ -572,7 +664,10 @@ impl Render for Launcher {
         let selected = self.selected;
         let result_count = entries.len();
         let theme_for_list = theme.clone();
+        let theme_for_icons = theme.clone();
         let launcher = cx.entity();
+        // 空查询（非 bench）→ 主区显示空状态；bench 保持全量列表跑基线
+        let show_empty = result_count == 0 && !self.bench;
 
         let root = v_flex()
             .id("root")
@@ -593,7 +688,18 @@ impl Render for Launcher {
             .bg(theme.background)
             .text_color(theme.foreground)
             .child(window_drag::drag_strip("iLauncher", &theme))
-            .child(Input::new(&self.input).w_full())
+            .child(
+                // 命令栏：全窗口的视觉焦点。搜索图标前缀 + 可清除，
+                // 其余元素全部保持安静，把注意力让给它
+                Input::new(&self.input)
+                    .w_full()
+                    .cleanable(true)
+                    .prefix(
+                        Icon::new(IconName::Search)
+                            .size(px(15.))
+                            .text_color(theme.muted_foreground),
+                    ),
+            )
             .child(
                 div()
                     .id("split-wrap")
@@ -608,19 +714,29 @@ impl Render for Launcher {
                                 div()
                                     .id("results")
                                     .size_full()
-                                    .child(
+                                    .child(if show_empty {
+                                        empty_state(&theme)
+                                    } else {
                                         uniform_list("result-list", entries.len(), {
                                             let launcher = launcher.clone();
+                                            let theme_for_icons = theme_for_icons.clone();
                                             move |visible_range, _window, _cx| {
                                                 visible_range
                                                     .map(|ix| {
                                                         let entry = &entries[ix];
                                                         let is_selected = ix == selected;
-                                                        // 插件结果在标题前渲染 emoji 图标（文件条目无图标）
-                                                        let icon = match &entry.origin {
-                                                            search::EntryOrigin::Plugin { icon: Some(i), .. } => i.clone(),
-                                                            _ => String::new(),
-                                                        };
+                                                        // 行首图标：插件渲染 emoji 图标，文件用统一文档图标
+                                                        let row_icon: gpui_kit::AnyElement =
+                                                            match &entry.origin {
+                                                                search::EntryOrigin::Plugin {
+                                                                    icon: Some(i),
+                                                                    ..
+                                                                } => div().child(i.clone()).into_any_element(),
+                                                                _ => Icon::new(IconName::FileText)
+                                                                    .size(px(14.))
+                                                                    .text_color(theme_for_icons.muted_foreground)
+                                                                    .into_any_element(),
+                                                            };
                                                         // gpui-component ListItem：选中/悬停色全部由
                                                         // theme tokens（list_active / list_hover）驱动
                                                         ListItem::new(ix)
@@ -638,21 +754,20 @@ impl Render for Launcher {
                                                             .child(
                                                                 h_flex()
                                                                     .w_full()
-                                                                    .justify_between()
+                                                                    .items_center()
                                                                     .gap_2()
+                                                                    .child(row_icon)
                                                                     .child(
-                                                                        h_flex()
-                                                                            .gap_2()
+                                                                        div()
+                                                                            .flex_1()
                                                                             .min_w_0()
-                                                                            .children(if icon.is_empty() {
-                                                                                Vec::new()
-                                                                            } else {
-                                                                                vec![div().child(icon).into_any_element()]
-                                                                            })
-                                                                            .child(div().text_sm().child(entry.name.clone())),
+                                                                            .text_sm()
+                                                                            .truncate()
+                                                                            .child(entry.name.clone()),
                                                                     )
                                                                     .child(
                                                                         div()
+                                                                            .max_w(px(240.))
                                                                             .text_xs()
                                                                             .text_color(theme_for_list.muted_foreground)
                                                                             .truncate()
@@ -664,8 +779,9 @@ impl Render for Launcher {
                                             }
                                         })
                                         .size_full()
-                                        .track_scroll(&self.scroll),
-                                    ),
+                                        .track_scroll(&self.scroll)
+                                        .into_any_element()
+                                    }),
                             ),
                     )
                     .child(
@@ -679,7 +795,10 @@ impl Render for Launcher {
             .child(
                 h_flex()
                     .w_full()
+                    .flex_shrink_0()
+                    .items_center()
                     .justify_between()
+                    .pt_1()
                     .child(
                         div()
                             .text_xs()
@@ -695,10 +814,20 @@ impl Render for Launcher {
                             ),
                     )
                     .child(
-                        Button::new("quit")
-                            .small()
-                            .label(crate::i18n::t!("main.quit_button").as_ref())
-                            .on_click(|_, _, _| std::process::exit(0)),
+                        h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(kbd_pill(crate::i18n::t!("main.hint_select"), &theme))
+                            .child(kbd_pill(crate::i18n::t!("main.hint_open"), &theme))
+                            .child(kbd_pill(crate::i18n::t!("main.hint_hide"), &theme))
+                            .child(div().w(px(1.)).h(px(12.)).bg(theme.border))
+                            .child(
+                                Button::new("quit")
+                                    .small()
+                                    .outline()
+                                    .label(crate::i18n::t!("main.quit_button").as_ref())
+                                    .on_click(|_, _, _| std::process::exit(0)),
+                            ),
                     ),
             );
         self.render_total_ms += render_t0.elapsed().as_secs_f64() * 1000.0;
