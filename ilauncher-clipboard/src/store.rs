@@ -11,19 +11,22 @@ use std::path::PathBuf;
 pub struct ClipboardItem {
     /// 单调递增序号（新→旧按 id 降序展示）
     pub id: u64,
-    /// 内容类型（一期仅 text；image 预留）
+    /// 内容类型（text / image）
     pub kind: String,
-    /// 文本内容（kind=text）；图片场景存文件路径
+    /// 文本内容（kind=text）；图片场景存 PNG 文件路径
     pub content: String,
-    /// 列表预览（长文本截断）
+    /// 列表预览（长文本截断；图片为 "图片 1920x1080"）
     pub preview: String,
     /// Unix 秒时间戳
     pub timestamp: u64,
     /// 收藏
     pub pinned: bool,
+    /// 图片内容哈希（去重用；文本为 None）
+    #[serde(default)]
+    pub image_hash: Option<u64>,
 }
 
-/// 新建文本条目（id/timestamp 由 store 注入）
+/// 新建条目（id/timestamp 由 store 注入）
 impl ClipboardItem {
     fn new_text(id: u64, content: &str, timestamp: u64) -> Self {
         let preview = if content.chars().count() > PREVIEW_CHARS {
@@ -38,7 +41,24 @@ impl ClipboardItem {
             preview,
             timestamp,
             pinned: false,
+            image_hash: None,
         }
+    }
+
+    fn new_image(id: u64, file_path: &str, width: usize, height: usize, hash: u64, timestamp: u64) -> Self {
+        Self {
+            id,
+            kind: "image".into(),
+            content: file_path.to_string(),
+            preview: format!("图片 {}x{}", width, height),
+            timestamp,
+            pinned: false,
+            image_hash: Some(hash),
+        }
+    }
+
+    fn is_image(&self) -> bool {
+        self.kind == "image"
     }
 }
 
@@ -118,6 +138,41 @@ impl ClipboardStore {
         true
     }
 
+    /// 录入一张图片（PNG 已落盘，传文件路径 + 尺寸 + 内容哈希）
+    /// 返回是否真正录入（与最新图片哈希相同 → 去重拒绝）
+    pub fn add_image(
+        &mut self,
+        file_path: &str,
+        width: usize,
+        height: usize,
+        hash: u64,
+        timestamp: u64,
+    ) -> bool {
+        // 与历史任一图片哈希相同则跳过（同一张图再复制一次没有新信息）
+        if self.items.iter().any(|it| it.image_hash == Some(hash)) {
+            return false;
+        }
+        // 文本连续去重状态被图片打断
+        self.last_text = None;
+        let item = ClipboardItem::new_image(self.next_id, file_path, width, height, hash, timestamp);
+        self.next_id += 1;
+        self.items.insert(0, item);
+        self.items.truncate(self.capacity);
+        self.persist_append();
+        true
+    }
+
+    /// 只读文本条目（图片不进搜索/纯文本列表）
+    pub fn text_items(&self, offset: usize, limit: usize) -> Vec<ClipboardItem> {
+        self.items
+            .iter()
+            .filter(|it| !it.is_image())
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
     /// 列表（新→旧），offset/limit 分页
     pub fn list(&self, offset: usize, limit: usize) -> &[ClipboardItem] {
         let start = offset.min(self.items.len());
@@ -125,12 +180,12 @@ impl ClipboardStore {
         &self.items[start..end]
     }
 
-    /// 子串搜索（大小写不敏感，新→旧）
+    /// 子串搜索（大小写不敏感，新→旧）；只匹配文本条目
     pub fn search(&self, query: &str, limit: usize) -> Vec<ClipboardItem> {
         let q = query.to_lowercase();
         self.items
             .iter()
-            .filter(|it| it.content.to_lowercase().contains(&q))
+            .filter(|it| !it.is_image() && it.content.to_lowercase().contains(&q))
             .take(limit)
             .cloned()
             .collect()
@@ -144,12 +199,20 @@ impl ClipboardStore {
         self.items.is_empty()
     }
 
-    /// 删除单条
+    /// 删除单条（图片条目连同 PNG 文件一起删）
     pub fn delete(&mut self, id: u64) -> bool {
+        let removed_file = self
+            .items
+            .iter()
+            .find(|it| it.id == id && it.is_image())
+            .map(|it| it.content.clone());
         let before = self.items.len();
         self.items.retain(|it| it.id != id);
         let changed = self.items.len() != before;
         if changed {
+            if let Some(path) = removed_file {
+                let _ = std::fs::remove_file(&path);
+            }
             self.persist_rewrite();
         }
         changed
@@ -164,8 +227,13 @@ impl ClipboardStore {
         Some(v)
     }
 
-    /// 清空（连同持久化文件）
+    /// 清空（连同持久化文件；图片文件一并删除）
     pub fn clear(&mut self) {
+        for it in &self.items {
+            if it.is_image() {
+                let _ = std::fs::remove_file(&it.content);
+            }
+        }
         self.items.clear();
         self.last_text = None;
         if let Some(path) = &self.persist_path {
@@ -337,5 +405,92 @@ mod tests {
         let mut s = ClipboardStore::in_memory(10);
         assert!(s.add_text("line\n", ts()));
         assert_eq!(s.list(0, 1)[0].content, "line");
+    }
+
+    #[test]
+    fn add_image_and_dedup_by_hash() {
+        let mut s = ClipboardStore::in_memory(10);
+        assert!(s.add_image("T:\\img\\a.png", 640, 480, 111, ts()));
+        // 连续相同哈希去重
+        assert!(!s.add_image("T:\\img\\b.png", 640, 480, 111, ts()));
+        // 不同哈希允许
+        assert!(s.add_image("T:\\img\\c.png", 800, 600, 222, ts()));
+        assert_eq!(s.len(), 2);
+        let latest = &s.list(0, 1)[0];
+        assert_eq!(latest.kind, "image");
+        assert_eq!(latest.preview, "图片 800x600");
+        assert_eq!(latest.image_hash, Some(222));
+    }
+
+    #[test]
+    fn image_between_same_text_allowed() {
+        let mut s = ClipboardStore::in_memory(10);
+        assert!(s.add_text("same", ts()));
+        assert!(s.add_image("T:\\a.png", 10, 10, 1, ts()));
+        // 图片打断了文本连续去重：再复制 "same" 允许
+        assert!(s.add_text("same", ts()));
+        assert_eq!(s.len(), 3);
+    }
+
+    #[test]
+    fn search_excludes_images() {
+        let mut s = ClipboardStore::in_memory(10);
+        s.add_text("hello world", ts());
+        s.add_image("T:\\hello.png", 10, 10, 7, ts());
+        // 图片路径里含 "hello" 也不该被文本搜索命中
+        assert!(s.search("hello", 10).iter().all(|it| it.kind == "text"));
+        assert_eq!(s.search("hello", 10).len(), 1);
+    }
+
+    #[test]
+    fn delete_image_removes_file_and_clear_removes_all() {
+        let dir = std::env::temp_dir().join(format!("ilauncher_clip_img_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p1 = dir.join("a.png");
+        let p2 = dir.join("b.png");
+        std::fs::write(&p1, b"fakepng").unwrap();
+        std::fs::write(&p2, b"fakepng2").unwrap();
+
+        let path = temp_path("imgfiles");
+        let mut s = ClipboardStore::with_persist(&path, 10).unwrap();
+        s.add_image(p1.to_str().unwrap(), 1, 1, 1, ts());
+        s.add_image(p2.to_str().unwrap(), 2, 2, 2, ts());
+        s.add_text("keep", ts());
+        assert_eq!(s.len(), 3);
+
+        // 删除图片条目 → 文件随之删除，其余保留
+        let img_id = s.list(1, 1)[0].id;
+        assert!(s.delete(img_id));
+        assert!(!p2.exists());
+        assert!(p1.exists());
+        assert_eq!(s.len(), 2);
+
+        // 清空 → 剩余图片文件也删除
+        s.clear();
+        assert!(!p1.exists());
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn image_roundtrip_persist() {
+        let path = temp_path("imgpersist");
+        {
+            let mut s = ClipboardStore::with_persist(&path, 10).unwrap();
+            s.add_image("T:\\x.png", 320, 200, 42, ts());
+            s.add_text("text", ts());
+        }
+        {
+            let mut s = ClipboardStore::with_persist(&path, 10).unwrap();
+            assert_eq!(s.len(), 2);
+            let img = s.list(0, 2).iter().find(|it| it.kind == "image").cloned().expect("图片条目应持久化");
+            assert_eq!(img.image_hash, Some(42));
+            assert_eq!(img.preview, "图片 320x200");
+            // 重载后相同哈希仍然去重（持久化字段完整）
+            assert!(!s.add_image("T:\\y.png", 320, 200, 42, ts()));
+            assert_eq!(s.len(), 2);
+        }
+        let _ = std::fs::remove_file(&path);
     }
 }

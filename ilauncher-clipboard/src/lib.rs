@@ -17,6 +17,19 @@ pub fn copy_text(text: &str) -> anyhow::Result<()> {
     cb.set_text(text).map_err(|e| anyhow::anyhow!("写入剪贴板失败: {e}"))
 }
 
+/// 把 PNG 文件写回系统剪贴板为图片
+#[cfg(target_os = "windows")]
+pub fn copy_image(png_path: &str) -> anyhow::Result<()> {
+    let bytes = std::fs::read(png_path)?;
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| anyhow::anyhow!("解码图片失败: {e}"))?
+        .to_rgba8();
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let mut cb = arboard_clipboard()?;
+    cb.set_image(arboard::ImageData { width: w, height: h, bytes: img.into_raw().into() })
+        .map_err(|e| anyhow::anyhow!("写入剪贴板图片失败: {e}"))
+}
+
 #[cfg(target_os = "windows")]
 fn arboard_clipboard() -> anyhow::Result<arboard::Clipboard> {
     arboard::Clipboard::new().map_err(|e| anyhow::anyhow!("访问剪贴板失败: {e}"))

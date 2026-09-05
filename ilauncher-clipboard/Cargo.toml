@@ -11,7 +11,9 @@ anyhow = "1"
 parking_lot = "0.12"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-arboard = { version = "3", default-features = false }
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+# PNG 编码（剪贴板图片落盘）；不拉默认特性（jpeg/webp 等全不要）
+image = { version = "0.25", default-features = false, features = ["png"] }
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",

@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 fn main() {
     let store = Arc::new(Mutex::new(ClipboardStore::in_memory(100)));
-    let handle = monitor::start_monitor(store.clone());
+    let image_dir = std::env::temp_dir().join(format!("ilauncher_clip_smoke_img_{}", std::process::id()));
+    let handle = monitor::start_monitor(store.clone(), image_dir.clone());
 
     // 模拟外部写入（等价于 WM_CLIPBOARDUPDATE 后的读取路径）
     std::thread::sleep(std::time::Duration::from_millis(500));
@@ -33,8 +34,29 @@ fn main() {
         .map(|it| it.content.clone());
     println!("EVENT_PATH_RESULT={:?}", found);
 
-    std::thread::sleep(std::time::Duration::from_millis(3000));
+    // 真实图片路径：写剪贴板图片 → 事件 → 落盘 + store
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        let rgba: Vec<u8> = vec![255u8, 0, 0, 255].repeat(4); // 2x2 红图
+        let _ = cb.set_image(arboard::ImageData { width: 2, height: 2, bytes: rgba.into() });
+        println!("CLIPBOARD_SET_IMAGE_OK");
+    }
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let img = {
+        let store = store.lock();
+        store
+            .list(0, 10)
+            .into_iter()
+            .find(|it| it.kind == "image")
+            .map(|it| (it.preview.clone(), it.content.clone()))
+    };
+    let img_info = img.map(|(preview, content)| {
+        let exists = std::path::Path::new(&content).exists();
+        (preview, exists)
+    });
+    println!("IMAGE_PATH_RESULT={:?}", img_info);
+
     monitor::request_shutdown();
     let _ = handle.join();
+    let _ = std::fs::remove_dir_all(&image_dir);
     println!("MONITOR_SMOKE_DONE");
 }

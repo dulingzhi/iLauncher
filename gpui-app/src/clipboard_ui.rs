@@ -26,7 +26,11 @@ pub fn init_clipboard() -> Arc<Mutex<ClipboardStore>> {
     });
     let store = Arc::new(Mutex::new(store));
     println!("✓ 剪贴板历史已加载（{} 条）", store.lock().len());
-    ilauncher_clipboard::monitor::start_monitor(store.clone());
+    let image_dir = path
+        .parent()
+        .map(|p| p.join("clipboard_images"))
+        .unwrap_or_else(|| std::path::PathBuf::from("clipboard_images"));
+    ilauncher_clipboard::monitor::start_monitor(store.clone(), image_dir);
     store
 }
 
@@ -128,12 +132,19 @@ impl ClipboardPanel {
         cx.notify();
     }
 
-    /// 回写选中项到系统剪贴板
+    /// 回写选中项到系统剪贴板（按类型分派）
     fn copy_selected(&mut self, cx: &mut Context<Self>) {
         let Some(item) = self.entries.get(self.selected) else { return };
-        match ilauncher_clipboard::copy_text(&item.content) {
-            Ok(()) => {
-                self.status = format!("已复制 #{}（{} 字符）", item.id, item.content.chars().count());
+        let result = if item.kind == "image" {
+            ilauncher_clipboard::copy_image(&item.content)
+                .map(|()| format!("已复制图片 #{}（{}）", item.id, item.preview))
+        } else {
+            ilauncher_clipboard::copy_text(&item.content)
+                .map(|()| format!("已复制 #{}（{} 字符）", item.id, item.content.chars().count()))
+        };
+        match result {
+            Ok(msg) => {
+                self.status = msg;
                 cx.notify();
             }
             Err(e) => self.status = format!("复制失败: {e:#}"),
