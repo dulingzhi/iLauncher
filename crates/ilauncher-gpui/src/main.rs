@@ -159,8 +159,14 @@ impl Launcher {
         let focus = cx.focus_handle();
 
         // 失去焦点自动隐藏（启动器惯例）：销毁窗口，唤起时由 WindowGuard 重建。
+        // on_focus_lost 只在「焦点从有变无（元素被移除）」时触发，窗口 deactivate
+        // （点别的应用）不触发，必须用 observe_window_activation。
         // 订阅必须持有（ dropped 即失效），挂到 _subscriptions
-        let focus_lost_sub = cx.on_focus_lost(window, |_, window, _| window.remove_window());
+        let focus_lost_sub = cx.observe_window_activation(window, |_, window, _| {
+            if !window.is_window_active() {
+                window.remove_window();
+            }
+        });
         let bench = std::env::args().any(|a| a == "--bench");
         // bench 模式保持 10 万条全量以测虚拟列表；正常运行空查询显示空（启动器惯例）
         let entries = if bench { std::rc::Rc::new(demo_entries()) } else { std::rc::Rc::new(Vec::new()) };

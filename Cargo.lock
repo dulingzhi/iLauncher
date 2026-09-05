@@ -3813,7 +3813,6 @@ dependencies = [
  "opener",
  "parking_lot",
  "pulldown-cmark",
- "raw-window-handle",
  "rust-i18n",
  "serde",
  "serde_json",
