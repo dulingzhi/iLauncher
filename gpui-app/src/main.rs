@@ -18,6 +18,11 @@ mod plugin;
 mod preview;
 mod search;
 mod settings;
+mod ai;
+mod markdown;
+
+#[cfg(windows)]
+mod ai_ui;
 #[cfg(windows)]
 mod settings_ui;
 mod updater;
@@ -93,6 +98,8 @@ enum AppSignal {
     ShowPlugins,
     /// 托盘"工作流"：打开/激活工作流管理窗口
     ShowWorkflows,
+    /// 托盘"AI 助手"：打开/激活 AI 对话窗口
+    ShowAi,
     /// 托盘"设置"：打开/激活设置窗口（窗口逻辑仅 Windows 编译）
     ShowSettings,
     /// 托盘"深色主题"：切换主题模式（true = 深色）
@@ -726,6 +733,12 @@ struct WindowGuard {
     /// 工作流管理窗口
     #[cfg(windows)]
     workflow_window: Option<(WindowHandle<Root>, Entity<workflow_ui::WorkflowPanel>)>,
+    /// AI 对话引擎（配置 + 会话持久化，窗口共享）
+    #[cfg(windows)]
+    ai_chat: Arc<ai::AiChat>,
+    /// AI 对话窗口
+    #[cfg(windows)]
+    ai_window: Option<(WindowHandle<Root>, Entity<ai_ui::AiChatPanel>)>,
 }
 
 impl WindowGuard {
@@ -740,6 +753,8 @@ impl WindowGuard {
         market: Arc<plugin_ui::MarketState>,
         #[cfg(windows)]
         workflows: Arc<workflow::WorkflowEngine>,
+        #[cfg(windows)]
+        ai_chat: Arc<ai::AiChat>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -766,6 +781,10 @@ impl WindowGuard {
             workflows,
             #[cfg(windows)]
             workflow_window: None,
+            #[cfg(windows)]
+            ai_chat,
+            #[cfg(windows)]
+            ai_window: None,
         }
     }
 
@@ -780,6 +799,8 @@ impl WindowGuard {
         market: Arc<plugin_ui::MarketState>,
         #[cfg(windows)]
         workflows: Arc<workflow::WorkflowEngine>,
+        #[cfg(windows)]
+        ai_chat: Arc<ai::AiChat>,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
@@ -805,6 +826,10 @@ impl WindowGuard {
             workflows,
             #[cfg(windows)]
             workflow_window: None,
+            #[cfg(windows)]
+            ai_chat,
+            #[cfg(windows)]
+            ai_window: None,
         }
     }
 
@@ -1024,6 +1049,31 @@ impl WindowGuard {
             Err(e) => eprintln!("⚠ 打开工作流窗口失败: {e:#}"),
         }
     }
+
+    /// 打开/激活 AI 对话窗口
+    #[cfg(windows)]
+    fn summon_ai(&mut self, cx: &mut AsyncApp) {
+        if let Some((handle, _)) = &self.ai_window {
+            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+                return;
+            }
+            self.ai_window = None;
+        }
+        let chat = self.ai_chat.clone();
+        let mut panel_slot: Option<Entity<ai_ui::AiChatPanel>> = None;
+        let result = cx.open_window(make_window_options(), |window, cx| {
+            let panel = cx.new(|cx| ai_ui::AiChatPanel::new(window, cx, chat));
+            panel_slot = Some(panel.clone());
+            cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
+        });
+        match result {
+            Ok(handle) => {
+                println!("✓ AI 对话窗口已打开");
+                self.ai_window = Some((handle, panel_slot.expect("ai chat panel entity")));
+            }
+            Err(e) => eprintln!("⚠ 打开 AI 对话窗口失败: {e:#}"),
+        }
+    }
 }
 
 fn make_window_options() -> WindowOptions {
@@ -1077,6 +1127,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         let _ = menu.append(&MenuItem::with_id("audit", "审计日志", true, None));
         let _ = menu.append(&MenuItem::with_id("plugins", "插件", true, None));
         let _ = menu.append(&MenuItem::with_id("workflows", "工作流", true, None));
+        let _ = menu.append(&MenuItem::with_id("ai", "AI 助手", true, None));
         let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
         // 开机自启：可勾选项，初始状态读注册表
         let autostart_item =
@@ -1129,6 +1180,9 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                     }
                     "workflows" => {
                         let _ = tx.send(AppSignal::ShowWorkflows);
+                    }
+                    "ai" => {
+                        let _ = tx.send(AppSignal::ShowAi);
                     }
                     "rebuild" => {
                         let _ = tx.send(AppSignal::RebuildIndex);
@@ -1298,6 +1352,19 @@ fn main() {
         engine
     };
 
+    // ── AI 助手：对话引擎（配置 + 会话 JSON 持久化；窗口经托盘打开） ──
+    #[cfg(windows)]
+    let ai_chat = {
+        let dir = std::env::var_os("LOCALAPPDATA")
+            .map(|d| std::path::PathBuf::from(d).join("iLauncher"))
+            .unwrap_or_else(|| std::path::PathBuf::from("iLauncher"));
+        let _ = std::fs::create_dir_all(&dir);
+        let http = reqwest_client::ReqwestClient::user_agent("iLauncher/ai-chat")
+            .map(|c| Arc::new(c) as Arc<dyn gpui_kit::http_client::HttpClient>)
+            .unwrap_or_else(|e| panic!("AI HTTP 客户端创建失败: {e:#}"));
+        Arc::new(ai::AiChat::new(http, dir))
+    };
+
     let (tx, rx) = mpsc::channel();
     setup_tray(tx.clone());
     spawn_hotkey_thread(tx.clone());
@@ -1332,6 +1399,8 @@ fn main() {
             market,
             #[cfg(windows)]
             workflows,
+            #[cfg(windows)]
+            ai_chat,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
         );
@@ -1352,6 +1421,7 @@ fn main() {
                 let mut show_audit = false;
                 let mut show_plugins = false;
                 let mut show_workflows = false;
+                let mut show_ai = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
@@ -1361,6 +1431,7 @@ fn main() {
                         AppSignal::ShowAudit => show_audit = true,
                         AppSignal::ShowPlugins => show_plugins = true,
                         AppSignal::ShowWorkflows => show_workflows = true,
+                        AppSignal::ShowAi => show_ai = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                     }
                 }
@@ -1407,6 +1478,14 @@ fn main() {
                 #[cfg(not(windows))]
                 if show_workflows {
                     println!("⚠️ 工作流窗口仅 Windows 构建");
+                }
+                #[cfg(windows)]
+                if show_ai {
+                    guard.summon_ai(&mut cx);
+                }
+                #[cfg(not(windows))]
+                if show_ai {
+                    println!("⚠️ AI 对话窗口仅 Windows 构建");
                 }
                 if let Some(dark) = theme_dark {
                     use gpui_kit::component::theme::ThemeMode;
