@@ -134,7 +134,7 @@ pub fn section_layout(meta: &SnapshotMeta, sections_offset: u64) -> ([u64; SECTI
         4 * oc,                                  // OrphanRows
         8 * oc,                                  // OrphanFrns
         8 * uc,                                  // UniqueMasks
-        8 * ((uc + 63) / 64),                    // UniqueAsciiBits
+        8 * uc.div_ceil(64),                    // UniqueAsciiBits
     ];
 
     let mut offsets = [0u64; SECTION_COUNT];

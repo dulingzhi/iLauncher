@@ -313,9 +313,9 @@ impl StreamingBuilder {
                 self.write_path_entry(&child_path)?;
                 self.total_files += 1;
 
-                if self.total_files % 10_000 == 0 {
+                if self.total_files.is_multiple_of(10_000) {
                     self.flush_buffers()?;
-                    if self.total_files % 200_000 == 0 {
+                    if self.total_files.is_multiple_of(200_000) {
                         info!("   Progress: {} files written", self.total_files);
                     }
                 }

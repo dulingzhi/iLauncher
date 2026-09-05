@@ -131,9 +131,10 @@ pub fn search_with_overlay(
             let masks = snapshot.unique_masks();
             let mut local: Vec<UniqueHit> = Vec::new();
 
-            for uid in start..end {
+            for (uid, mask) in masks[start..end].iter().enumerate() {
+                let uid = uid + start;
                 // charmask 预过滤：名字必须覆盖查询的全部 ASCII 字符
-                if can_filter && (masks[uid] & required_mask) != required_mask {
+                if can_filter && (*mask & required_mask) != required_mask {
                     continue;
                 }
 
@@ -172,7 +173,6 @@ pub fn search_with_overlay(
     }
 
     // 合并候选：score 降序，同分按名字、来源升序（确定性）
-    let mut overlay_hits = overlay_hits;
     overlay_hits.sort_by(|a, b| match b.0.cmp(&a.0) {
         CmpOrdering::Equal => a.1.cmp(b.1).then(a.2.ord_key().cmp(&b.2.ord_key())),
         other => other,
@@ -320,7 +320,7 @@ pub fn enumerate_directory_with_overlay(
         }
     }
 
-    results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    results.sort_by_key(|a| a.name.to_lowercase());
     results
 }
 

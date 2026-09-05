@@ -151,7 +151,7 @@ impl Snapshot {
 
     /// 该唯一名是否是纯 ASCII（搜索可跳过 UTF-8 解码）
     pub fn is_unique_ascii(&self, uid: u32) -> bool {
-        let bits = self.section::<u64>(Section::UniqueAsciiBits, (self.unique_count() + 63) / 64);
+        let bits = self.section::<u64>(Section::UniqueAsciiBits, self.unique_count().div_ceil(64));
         (bits[(uid / 64) as usize] & (1u64 << (uid % 64))) != 0
     }
 

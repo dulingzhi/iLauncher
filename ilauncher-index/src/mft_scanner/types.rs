@@ -1,6 +1,5 @@
 // MFT 扫描器类型定义
 
-use serde::{Deserialize, Serialize};
 use rustc_hash::FxHashMap;  // 🔥 使用高性能哈希
 
 /// 父目录信息
@@ -18,68 +17,21 @@ pub struct ParentInfo {
 /// 🔥 使用 FxHashMap 替代 HashMap (快 2-3x)
 pub type FrnMap = FxHashMap<u64, ParentInfo>;
 
-/// MFT 文件条目（FTS5 优化版）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MftFileEntry {
-    /// 完整路径，如 "C:\Users\Documents\file.txt"
-    pub path: String,
-    /// 优先级（5=.exe, 4=.lnk, 3=.bat, 2=.txt, 1=其他, 0=默认, -1=文件夹）
-    pub priority: i32,
-    /// ASCII 值总和（保留兼容性，扫描器仍需要）
-    pub ascii_sum: i32,
-}
-
-impl MftFileEntry {
-    /// 提取文件名
-    pub fn name(&self) -> String {
-        self.path
-            .trim_end_matches('\\')
-            .split('\\')
-            .last()
-            .unwrap_or("")
-            .to_string()
-    }
-    
-    /// 判断是否是目录
-    pub fn is_dir(&self) -> bool {
-        self.path.ends_with('\\')
-    }
-    
-    /// 文件大小（FTS5 版本不存储，返回 0）
-    pub fn size(&self) -> u64 {
-        0
-    }
-    
-    /// 修改时间（FTS5 版本不存储，返回 0）
-    pub fn modified(&self) -> i64 {
-        0
-    }
-}
-
 /// 扫描配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ScanConfig {
     /// 要扫描的驱动器列表，如 ["C", "D", "E"]
     pub drives: Vec<char>,
     /// 数据库输出目录，如 "D:\\MFTDatabase"
     pub output_dir: String,
-    /// 忽略路径列表（小写）
-    pub ignore_paths: Vec<String>,
 }
 
 impl Default for ScanConfig {
     fn default() -> Self {
         // 自动检测所有 NTFS 驱动器
-        let drives = Self::detect_ntfs_drives();
-        
         Self {
-            drives,
+            drives: Self::detect_ntfs_drives(),
             output_dir: "D:\\MFTDatabase".to_string(),
-            ignore_paths: vec![
-                "c:\\windows\\winsxs".to_string(),
-                "c:\\$recycle.bin".to_string(),
-                "appdata\\local\\temp".to_string(),
-            ],
         }
     }
 }
@@ -152,31 +104,6 @@ impl ScanConfig {
     #[cfg(not(target_os = "windows"))]
     pub fn detect_ntfs_drives() -> Vec<char> {
         vec!['C']
-    }
-    
-    /// 从 JSON 文件加载配置
-    pub fn load_from_file(path: &str) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        let config = serde_json::from_str(&content)?;
-        Ok(config)
-    }
-    
-    /// 保存配置到 JSON 文件
-    pub fn save_to_file(&self, path: &str) -> anyhow::Result<()> {
-        let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
-        Ok(())
-    }
-    
-    /// 检查路径是否应该被忽略
-    pub fn is_ignore(&self, path: &str) -> bool {
-        // 过滤包含 $ 的系统路径
-        if path.contains('$') {
-            return true;
-        }
-        
-        let path_lower = path.to_lowercase();
-        self.ignore_paths.iter().any(|pattern| path_lower.contains(pattern))
     }
 }
 

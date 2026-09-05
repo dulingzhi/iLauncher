@@ -69,8 +69,7 @@ pub fn frn_map_to_records(frn_map: &FrnMap, drive_letter: char) -> Vec<IndexReco
             if should_ignore(&child_path_lower) {
                 // 整棵子树标记为已访问（不进 records，也不进孤儿兜底）
                 let mut stack: Vec<u64> = children
-                    .get(&child_frn)
-                    .map(|v| v.clone())
+                    .get(&child_frn).cloned()
                     .unwrap_or_default();
                 while let Some(f) = stack.pop() {
                     if visited.contains(&f) {

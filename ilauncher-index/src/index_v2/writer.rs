@@ -202,7 +202,7 @@ fn prepare(mut records: Vec<IndexRecord>, mut meta: SnapshotMeta) -> Result<Prep
 
     // 7. charmask 预过滤位图 + ASCII 位图
     let mut unique_masks = Vec::with_capacity(unique_count);
-    let mut unique_ascii_bits = vec![0u64; (unique_count + 63) / 64];
+    let mut unique_ascii_bits = vec![0u64; unique_count.div_ceil(64)];
     for (uid, name) in names.iter().enumerate() {
         unique_masks.push(charmask_of(&name.to_lowercase()));
         if name.is_ascii() {

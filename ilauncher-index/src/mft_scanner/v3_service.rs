@@ -8,8 +8,8 @@
 //   退出: 有 pending 变更 → 最终 compact（水位随 header 持久化，
 //         下次启动即可从断点 catch-up）
 //
-// 与 v2 链路（UsnIncrementalUpdater + DeltaMerger）并行运行：
-// UI 查询当前仍走 v2 索引文件，Phase 3 切换查询路径后 v2 退役。
+// 查询侧消费 index_v2::LiveIndex（mmap 只读快照 + overlay），
+// v2 链路（UsnIncrementalUpdater + DeltaMerger）已随 src-tauri 退役删除。
 //
 // 可单测的部分（decide_startup / CompactPolicy）为纯函数；run() 仅做薄编排。
 

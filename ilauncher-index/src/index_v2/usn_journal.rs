@@ -110,7 +110,7 @@ pub fn parse_usn_buffer(buf: &[u8]) -> Result<ParsedJournal> {
             bail!("USN 记录文件名越界（{}..{} / {}）", name_start, name_end, record_length);
         }
         let name_utf16: Vec<u16> = rec[name_start..name_end]
-            .chunks_exact(2)
+            .as_chunks::<2>().0.iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         let name = String::from_utf16_lossy(&name_utf16);

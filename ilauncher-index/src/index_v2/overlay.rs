@@ -101,6 +101,8 @@ impl DeltaOverlay {
     /// 后子孙 parent 链不断，路径自动跟随）。
     ///
     /// 注意：硬链接（同 id 多行）只覆盖首行，这是 USN 增量模型的固有近似。
+    // 参数与记录字段一一对应，收 struct 反而增加调用处构造负担
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert(
         &mut self,
         snap: &Snapshot,
