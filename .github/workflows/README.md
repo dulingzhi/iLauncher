@@ -1,279 +1,63 @@
 # GitHub Actions 发布流程
 
-本目录包含 iLauncher 的 CI/CD 配置，用于自动构建、发布和生成更新器文件。
+gpui 通道发版：推送 `v*` 标签 → CI（Windows）构建 → NSIS 打安装包 → minisign 签名 → 生成 `latest.json` → 发布 Release。
 
 ## 工作流程
 
-### `release.yml` - 发布工作流
+`release.yml` 在推送 `v*` 标签（或手动触发）时执行：
 
-当推送带有 `v*` 标签时自动触发，执行以下步骤：
-
-1. **创建 GitHub Release**（草稿状态）
-2. **多平台构建**：
-   - Windows (x64)
-   - macOS (x64 + ARM64)
-   - Linux (x64)
-3. **生成 `latest.json`** 用于自动更新
-4. **发布 Release**（将草稿转为正式发布）
+1. 安装 Rust、NSIS（choco）、minisign（cargo install）
+2. 用标签号更新 `gpui-app/Cargo.toml` 版本
+3. `cargo build --release --features "ilauncher clipboard"`
+4. `scripts/pack-gpui.ps1 -SkipBuild -Sign` → `iLauncher_<ver>_x64-setup.exe` + `.sig`
+5. `scripts/generate-updater-json.js` → `latest.json`
+6. softprops/action-gh-release 上传三个产物
 
 ## 配置步骤
 
-### 1. 生成签名密钥对
+### 1. 准备 minisign 私钥
 
-```bash
-# 生成密钥对
-bunx tauri signer generate -w ~/.tauri/ilauncher.key
+公钥已硬编码在 `gpui-app/src/updater.rs`（`UPDATE_PUBKEY`），私钥持有者在本地签名过历史版本。
+若需重新生成密钥对（会切断旧客户端更新，谨慎）：
 
-# 输出示例：
-# Your public key:
-# dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFEQ0Y1MDQ1RjE2OTU0ODQKUldTRVZHb...
-#
-# Your private key saved at: ~/.tauri/ilauncher.key
+```powershell
+cargo install minisign --locked
+minisign -G -p iLauncher.pub -s iLauncher.key
+# 把新公钥（.pub 文件内容的 base64）更新到 updater.rs 的 UPDATE_PUBKEY
 ```
 
-### 2. 配置 GitHub Secrets
+### 2. 配置 GitHub Secret
 
-前往 `Settings` → `Secrets and variables` → `Actions`，添加以下 secrets：
+| Secret | 内容 |
+|---|---|
+| `MINISIGN_SECRET_KEY_BASE64` | 整个私钥文件的 base64（`[Convert]::ToBase64String([IO.File]::ReadAllBytes("iLauncher.key"))`） |
 
-| Secret Name | Description | Value |
-|------------|-------------|-------|
-| `TAURI_SIGNING_PRIVATE_KEY` | Tauri 签名私钥 | 从 `~/.tauri/ilauncher.key` 复制完整内容 |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码 | 如果生成时未设置密码，留空或设为空字符串 |
-
-**读取私钥文件**：
-```bash
-# Windows (PowerShell)
-Get-Content ~/.tauri/ilauncher.key -Raw
-
-# macOS/Linux
-cat ~/.tauri/ilauncher.key
-```
-
-### 3. 更新 `tauri.conf.json` 中的公钥
-
-将生成的公钥添加到配置文件：
-
-```json
-{
-  "plugins": {
-    "updater": {
-      "active": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFEQ0Y1MDQ1RjE2OTU0ODQKUldTRVZHb...",
-      "endpoints": [
-        "https://github.com/dulingzhi/iLauncher/releases/latest/download/latest.json"
-      ]
-    }
-  }
-}
-```
-
-## 发布新版本
-
-### 自动发布（推荐）
-
-1. **更新版本号**：
-   ```bash
-   # 同时更新 package.json 和 tauri.conf.json
-   npm version patch  # 或 minor / major
-   ```
-
-2. **创建并推送 Git 标签**：
-   ```bash
-   git add .
-   git commit -m "chore: bump version to v0.2.0"
-   git tag v0.2.0
-   git push origin master --tags
-   ```
-
-3. **等待 GitHub Actions 完成**：
-   - 访问 `Actions` 页面查看构建进度
-   - 构建完成后，Release 会自动发布
-   - `latest.json` 会自动生成并上传
-
-### 手动发布
-
-如果需要手动控制发布流程：
-
-1. **本地构建**：
-   ```bash
-   # 设置签名私钥环境变量
-   # Windows (PowerShell)
-   $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content ~/.tauri/ilauncher.key -Raw)
-   
-   # macOS/Linux
-   export TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/ilauncher.key)
-   
-   # 构建
-   bun tauri build
-   ```
-
-2. **生成 `latest.json`**：
-   ```bash
-   node scripts/generate-updater-json.js 0.2.0 v0.2.0
-   ```
-
-3. **创建 GitHub Release**：
-   - 前往 `Releases` → `New Release`
-   - 创建标签（如 `v0.2.0`）
-   - 上传以下文件：
-     - `src-tauri/target/release/bundle/nsis/*.nsis.zip` + `.sig`
-     - `src-tauri/target/release/bundle/macos/*.app.tar.gz` + `.sig`
-     - `src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz` + `.sig`
-     - `latest.json`
-
-## 工作流触发方式
-
-### 自动触发（推荐）
+### 3. 发版
 
 ```bash
 git tag v0.2.0
 git push origin v0.2.0
 ```
 
-### 手动触发
+## 手动发布
 
-前往 `Actions` → `Release` → `Run workflow`，手动触发工作流。
+```powershell
+# 本地打包（需 NSIS；加 -Sign 并用 MINISIGN_SECRET_KEY_FILE 指向私钥）
+powershell -File scripts/pack-gpui.ps1 -Version 0.2.0
+node scripts/generate-updater-json.js 0.2.0 v0.2.0
+# 手动创建 Release，上传 setup.exe、setup.exe.sig、latest.json
+```
 
-## 构建产物
+## 协议要点（消费端 gpui-app/src/updater.rs）
 
-每个平台的构建产物：
-
-| Platform | Installer | Signature | Auto-update Archive |
-|----------|-----------|-----------|---------------------|
-| **Windows** | `.msi`, `.exe` | `.msi.sig`, `.exe.sig` | `.nsis.zip` + `.nsis.zip.sig` |
-| **macOS x64** | `.dmg`, `.app` | `.dmg.sig`, `.app.sig` | `.app.tar.gz` + `.app.tar.gz.sig` |
-| **macOS ARM** | `.dmg`, `.app` | `.dmg.sig`, `.app.sig` | `.app.tar.gz` + `.app.tar.gz.sig` |
-| **Linux** | `.deb`, `.AppImage` | `.deb.sig`, `.AppImage.sig` | `.AppImage.tar.gz` + `.AppImage.tar.gz.sig` |
-
-⚠️ **重要**：自动更新只使用 `.zip`/`.tar.gz` 压缩包，不使用原始安装程序。
+- `latest.json` 的 `platforms.windows-x86_64.url` 直接指向 **setup.exe**（下载字节即验签对象，无需 zip 解包）
+- `signature` = base64(整个 `.minisig` 文件)
+- 安装以 `/SILENT` 启动（安装脚本里已映射为 NSIS silent，被动安装无交互）
+- 安装目录与卸载项对齐旧版：`%LOCALAPPDATA%\Programs\iLauncher`，可原地覆盖旧 Tauri 安装
+- 内网/测试源：设置环境变量 `ILAUNCHER_UPDATE_URL` 指向自定义 `latest.json`
 
 ## 故障排查
 
-### 1. 签名验证失败
-
-**问题**：构建成功但 `.sig` 文件未生成
-
-**解决方案**：
-- 检查 GitHub Secrets 是否正确配置
-- 确认私钥内容完整（包括头尾注释）
-- 验证私钥密码（如果有）
-
-### 2. 构建失败
-
-**问题**：GitHub Actions 构建报错
-
-**常见原因**：
-- 依赖安装失败 → 检查 `package.json`
-- Rust 编译错误 → 本地运行 `cargo build`
-- 前端构建失败 → 本地运行 `bun build`
-
-### 3. `latest.json` 缺失平台
-
-**问题**：某些平台未包含在 `latest.json` 中
-
-**解决方案**：
-- 检查该平台的构建是否成功
-- 确认 `.sig` 文件与安装包同名
-- 查看 GitHub Actions 日志中的 `generate-updater-json` 步骤
-
-### 4. 更新检查失败
-
-**问题**：应用无法检测到更新
-
-**解决方案**：
-- 确认 `latest.json` 可访问：
-  ```
-  https://github.com/dulingzhi/iLauncher/releases/latest/download/latest.json
-  ```
-- 检查版本号格式（必须是 `v1.2.3` 格式）
-- 确认 `tauri.conf.json` 中的 `endpoints` 配置正确
-
-## 最佳实践
-
-### 版本命名规范
-
-遵循 [Semantic Versioning](https://semver.org/)：
-
-- **主版本** (MAJOR): 不兼容的 API 变更 → `1.0.0` → `2.0.0`
-- **次版本** (MINOR): 向下兼容的新功能 → `1.0.0` → `1.1.0`
-- **修订版本** (PATCH): 向下兼容的 Bug 修复 → `1.0.0` → `1.0.1`
-
-### Git 标签规范
-
-- 使用 `v` 前缀：`v1.0.0`（不是 `1.0.0`）
-- 与 `package.json` 版本号一致
-- 包含有意义的 Release Notes
-
-### Release Notes 建议
-
-```markdown
-## What's New
-
-### Features
-- ✨ New feature 1
-- ✨ New feature 2
-
-### Bug Fixes
-- 🐛 Fixed bug 1
-- 🐛 Fixed bug 2
-
-### Performance
-- ⚡ Performance improvement 1
-
-### Breaking Changes
-- ⚠️ Breaking change 1
-
-**Full Changelog**: https://github.com/dulingzhi/iLauncher/compare/v0.1.0...v0.2.0
-```
-
-## 本地测试更新流程
-
-### 1. 构建旧版本
-
-```bash
-# 修改版本号为 0.1.0
-vim package.json src-tauri/tauri.conf.json
-
-# 构建
-bun tauri build
-```
-
-### 2. 创建模拟 Release
-
-```bash
-# 构建新版本 (0.2.0)
-vim package.json src-tauri/tauri.conf.json
-bun tauri build
-
-# 生成 latest.json
-node scripts/generate-updater-json.js 0.2.0 v0.2.0
-
-# 创建本地 HTTP 服务器
-cd src-tauri/target/release/bundle
-python -m http.server 8080
-```
-
-### 3. 修改配置指向本地服务器
-
-```json
-{
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "http://localhost:8080/latest.json"
-      ]
-    }
-  }
-}
-```
-
-### 4. 运行旧版本测试更新
-
-运行 `0.1.0` 版本，等待自动更新检测。
-
-## 参考资源
-
-- [Tauri Updater 官方文档](https://v2.tauri.app/plugin/updater/)
-- [tauri-action GitHub](https://github.com/tauri-apps/tauri-action)
-- [GitHub Actions 文档](https://docs.github.com/en/actions)
-- [Semantic Versioning](https://semver.org/)
+- **签名验证失败**：确认 `.sig` 由 `pack-gpui.ps1 -Sign` 生成（不是 `.minisig` 原名）；确认公钥与私钥配对。
+- **更新检测不到**：确认 `latest.json` 可访问，版本格式 `v1.2.3`，且大于客户端 `gpui-app/Cargo.toml` 版本。
+- **覆盖安装失败**：安装脚本会 taskkill `iLauncher.exe` / `ilauncher-gpui.exe`，确认安装时旧进程已退出。

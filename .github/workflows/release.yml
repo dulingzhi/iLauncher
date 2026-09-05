@@ -1,5 +1,6 @@
 name: Release
 
+# 推送 v* 标签自动发版（gpui 通道：cargo → NSIS → minisign → latest.json → GitHub Release）
 on:
   push:
     tags:
@@ -8,71 +9,60 @@ on:
 
 jobs:
   release:
+    runs-on: windows-latest
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [windows-latest]
-        # 如果需要多平台支持，取消注释：
-        # platform: [windows-latest, macos-latest, ubuntu-latest]
-    
-    runs-on: ${{ matrix.platform }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-latest'
+      - name: Install NSIS + minisign
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install frontend dependencies
-        run: bun install
+          choco install nsis -y
+          cargo install minisign --locked
+        shell: pwsh
 
       - name: Update version from tag
         run: |
-          # 从 git tag 提取版本号 (去掉 v 前缀)
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
-          
-          # 更新 package.json
-          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-          mv package.json.tmp package.json
-          
-          # 更新 tauri.conf.json
-          cat src-tauri/tauri.conf.json | jq --arg version "$VERSION" '.version = $version' > src-tauri/tauri.conf.json.tmp
-          mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
-          
-          # 更新 Cargo.toml
-          sed -i "s/^version = .*/version = \"$VERSION\"/" src-tauri/Cargo.toml
-        shell: bash
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          $toml = "gpui-app/Cargo.toml"
+          (Get-Content $toml -Raw) -replace '(?m)^version = "[^"]+"', "version = `"$version`"" |
+            Set-Content $toml -NoNewline
+          Write-Host "Version set to $version"
+        shell: pwsh
 
-      - name: Build the app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build release
+        run: cargo build --release --manifest-path gpui-app/Cargo.toml --features "ilauncher clipboard"
+        shell: pwsh
+
+      - name: Pack installer + sign
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MINISIGN_SECRET_KEY_FILE: ${{ github.workspace }}\minisign.key
+        run: |
+          # 私钥从 secret 还原（整份 minisign 密钥文件的 base64）
+          [IO.File]::WriteAllBytes($env:MINISIGN_SECRET_KEY_FILE,
+            [Convert]::FromBase64String("${{ secrets.MINISIGN_SECRET_KEY_BASE64 }}"))
+          powershell -File scripts/pack-gpui.ps1 -SkipBuild -Sign
+        shell: pwsh
+
+      - name: Generate latest.json
+        env:
+          VERSION: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $env:VERSION = $env:VERSION.TrimStart('v')
+          node scripts/generate-updater-json.js $env:VERSION $env:RELEASE_TAG
+        shell: pwsh
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: '${{ github.ref_name }}'
-          releaseBody: 'Take a look at the assets to download and install this app.'
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+          name: ${{ github.ref_name }}
+          files: |
+            gpui-app/target/release/bundle/nsis/iLauncher_*_x64-setup.exe
+            gpui-app/target/release/bundle/nsis/iLauncher_*_x64-setup.exe.sig
+            latest.json
