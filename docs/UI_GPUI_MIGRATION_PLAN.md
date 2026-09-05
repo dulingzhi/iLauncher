@@ -1,6 +1,7 @@
 # UI 框架迁移方案：Tauri(React) → GPUI
 
-> 状态：**P0/P1 已完成并验证，进入 P2**（2026-09-05 更新，见 4.6 实施进度）
+> 状态：**P0/P1/P2 全部完成并验证，进入 P3**（2026-09-05 更新，见 4.6 实施进度；
+> P2 剩余 i18n 标签硬编码中文，随 P3 打磨）
 > 关联：[FILE_INDEX_OPTIMIZATION_PLAN.md](FILE_INDEX_OPTIMIZATION_PLAN.md)（v3 索引，
 > 迁移后将由 GPUI 进程直接以库调用消费，服务进程文件 IPC 可退役）
 
@@ -189,8 +190,8 @@ gpui-component = { version = "0.6" }
 | P1 i18n | ⬜ 未做 | rust-i18n（gpui-component 同款），P2 随设置页一起 |
 | P2 剪贴板历史 | ✅ 完成 | 独立 crate `ilauncher-clipboard`：WM_CLIPBOARDUPDATE 监听线程、JSONL 持久化（容量截断、文本连续去重）、搜索/删除/清空；**图片支持**——get_image → 采样哈希 → 落盘 PNG + 全库哈希去重，删除/清空连带删文件，复制按类型分派（copy_text/copy_image）；store 15 单测 + monitor_smoke 真实文本/图片事件路径 |
 | P2 设置页 | ✅ 完成 | gpui-component 现成 `Settings` 组件五分区（通用/外观/剪贴板/索引/关于），`settings_ui.rs` 纯装配层；开机自启、深色模式、剪贴板容量（注册表+运行时 set_capacity）、清空历史、重建索引全部接线真实数据源；托盘「设置」入口；i18n 仍待做（标签暂硬编码中文） |
-| P2 UpdateChecker | ⬜ 未开始 | self_update 接现有 JSON 协议 |
-| P2 PreviewPanel | ⬜ 未开始 | |
+| P2 UpdateChecker | ✅ 完成 | 新模块 `updater.rs` 对接 GitHub releases latest.json（Tauri 同款协议）：检查/下载/minisign 验签（注意两层 base64 坑）/NSIS passive 安装；设置页「检查更新」状态机接线；live 冒烟实测 v0.1.5 验签通过 |
+| P2 PreviewPanel | ✅ 完成 | 新模块 `preview.rs`（9 单测，对齐 Tauri preview 行为）：主窗口 resizable 分栏，选中防抖 120ms 读预览（代次丢弃）；图片原生解码/文本截断 200 行/元信息行；bench 回归 160fps 无退化 |
 | P3/P4 | ⬜ 未开始 | |
 
 **与 4.4-5 的偏差说明**：
