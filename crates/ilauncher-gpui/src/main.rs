@@ -1168,13 +1168,25 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
             }
         };
 
-        // 菜单点击事件循环（muda），本线程内同步勾选状态；
-        // 托盘图标事件（TrayIconEvent 全局 receiver）一并轮询
+        // 托盘线程主循环：泵 Win32 消息 + 分发 muda 菜单事件 + 托盘图标事件。
+        // 关键：tray-icon 的隐藏窗口和 muda 菜单子类都挂在窗口过程（wndproc）上，
+        // 而 wndproc 只在创建窗口的线程检索消息时才被调用——本线程不泵消息的话，
+        // 点击事件根本到不了 wndproc，左右键会全部无响应（首测复现的正是此问题）
         let receiver = MenuEvent::receiver();
         let tray_events = tray_icon::TrayIconEvent::receiver();
         loop {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+                };
+                let mut msg = MSG::default();
+                while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
             // 左键点托盘图标 → 唤起主窗口（菜单仅右键弹出）
-            if let Ok(tray_icon::TrayIconEvent::Click {
+            while let Ok(tray_icon::TrayIconEvent::Click {
                 button: tray_icon::MouseButton::Left,
                 button_state: tray_icon::MouseButtonState::Down,
                 ..
@@ -1182,7 +1194,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
             {
                 let _ = tx.send(AppSignal::Show(Instant::now()));
             }
-            if let Ok(event) = receiver.recv_timeout(std::time::Duration::from_millis(50)) {
+            while let Ok(event) = receiver.try_recv() {
                 match event.id.0.as_ref() {
                     "show" => {
                         let _ = tx.send(AppSignal::Show(Instant::now()));
@@ -1243,6 +1255,8 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                     _ => {}
                 }
             }
+            // 消息泵是非阻塞的，节流避免空转烧 CPU
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     });
 }
