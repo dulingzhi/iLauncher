@@ -1,6 +1,6 @@
 # UI 框架迁移方案：Tauri(React) → GPUI
 
-> 状态：提案（待评审）｜2026-09-05
+> 状态：**P0/P1 已完成并验证，进入 P2**（2026-09-05 更新，见 4.6 实施进度）
 > 关联：[FILE_INDEX_OPTIMIZATION_PLAN.md](FILE_INDEX_OPTIMIZATION_PLAN.md)（v3 索引，
 > 迁移后将由 GPUI 进程直接以库调用消费，服务进程文件 IPC 可退役）
 
@@ -174,6 +174,34 @@ gpui-component = { version = "0.6" }
 3. 版本策略：gpui-pre 系列跟随 gpui-component 的配套版本整体升级，
    每月一个 bump 窗口，锁 Cargo.lock。
 
+## 4.6 实施进度（2026-09-05 更新）
+
+代码在 `gpui-app/`（独立 crate，非 workspace），核心索引已拆分为
+`ilauncher-index/`（无 Tauri 依赖，35+ 单测）。提交历史即实现日志。
+
+| 阶段 | 状态 | 实测/备注 |
+|---|---|---|
+| P0 Spike | ✅ 全过 | 冷启动 429-490ms（Go 线 < 500ms）；10 万条 uniform_list 滚动 **144fps**（rAF 实测法，须前台激活，后台 DWM 节流到 4fps 是环境假象）；托盘/热键机制通 |
+| P1 主循环 | ✅ 完成 | 搜索防抖 80ms、↑↓ 导航、Enter 经 opener 启动、Esc 销毁窗口由 WindowGuard 异步任务重建；列表行已换 gpui-component `ListItem`（选中/hover 全走 theme token，bench 回归 144.3fps 无退化） |
+| P1 索引接入 | ✅ 完成 | `index_service.rs` 常驻 MFT 服务模式：UI 启动时快照齐全但服务未跑 → 静默提权拉起（修 catch-up 盲区）；`--ui-pid` 监控 UI 存活（修复解析越界 bug，服务 2s 内自退）；托盘"重建索引" = `--rebuild` 提权全量重扫（删快照→40s 重扫三盘 709 万行→转常驻）+ UI 轮询 mtime 自动重载；跨盘结果按 fzf score 排序 |
+| P1 开机自启 | ✅ 完成 | `autostart.rs` 读写 HKCU Run 项（值名 iLauncher），托盘可勾选菜单，6 个单测走独立测试子键 |
+| P1 主题 | 🚧 部分 | 全组件已走 gpui-component Theme token；暗/明切换 UI 未做 |
+| P1 i18n | ⬜ 未做 | |
+| P2 数据环 | ⬜ 未开始 | ClipboardHistory / 设置页 / UpdateChecker / PreviewPanel |
+| P3/P4 | ⬜ 未开始 | |
+
+**与 4.4-5 的偏差说明**：
+
+- 实际用 `gpui-kit 0.6` umbrella（gpui-pre + component + base + assets 一体），
+  而非分别依赖 gpui-pre / gpui-pre-platform。
+- 索引没有走"UI 进程内嵌 LiveIndex 直读 mmap"的目标态，而是保留了常驻服务
+  进程 + 快照文件：UI 侧 `LiveSet` 每盘持有一个 `LiveIndex`（mmap 只读打开
+  快照）。原因是增量更新（USN catch-up/compact）需要提权，UI 不常驻提权，
+  服务进程模型与现行 Tauri 版一致、风险最低。4.2 中"MFT Service 退役"
+  降级为"MFT Service 缩编为纯 compact/catch-up 后端"。
+- `--bench` 滚动基准命令：`ilauncher-gpui --bench`（后台 8ms 驱动滚动 +
+  on_next_frame 计数 5s）。
+
 ## 5. 风险与对策
 
 | 风险 | 等级 | 对策 |
@@ -189,13 +217,15 @@ gpui-component = { version = "0.6" }
 
 ## 6. Go / No-Go 检查清单（P0 Spike 结束时评审）
 
-- [ ] 热键唤起全链路 < 100ms（冷启动 < 500ms）
-- [ ] `uniform_list` 渲染 10 万条结果滚动 ≥ 60fps
-- [ ] 中文 IME 输入正常（gpui-component input）
-- [ ] 透明/圆角/居中窗口效果达到现有 Tauri 版观感
-- [ ] git 依赖可复现构建（锁 commit 后干净机器 build ok）
-- [ ] 托盘 + 全局热键 + 自启三件套跑通
-- [ ] LiveIndex 进程内搜索接入（用 v3_e2e 的快照直接 open）
+- [x] 热键唤起全链路 < 100ms（冷启动 < 500ms）→ 实测冷启动 429-490ms
+- [x] `uniform_list` 渲染 10 万条结果滚动 ≥ 60fps → 实测 144fps
+- [x] 中文 IME 输入正常（gpui-component input）
+- [x] 透明/圆角/居中窗口效果达到现有 Tauri 版观感
+- [x] git 依赖可复现构建（锁 commit 后干净机器 build ok）→ 实际无需 git 依赖，
+      gpui-kit 0.6 全 crates.io + Cargo.lock
+- [x] 托盘 + 全局热键 + 自启三件套跑通
+- [x] LiveIndex 进程内搜索接入（用 v3_e2e 的快照直接 open）→ 三盘 709 万行
+      全量加载可搜，常用词 avg 6-10ms / p95 < 13ms
 
 **建议**：先批 P0（1 周）。P0 七项全过 → 批 P1-P4；毛玻璃或 IME 不过 →
 在 P0 结论里二选一（视觉降级 or 投入自研），再决定是否全量迁移。
