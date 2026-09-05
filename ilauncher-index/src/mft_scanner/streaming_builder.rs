@@ -17,9 +17,10 @@ use super::types::*;
 /// 流式构建器 - 内存占用极低
 pub struct StreamingBuilder {
     drive_letter: char,
+    output_dir: String,                         // 快照输出目录（new() 时确定，惰性写 tmp 用）
     arena: Bump,                                // 内存池（分块释放）
     parent_cache: FxHashMap<u64, String>,       // FRN -> 完整路径缓存
-    path_writer: BufWriter<File>,               // 流式写入路径
+    path_writer: Option<BufWriter<File>>,       // 流式写入路径（仅 v2 物化链路惰性创建；v3 快照链路不碰 _paths.tmp）
     current_path_id: u32,
     total_files: u64,
     /// 每个写入文件的小写文件名字节（pipeline 用）
@@ -41,18 +42,27 @@ impl StreamingBuilder {
 
         Ok(Self {
             drive_letter,
+            output_dir: output_dir.to_string(),
             arena: Bump::with_capacity(256 * 1024 * 1024), // 预分配 256MB
             parent_cache: FxHashMap::default(),
-            path_writer: BufWriter::with_capacity(
-                32 * 1024 * 1024,
-                File::create(format!("{}\\{}_paths.tmp", output_dir, drive_letter))?,
-            ),
+            // v3 快照链路（scan_mft_streaming_v3）不写 _paths.tmp，
+            // 只有 v2 物化链路（write_path_entry）首次写入时才创建
+            path_writer: None,
             current_path_id: 0,
             total_files: 0,
             filename_entries: Vec::with_capacity(2_200_000),
             offset_index: Vec::with_capacity(2_200_000),
             current_path_offset: 0,
         })
+    }
+
+    /// v2 物化链路首次写入路径时惰性创建 _paths.tmp
+    fn ensure_path_writer(&mut self) -> Result<()> {
+        if self.path_writer.is_none() {
+            let tmp = format!("{}\\{}_paths.tmp", self.output_dir, self.drive_letter);
+            self.path_writer = Some(BufWriter::with_capacity(32 * 1024 * 1024, File::create(tmp)?));
+        }
+        Ok(())
     }
     
     /// 从 MFT 流式读取（内存占用稳定）
@@ -394,6 +404,7 @@ impl StreamingBuilder {
 
     /// 写入路径条目（同时收集 offset_index + filename_entries 供 pipeline 使用）
     fn write_path_entry(&mut self, path: &str) -> Result<()> {
+        self.ensure_path_writer()?;
         let path_bytes = path.as_bytes();
         let path_len = path_bytes.len();
 
@@ -407,10 +418,10 @@ impl StreamingBuilder {
 
         // 写入路径长度（4字节）
         let len = (path_len as u32).to_le_bytes();
-        self.path_writer.write_all(&len)?;
+        self.path_writer.as_mut().unwrap().write_all(&len)?;
 
         // 写入路径内容
-        self.path_writer.write_all(path_bytes)?;
+        self.path_writer.as_mut().unwrap().write_all(path_bytes)?;
 
         self.current_path_id += 1;
 
@@ -419,7 +430,9 @@ impl StreamingBuilder {
 
     /// 刷新缓冲区
     fn flush_buffers(&mut self) -> Result<()> {
-        self.path_writer.flush()?;
+        if let Some(w) = self.path_writer.as_mut() {
+            w.flush()?;
+        }
 
         // 🔥 释放 Arena 内存
         if self.arena.allocated_bytes() > 128 * 1024 * 1024 {  // 超过 128MB
@@ -437,8 +450,8 @@ impl StreamingBuilder {
         // 刷新所有缓冲区
         self.flush_buffers()?;
 
-        // 关闭文件
-        drop(self.path_writer);
+        // 关闭文件（v3 链路从未创建，take 后为 None，无操作）
+        drop(self.path_writer.take());
 
         // 重命名临时文件为最终文件
         let temp_paths = format!("{}\\{}_paths.tmp", output_dir, self.drive_letter);
@@ -449,5 +462,79 @@ impl StreamingBuilder {
         info!("✅ Database finalized: {} files", self.total_files);
 
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 每个测试独立的临时输出目录
+    fn temp_output_dir(tag: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("ilauncher_sb_test_{}_{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn new_does_not_create_paths_tmp() {
+        // v3 快照链路（new + scan_mft_streaming_v3）不应再留下 0 字节 _paths.tmp
+        let dir = temp_output_dir("v3");
+        let b = StreamingBuilder::new('T', &dir).unwrap();
+        drop(b);
+        let tmp = format!("{}\\T_paths.tmp", dir);
+        assert!(!PathBuf::from(&tmp).exists(), "v3 链路不应创建 {}", tmp);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn new_removes_stale_paths_tmp() {
+        // 上一进程残留的 tmp 应在 new() 时清理（历史 0 字节残留自愈）
+        let dir = temp_output_dir("stale");
+        let tmp = format!("{}\\T_paths.tmp", dir);
+        std::fs::write(&tmp, b"stale").unwrap();
+        let b = StreamingBuilder::new('T', &dir).unwrap();
+        drop(b);
+        assert!(!PathBuf::from(&tmp).exists(), "stale tmp 应被 new() 删除");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v2_write_then_finalize_renames_tmp_to_dat() {
+        // v2 物化链路契约：首次写入惰性创建 tmp，finalize 改名 .dat
+        let dir = temp_output_dir("v2");
+        {
+            let mut b = StreamingBuilder::new('T', &dir).unwrap();
+            b.write_path_entry("T:\\alpha.txt").unwrap();
+            b.write_path_entry("T:\\dir\\beta.txt").unwrap();
+            b.flush_buffers().unwrap();
+            let tmp = format!("{}\\T_paths.tmp", dir);
+            assert!(PathBuf::from(&tmp).exists(), "首次写入后 tmp 应存在");
+            b.finalize(&dir).unwrap();
+        }
+        let dat = PathBuf::from(format!("{}\\T_paths.dat", dir));
+        assert!(dat.exists(), "finalize 后应生成 .dat");
+        let tmp = PathBuf::from(format!("{}\\T_paths.tmp", dir));
+        assert!(!tmp.exists(), "finalize 后 tmp 应已改名消失");
+        // 内容校验：两条路径 + 长度前缀
+        let bytes = std::fs::read(&dat).unwrap();
+        let l1 = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+        assert_eq!(&bytes[4..4 + l1], b"T:\\alpha.txt");
+        let off = 4 + l1;
+        let l2 = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
+        assert_eq!(&bytes[off + 4..off + 4 + l2], b"T:\\dir\\beta.txt");
+        // offset_index 记录的字节偏移与文件布局一致
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn flush_without_writer_is_noop() {
+        // v3 链路不创建 writer，flush_buffers 必须静默无操作（不能 panic）
+        let dir = temp_output_dir("flush");
+        let mut b = StreamingBuilder::new('T', &dir).unwrap();
+        b.flush_buffers().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
