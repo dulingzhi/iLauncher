@@ -14,6 +14,9 @@
 
 mod search;
 
+#[cfg(all(feature = "ilauncher", target_os = "windows"))]
+mod index_service;
+
 use std::sync::mpsc;
 use std::time::Instant;
 
@@ -25,7 +28,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use search::{Entry, SearchSource};
+use search::{Entry, LiveSet, SearchSource};
 
 const DEMO_COUNT: usize = 100_000;
 const PAGE_LIMIT: usize = 50;
@@ -41,6 +44,13 @@ static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 fn start_time() -> Instant {
     *START.get_or_init(Instant::now)
+}
+
+fn demo_entries() -> Vec<Entry> {
+    let words = ["report", "notes", "简历", "配置", "相册", "terminal", "浏览器", "计算器"];
+    (0..DEMO_COUNT)
+        .map(|i| Entry::new(format!("{}_{:06}.txt", words[i % words.len()], i), format!("C:\\demo\\{}_{:06}.txt", words[i % words.len()], i)))
+        .collect()
 }
 
 // ── 唤起信号（热键 / 托盘菜单共用） ──────────────────────────────────────────
@@ -71,19 +81,13 @@ struct Launcher {
 }
 
 impl Launcher {
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>, source: SearchSource) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索应用、文件、命令…（中文 IME 请在这里验证）"));
         let focus = cx.focus_handle();
 
-        let words = ["report", "notes", "简历", "配置", "相册", "terminal", "浏览器", "计算器"];
-        let demo: Vec<Entry> = (0..DEMO_COUNT)
-            .map(|i| Entry::new(format!("{}_{:06}.txt", words[i % words.len()], i), format!("C:\\demo\\{}_{:06}.txt", words[i % words.len()], i)))
-            .collect();
-
         let bench = std::env::args().any(|a| a == "--bench");
-        let source = SearchSource::from_env_or_demo(demo.clone());
         // bench 模式保持 10 万条全量以测虚拟列表；正常运行空查询显示空（启动器惯例）
-        let entries = if bench { std::rc::Rc::new(demo) } else { std::rc::Rc::new(Vec::new()) };
+        let entries = if bench { std::rc::Rc::new(demo_entries()) } else { std::rc::Rc::new(Vec::new()) };
 
         let mut this = Self {
             input: input.clone(),
@@ -322,8 +326,9 @@ impl Render for Launcher {
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(format!(
-                                "{} 条结果 · ↑↓ 选择 · Enter 打开 · Esc 隐藏{}",
+                                "{} 条结果 · {} · ↑↓ 选择 · Enter 打开 · Esc 隐藏{}",
                                 result_count,
+                                self.source.status_text(),
                                 if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
                             )),
                     )
@@ -347,11 +352,35 @@ impl Render for Launcher {
 struct WindowGuard {
     rx: mpsc::Receiver<AppSignal>,
     window: Option<(WindowHandle<Root>, Entity<Launcher>)>,
+    #[cfg(feature = "ilauncher")]
+    index_set: LiveSet,
 }
 
 impl WindowGuard {
-    fn new(rx: mpsc::Receiver<AppSignal>) -> Self {
+    #[cfg(feature = "ilauncher")]
+    fn new(rx: mpsc::Receiver<AppSignal>, index_set: LiveSet) -> Self {
+        Self { rx, window: None, index_set }
+    }
+
+    #[cfg(not(feature = "ilauncher"))]
+    fn new(rx: mpsc::Receiver<AppSignal>, _index_set: LiveSet) -> Self {
         Self { rx, window: None }
+    }
+
+    /// 构造搜索源：feature 开启走实时索引（env 可指定单快照调试），否则 Demo
+    fn make_source(&self) -> SearchSource {
+        #[cfg(feature = "ilauncher")]
+        {
+            if std::env::var("ILAUNCHER_SNAPSHOT").is_ok() {
+                return SearchSource::from_env_single(demo_entries());
+            }
+            #[cfg(target_os = "windows")]
+            return SearchSource::Live(self.index_set.clone());
+            #[cfg(not(target_os = "windows"))]
+            return SearchSource::Demo(demo_entries());
+        }
+        #[cfg(not(feature = "ilauncher"))]
+        SearchSource::Demo(demo_entries())
     }
 
     /// 唤起：窗口还在就前台激活 + 聚焦输入；已被 Esc 销毁则重建
@@ -372,9 +401,10 @@ impl WindowGuard {
 
         // 重建窗口（Esc 销毁后首次唤起 / 初始唤起）
         let options = make_window_options();
+        let source = self.make_source();
         let mut launcher_slot: Option<Entity<Launcher>> = None;
         let result = cx.open_window(options, |window, cx| {
-            let launcher = cx.new(|cx| Launcher::new(window, cx));
+            let launcher = cx.new(|cx| Launcher::new(window, cx, source));
             launcher_slot = Some(launcher.clone());
             cx.new(|cx| Root::new(launcher, window, cx).bg(cx.theme().background))
         });
@@ -485,6 +515,18 @@ fn main() {
     start_time();
     let args: Vec<String> = std::env::args().collect();
 
+    // ── 常驻 MFT 服务模式（提权子进程，UI 退出后自动停止） ──────────────────
+    #[cfg(all(feature = "ilauncher", target_os = "windows"))]
+    if args.iter().any(|a| a == "--mft-service") {
+        index_service::imp::run_mft_service(&args);
+        return;
+    }
+    #[cfg(not(all(feature = "ilauncher", target_os = "windows")))]
+    if args.iter().any(|a| a == "--mft-service") {
+        eprintln!("--mft-service 需要 --features ilauncher 且在 Windows 下编译");
+        std::process::exit(2);
+    }
+
     // --snapshot：不启动 UI，直接测 LiveIndex 进程内搜索
     if let Some(pos) = args.iter().position(|a| a == "--snapshot") {
         if let Some(path) = args.get(pos + 1) {
@@ -492,6 +534,12 @@ fn main() {
             return;
         }
     }
+
+    // ── 索引加载：feature 下后台线程拉起服务并填充 LiveSet；否则 Demo ──────
+    #[cfg(all(feature = "ilauncher", target_os = "windows"))]
+    let index_set = index_service::imp::init_index_loader();
+    #[cfg(not(all(feature = "ilauncher", target_os = "windows")))]
+    let index_set = search::LiveSet::empty();
 
     let (tx, rx) = mpsc::channel();
     setup_tray(tx.clone());
@@ -502,7 +550,7 @@ fn main() {
     let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
         gpui_kit::init(cx);
-        let mut guard = WindowGuard::new(rx);
+        let mut guard = WindowGuard::new(rx, index_set);
         cx.spawn(move |cx: &mut AsyncApp| {
             let mut cx = cx.clone();
             async move {

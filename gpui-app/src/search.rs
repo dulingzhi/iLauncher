@@ -22,22 +22,58 @@ impl Entry {
     }
 }
 
+/// feature 开启时为真实 LiveIndex 的多盘集合；关闭时为占位单元结构
+#[cfg(feature = "ilauncher")]
+#[derive(Clone)]
+pub struct LiveSet(std::sync::Arc<std::sync::RwLock<Vec<ilauncher_index::index_v2::LiveIndex>>>);
+
+#[cfg(not(feature = "ilauncher"))]
+#[derive(Clone)]
+pub struct LiveSet;
+
+impl LiveSet {
+    pub fn empty() -> Self {
+        #[cfg(feature = "ilauncher")]
+        {
+            Self(std::sync::Arc::new(std::sync::RwLock::new(Vec::new())))
+        }
+        #[cfg(not(feature = "ilauncher"))]
+        {
+            Self
+        }
+    }
+
+    /// 当前已加载的盘数（UI 状态栏用，非阻塞）
+    #[cfg(feature = "ilauncher")]
+    pub fn drive_count(&self) -> usize {
+        self.0.try_read().map(|g| g.len()).unwrap_or(0)
+    }
+
+    /// 后台加载线程追加一盘（增量加载）
+    #[cfg(feature = "ilauncher")]
+    pub fn push_index(&self, idx: ilauncher_index::index_v2::LiveIndex) {
+        self.0.write().unwrap().push(idx);
+    }
+}
+
 /// 搜索数据源
 pub enum SearchSource {
     #[cfg(feature = "ilauncher")]
-    Live(ilauncher_index::index_v2::LiveIndex),
+    Live(LiveSet),
     Demo(Vec<Entry>),
 }
 
 impl SearchSource {
     /// 按环境构造：优先 ILAUNCHER_SNAPSHOT 指定的真实快照（需 feature ilauncher）
-    pub fn from_env_or_demo(demo_entries: Vec<Entry>) -> Self {
-        #[cfg(feature = "ilauncher")]
+    #[cfg(feature = "ilauncher")]
+    pub fn from_env_single(demo_entries: Vec<Entry>) -> Self {
         if let Ok(path) = std::env::var("ILAUNCHER_SNAPSHOT") {
             match ilauncher_index::index_v2::LiveIndex::open(std::path::Path::new(&path)) {
                 Ok(idx) => {
                     eprintln!("✓ LiveIndex 已加载: {}（{} 行）", path, idx.snapshot().row_count());
-                    return Self::Live(idx);
+                    let set = LiveSet::empty();
+                    set.0.write().unwrap().push(idx);
+                    return Self::Live(set);
                 }
                 Err(e) => eprintln!("⚠ 打开快照 {} 失败（{}），回退 Demo 数据", path, e),
             }
@@ -53,12 +89,19 @@ impl SearchSource {
         }
         match self {
             #[cfg(feature = "ilauncher")]
-            Self::Live(idx) => idx
-                .search(q, limit)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|h| Entry::new(h.name, h.path))
-                .collect(),
+            Self::Live(set) => {
+                let guard = match set.0.read() {
+                    Ok(g) => g,
+                    Err(_) => return Vec::new(),
+                };
+                // 多盘合并：每盘取 limit 条后截断（跨盘排序是后续 ranking 的工作）
+                guard
+                    .iter()
+                    .flat_map(|idx| idx.search(q, limit).unwrap_or_default())
+                    .take(limit)
+                    .map(|h| Entry::new(h.name, h.path))
+                    .collect()
+            }
             Self::Demo(items) => {
                 let lower = q.to_lowercase();
                 items
@@ -69,6 +112,17 @@ impl SearchSource {
                     .collect()
             }
         }
+    }
+
+    /// 状态栏文本（非阻塞）
+    pub fn status_text(&self) -> String {
+        #[cfg(feature = "ilauncher")]
+        if let Self::Live(set) = self {
+            let n = set.drive_count();
+            return if n == 0 { "索引加载中…".into() } else { format!("实时索引 {} 盘", n) };
+        }
+        let _ = self;
+        "演示数据".into()
     }
 }
 
@@ -129,8 +183,8 @@ mod tests {
     #[cfg(feature = "ilauncher")]
     #[test]
     fn live_snapshot_smoke() {
-        let Ok(path) = std::env::var("ILAUNCHER_SNAPSHOT") else { return };
-        let src = SearchSource::from_env_or_demo(vec![]);
+        let Ok(_path) = std::env::var("ILAUNCHER_SNAPSHOT") else { return };
+        let src = SearchSource::from_env_single(vec![]);
         let hits = src.search("report", 50);
         assert!(!hits.is_empty(), "真实快照搜 report 应有结果");
         assert!(hits.iter().all(|h| !h.name.is_empty() && !h.path.is_empty()));
