@@ -15,6 +15,8 @@
 mod autostart;
 mod search;
 mod settings;
+#[cfg(windows)]
+mod settings_ui;
 
 #[cfg(all(feature = "clipboard", target_os = "windows"))]
 mod clipboard_ui;
@@ -73,6 +75,8 @@ enum AppSignal {
     RebuildIndex,
     /// 托盘"剪贴板历史"：打开/激活历史窗口
     ShowClipboard,
+    /// 托盘"设置"：打开/激活设置窗口（窗口逻辑仅 Windows 编译）
+    ShowSettings,
     /// 托盘"深色主题"：切换主题模式（true = 深色）
     SetTheme(bool),
 }
@@ -374,6 +378,8 @@ impl Render for Launcher {
 
 struct WindowGuard {
     rx: mpsc::Receiver<AppSignal>,
+    /// 信号发送端：设置页"重建索引"等 UI 内按钮复用同一通道
+    tx: mpsc::Sender<AppSignal>,
     window: Option<(WindowHandle<Root>, Entity<Launcher>)>,
     #[cfg(feature = "ilauncher")]
     index_set: LiveSet,
@@ -382,41 +388,52 @@ struct WindowGuard {
     clipboard_window: Option<(WindowHandle<Root>, Entity<clipboard_ui::ClipboardPanel>)>,
     #[cfg(all(feature = "clipboard", target_os = "windows"))]
     clipboard_store: Arc<Mutex<ClipboardStore>>,
+    /// 设置窗口
+    #[cfg(windows)]
+    settings_window: Option<(WindowHandle<Root>, Entity<settings_ui::SettingsView>)>,
 }
 
 impl WindowGuard {
     #[cfg(feature = "ilauncher")]
     fn new(
         rx: mpsc::Receiver<AppSignal>,
+        tx: mpsc::Sender<AppSignal>,
         index_set: LiveSet,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
         Self {
             rx,
+            tx,
             window: None,
             index_set,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_window: None,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
+            #[cfg(windows)]
+            settings_window: None,
         }
     }
 
     #[cfg(not(feature = "ilauncher"))]
     fn new(
         rx: mpsc::Receiver<AppSignal>,
+        tx: mpsc::Sender<AppSignal>,
         _index_set: LiveSet,
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         clipboard_store: Arc<Mutex<ClipboardStore>>,
     ) -> Self {
         Self {
             rx,
+            tx,
             window: None,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_window: None,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
+            #[cfg(windows)]
+            settings_window: None,
         }
     }
 
@@ -494,6 +511,58 @@ impl WindowGuard {
             Err(e) => eprintln!("⚠ 打开剪贴板历史窗口失败: {e:#}"),
         }
     }
+
+    /// 打开/激活设置窗口（gpui-component Settings 组件，五分区）
+    #[cfg(windows)]
+    fn summon_settings(&mut self, cx: &mut AsyncApp) {
+        if let Some((handle, _)) = &self.settings_window {
+            if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+                return;
+            }
+            self.settings_window = None;
+        }
+        let index_set = {
+            #[cfg(feature = "ilauncher")]
+            {
+                self.index_set.clone()
+            }
+            #[cfg(not(feature = "ilauncher"))]
+            {
+                LiveSet::empty()
+            }
+        };
+        let tx = self.tx.clone();
+        #[cfg(all(feature = "clipboard", target_os = "windows"))]
+        let store = self.clipboard_store.clone();
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: Point { x: px(160.), y: px(120.) },
+                size: size(px(860.), px(560.)),
+            })),
+            ..make_window_options()
+        };
+        let mut view_slot: Option<Entity<settings_ui::SettingsView>> = None;
+        let result = cx.open_window(options, |window, cx| {
+            let view = cx.new(|cx| {
+                settings_ui::SettingsView::new(
+                    cx,
+                    index_set,
+                    tx,
+                    #[cfg(all(feature = "clipboard", target_os = "windows"))]
+                    store,
+                )
+            });
+            view_slot = Some(view.clone());
+            cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
+        });
+        match result {
+            Ok(handle) => {
+                println!("✓ 设置窗口已打开");
+                self.settings_window = Some((handle, view_slot.expect("settings view entity")));
+            }
+            Err(e) => eprintln!("⚠ 打开设置窗口失败: {e:#}"),
+        }
+    }
 }
 
 fn make_window_options() -> WindowOptions {
@@ -542,6 +611,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
 
         let menu = Menu::new();
         let _ = menu.append(&MenuItem::with_id("show", "显示 iLauncher", true, None));
+        let _ = menu.append(&MenuItem::with_id("settings", "设置", true, None));
         let _ = menu.append(&MenuItem::with_id("clipboard", "剪贴板历史", true, None));
         let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
         // 开机自启：可勾选项，初始状态读注册表
@@ -580,6 +650,9 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                 match event.id.0.as_ref() {
                     "show" => {
                         let _ = tx.send(AppSignal::Show(Instant::now()));
+                    }
+                    "settings" => {
+                        let _ = tx.send(AppSignal::ShowSettings);
                     }
                     "clipboard" => {
                         let _ = tx.send(AppSignal::ShowClipboard);
@@ -709,8 +782,12 @@ fn main() {
             );
             println!("✓ 主题初始化 → {}", if dark { "深色" } else { "浅色" });
         }
+        // 设置页 model 全局实体（字段值闭包的数据源，托盘/设置页共用）
+        #[cfg(windows)]
+        settings_ui::init_model(cx);
         let mut guard = WindowGuard::new(
             rx,
+            tx,
             index_set,
             #[cfg(all(feature = "clipboard", target_os = "windows"))]
             clipboard_store,
@@ -728,11 +805,13 @@ fn main() {
                 let mut rebuild = false;
                 let mut theme_dark: Option<bool> = None;
                 let mut show_clipboard = false;
+                let mut show_settings = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
                         AppSignal::RebuildIndex => rebuild = true,
                         AppSignal::ShowClipboard => show_clipboard = true,
+                        AppSignal::ShowSettings => show_settings = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                     }
                 }
@@ -748,6 +827,14 @@ fn main() {
                 if show_clipboard {
                     println!("⚠️ 剪贴板历史需要 --features clipboard 构建");
                 }
+                #[cfg(windows)]
+                if show_settings {
+                    guard.summon_settings(&mut cx);
+                }
+                #[cfg(not(windows))]
+                if show_settings {
+                    println!("⚠️ 设置窗口仅 Windows 构建");
+                }
                 if let Some(dark) = theme_dark {
                     use gpui_kit::component::theme::ThemeMode;
                     cx.update(|cx| {
@@ -759,6 +846,8 @@ fn main() {
                         // Theme::change 只刷新传入的窗口（这里 None），
                         // 手动刷新全部已开窗口让背景色等一次性生效
                         cx.refresh_windows();
+                        // 同步设置页 model，避免托盘切换后设置页显示过期值
+                        settings_ui::sync_theme_model(cx, dark);
                     });
                 }
                 if let Some(t) = latest {

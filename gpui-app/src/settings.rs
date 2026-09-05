@@ -15,6 +15,37 @@ mod imp {
     /// 测试专用子键
     #[cfg(test)]
     const TEST_KEY: &str = r"Software\iLauncher_gpui_settings_test";
+    /// 剪贴板历史容量值名（十进制字符串；不存在 = 用 ilauncher-clipboard 的 DEFAULT_CAPACITY）
+    const CLIPBOARD_CAPACITY_VALUE: &str = "ClipboardCapacity";
+    /// 容量合法区间（与剪贴板设置页 NumberFieldOptions 一致）
+    pub const CLIPBOARD_CAPACITY_MIN: usize = 10;
+    pub const CLIPBOARD_CAPACITY_MAX: usize = 1000;
+
+    /// 读取剪贴板历史容量：None = 未设置（调用方回退 DEFAULT_CAPACITY）
+    pub fn load_clipboard_capacity() -> Option<usize> {
+        load_capacity_from(SETTINGS_KEY, CLIPBOARD_CAPACITY_VALUE)
+    }
+
+    fn load_capacity_from(key: &str, name: &str) -> Option<usize> {
+        let raw: usize = read_value(key, name)?.parse().ok()?;
+        if (CLIPBOARD_CAPACITY_MIN..=CLIPBOARD_CAPACITY_MAX).contains(&raw) {
+            Some(raw)
+        } else {
+            None
+        }
+    }
+
+    /// 保存剪贴板历史容量（越界自动夹取到合法区间）
+    #[cfg(any(feature = "clipboard", test))]
+    pub fn save_clipboard_capacity(cap: usize) -> anyhow::Result<()> {
+        save_capacity_to(SETTINGS_KEY, CLIPBOARD_CAPACITY_VALUE, cap)
+    }
+
+    #[cfg(any(feature = "clipboard", test))]
+    fn save_capacity_to(key: &str, name: &str, cap: usize) -> anyhow::Result<()> {
+        let cap = cap.clamp(CLIPBOARD_CAPACITY_MIN, CLIPBOARD_CAPACITY_MAX);
+        write_value(key, name, &cap.to_string())
+    }
 
     /// 读取用户主题偏好：Some(true)=深色 / Some(false)=浅色 / None=未设置（跟随系统）
     pub fn load_theme_dark() -> Option<bool> {
@@ -87,6 +118,40 @@ mod imp {
         }
 
         #[test]
+        fn clipboard_capacity_roundtrip() {
+            let name = "cap_roundtrip";
+            cleanup(name);
+            assert_eq!(load_capacity_from(TEST_KEY, name), None);
+            save_capacity_to(TEST_KEY, name, 200).unwrap();
+            assert_eq!(load_capacity_from(TEST_KEY, name), Some(200));
+            cleanup(name);
+        }
+
+        #[test]
+        fn clipboard_capacity_invalid_and_out_of_range() {
+            let name = "cap_invalid";
+            cleanup(name);
+            write_value(TEST_KEY, name, "abc").unwrap();
+            assert_eq!(load_capacity_from(TEST_KEY, name), None);
+            write_value(TEST_KEY, name, "5").unwrap();
+            assert_eq!(load_capacity_from(TEST_KEY, name), None); // 低于下限
+            write_value(TEST_KEY, name, "99999").unwrap();
+            assert_eq!(load_capacity_from(TEST_KEY, name), None); // 高于上限
+            cleanup(name);
+        }
+
+        #[test]
+        fn clipboard_capacity_save_clamps() {
+            let name = "cap_clamp";
+            cleanup(name);
+            save_capacity_to(TEST_KEY, name, 1).unwrap();
+            assert_eq!(read_value(TEST_KEY, name).unwrap(), CLIPBOARD_CAPACITY_MIN.to_string());
+            save_capacity_to(TEST_KEY, name, 99999).unwrap();
+            assert_eq!(read_value(TEST_KEY, name).unwrap(), CLIPBOARD_CAPACITY_MAX.to_string());
+            cleanup(name);
+        }
+
+        #[test]
         fn system_prefers_dark_returns_bool() {
             // 不断言具体值（随系统设置变化），只验证读取路径不 panic
             let _ = system_prefers_dark();
@@ -95,4 +160,7 @@ mod imp {
 }
 
 #[cfg(windows)]
-pub use imp::{load_theme_dark, save_theme_dark, system_prefers_dark};
+pub use imp::{load_clipboard_capacity, load_theme_dark, save_theme_dark, system_prefers_dark};
+// 容量写/夹取常量仅在剪贴板设置项存在时使用
+#[cfg(all(windows, feature = "clipboard"))]
+pub use imp::{save_clipboard_capacity, CLIPBOARD_CAPACITY_MAX, CLIPBOARD_CAPACITY_MIN};

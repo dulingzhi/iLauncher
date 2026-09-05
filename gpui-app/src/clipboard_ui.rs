@@ -20,12 +20,14 @@ pub fn init_clipboard() -> Arc<Mutex<ClipboardStore>> {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let store = ClipboardStore::with_persist(&path, DEFAULT_CAPACITY).unwrap_or_else(|e| {
+    // 容量：注册表设置 > crate 默认（设置页可调，见 settings_ui）
+    let capacity = crate::settings::load_clipboard_capacity().unwrap_or(DEFAULT_CAPACITY);
+    let store = ClipboardStore::with_persist(&path, capacity).unwrap_or_else(|e| {
         eprintln!("⚠️ 剪贴板历史加载失败（降级内存存储）: {e:#}");
         ClipboardStore::in_memory(DEFAULT_CAPACITY)
     });
     let store = Arc::new(Mutex::new(store));
-    println!("✓ 剪贴板历史已加载（{} 条）", store.lock().len());
+    println!("✓ 剪贴板历史已加载（{} 条，容量 {}）", store.lock().len(), capacity);
     let image_dir = path
         .parent()
         .map(|p| p.join("clipboard_images"))

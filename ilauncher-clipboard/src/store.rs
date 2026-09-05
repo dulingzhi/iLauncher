@@ -195,6 +195,11 @@ impl ClipboardStore {
         self.items.len()
     }
 
+    /// 当前容量上限（设置页可调，见 set_capacity）
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -239,6 +244,19 @@ impl ClipboardStore {
         if let Some(path) = &self.persist_path {
             let _ = std::fs::remove_file(path);
         }
+    }
+
+    /// 调整容量上限：溢出部分按最旧截断（图片条目连同文件删除），并持久化
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity.max(1);
+        while self.items.len() > self.capacity {
+            if let Some(old) = self.items.pop() {
+                if old.is_image() {
+                    let _ = std::fs::remove_file(&old.content);
+                }
+            }
+        }
+        self.persist_rewrite();
     }
 
     /// 追加一行到 JSONL
@@ -325,6 +343,50 @@ mod tests {
         let all = s.list(0, 10);
         assert_eq!(all[0].content, "item4");
         assert_eq!(all[2].content, "item2");
+    }
+
+    #[test]
+    fn set_capacity_truncates_and_persists() {
+        let path = temp_path("setcap");
+        {
+            let mut s = ClipboardStore::with_persist(&path, 10).unwrap();
+            for i in 0..5 {
+                assert!(s.add_text(&format!("cap{i}"), ts()));
+            }
+            s.set_capacity(2);
+            assert_eq!(s.len(), 2);
+            assert_eq!(s.capacity(), 2);
+            let all = s.list(0, 10);
+            assert_eq!(all[0].content, "cap4");
+            assert_eq!(all[1].content, "cap3");
+        }
+        // 重载：容量是应用级设置（注册表），由 with_persist 参数注入；
+        // 注入 2 后溢出条目不回魂
+        let mut s = ClipboardStore::with_persist(&path, 2).unwrap();
+        assert_eq!(s.capacity(), 2);
+        assert_eq!(s.len(), 2);
+        assert!(s.add_text("cap5", ts()));
+        assert_eq!(s.len(), 2);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn set_capacity_drops_oldest_image_file() {
+        let mut s = ClipboardStore::in_memory(10);
+        let dir = std::env::temp_dir().join(format!("ilauncher_clip_setcap_img_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let png = dir.join("old_1.png");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&png, b"fake-png").unwrap();
+        assert!(s.add_image(png.to_str().unwrap(), 2, 2, 1, ts()));
+        for i in 0..3 {
+            assert!(s.add_text(&format!("t{i}"), ts()));
+        }
+        s.set_capacity(3);
+        // 最旧的图片条目被截断，文件一并删除
+        assert!(!png.exists());
+        assert!(s.list(0, 10).iter().all(|it| !it.is_image()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
