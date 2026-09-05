@@ -58,6 +58,8 @@ fn demo_entries() -> Vec<Entry> {
 enum AppSignal {
     /// 唤起窗口（Instant 为按下时刻，用于测量唤起延迟）
     Show(Instant),
+    /// 托盘"重建索引"：提权全量重扫 + 自动重载
+    RebuildIndex,
 }
 
 // ── 主视图 ──────────────────────────────────────────────────────────────────
@@ -461,6 +463,7 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
 
     let menu = Menu::new();
     let _ = menu.append(&MenuItem::with_id("show", "显示 iLauncher", true, None));
+    let _ = menu.append(&MenuItem::with_id("rebuild", "重建索引", true, None));
     let _ = menu.append(&MenuItem::with_id("quit", "退出", true, None));
     match TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("iLauncher (gpui P1)").build() {
         Ok(_tray) => {
@@ -479,6 +482,9 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
                 match event.id.0.as_ref() {
                     "show" => {
                         let _ = tx.send(AppSignal::Show(Instant::now()));
+                    }
+                    "rebuild" => {
+                        let _ = tx.send(AppSignal::RebuildIndex);
                     }
                     "quit" => std::process::exit(0),
                     _ => {}
@@ -521,9 +527,14 @@ fn main() {
         index_service::imp::run_mft_service(&args);
         return;
     }
+    #[cfg(all(feature = "ilauncher", target_os = "windows"))]
+    if args.iter().any(|a| a == "--rebuild") {
+        index_service::imp::run_rebuild_service(&args);
+        return;
+    }
     #[cfg(not(all(feature = "ilauncher", target_os = "windows")))]
-    if args.iter().any(|a| a == "--mft-service") {
-        eprintln!("--mft-service 需要 --features ilauncher 且在 Windows 下编译");
+    if args.iter().any(|a| a == "--mft-service" || a == "--rebuild") {
+        eprintln!("--mft-service/--rebuild 需要 --features ilauncher 且在 Windows 下编译");
         std::process::exit(2);
     }
 
@@ -561,10 +572,16 @@ fn main() {
                     .await;
 
                 let mut latest: Option<Instant> = None;
+                let mut rebuild = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
+                        AppSignal::RebuildIndex => rebuild = true,
                     }
+                }
+                if rebuild {
+                    #[cfg(all(feature = "ilauncher", target_os = "windows"))]
+                    index_service::imp::request_rebuild(&guard.index_set);
                 }
                 if let Some(t) = latest {
                     guard.summon(t, &mut cx);

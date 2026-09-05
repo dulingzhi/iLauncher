@@ -14,11 +14,18 @@
 pub struct Entry {
     pub name: String,
     pub path: String,
+    /// 索引 fzf 匹配分（Demo 源恒 0；Live 源用于跨盘合并排序）
+    pub score: i64,
 }
 
 impl Entry {
     pub fn new(name: impl Into<String>, path: impl Into<String>) -> Self {
-        Self { name: name.into(), path: path.into() }
+        Self { name: name.into(), path: path.into(), score: 0 }
+    }
+
+    #[cfg(feature = "ilauncher")]
+    pub fn with_score(name: impl Into<String>, path: impl Into<String>, score: i64) -> Self {
+        Self { name: name.into(), path: path.into(), score }
     }
 }
 
@@ -53,6 +60,12 @@ impl LiveSet {
     #[cfg(feature = "ilauncher")]
     pub fn push_index(&self, idx: ilauncher_index::index_v2::LiveIndex) {
         self.0.write().unwrap().push(idx);
+    }
+
+    /// 清空全部索引（重建前释放 mmap 文件占用）
+    #[cfg(feature = "ilauncher")]
+    pub fn clear(&self) {
+        self.0.write().unwrap().clear();
     }
 }
 
@@ -94,13 +107,17 @@ impl SearchSource {
                     Ok(g) => g,
                     Err(_) => return Vec::new(),
                 };
-                // 多盘合并：每盘取 limit 条后截断（跨盘排序是后续 ranking 的工作）
-                guard
+                // 多盘合并：每盘多取（4×，封顶 200）保证高质量命中不被截断，
+                // 统一按索引 fzf 分降序排后取 limit（SearchHit.score 无需自研 ranking）
+                let per_drive = limit.saturating_mul(4).min(200);
+                let mut merged: Vec<Entry> = guard
                     .iter()
-                    .flat_map(|idx| idx.search(q, limit).unwrap_or_default())
-                    .take(limit)
-                    .map(|h| Entry::new(h.name, h.path))
-                    .collect()
+                    .flat_map(|idx| idx.search(q, per_drive).unwrap_or_default())
+                    .map(|h| Entry::with_score(h.name, h.path, h.score))
+                    .collect();
+                merged.sort_by(|a, b| b.score.cmp(&a.score));
+                merged.truncate(limit);
+                merged
             }
             Self::Demo(items) => {
                 let lower = q.to_lowercase();
