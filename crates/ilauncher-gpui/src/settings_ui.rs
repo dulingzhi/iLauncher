@@ -467,10 +467,19 @@ impl Render for SettingsView {
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
+            .child(crate::window_drag::drag_strip(
+                format!("iLauncher · {}", crate::i18n::t!("tray.settings")),
+                &theme,
+            ))
             .child(
-                Settings::new("app-settings")
-                    .sidebar_width(px(200.))
-                    .pages(pages.into_iter().map(|(_, page)| page)),
+                div()
+                    .flex_1()
+                    .w_full()
+                    .child(
+                        Settings::new("app-settings")
+                            .sidebar_width(px(200.))
+                            .pages(pages.into_iter().map(|(_, page)| page)),
+                    ),
             )
     }
 }

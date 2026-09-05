@@ -41,6 +41,9 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # i18n：YAML 文案编译期嵌入（gpui-component 同款 rust-i18n 4），fallback zh-CN
 rust-i18n = "4.2"
 
+# 无边框窗口拖动：从 gpui Window 取 Win32 HWND（window_drag.rs）
+raw-window-handle = "0.6"
+
 ilauncher-index = { path = "../ilauncher-index", optional = true }
 ilauncher-clipboard = { path = "../ilauncher-clipboard", optional = true }
 parking_lot = "0.12"

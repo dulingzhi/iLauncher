@@ -16,6 +16,8 @@ mod audit;
 mod autostart;
 mod http_util;
 mod i18n;
+mod tray_icon_gen;
+mod window_drag;
 mod plugin;
 mod preview;
 mod search;
@@ -156,6 +158,9 @@ impl Launcher {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(crate::i18n::t!("main.placeholder").to_string()));
         let focus = cx.focus_handle();
 
+        // 失去焦点自动隐藏（启动器惯例）：销毁窗口，唤起时由 WindowGuard 重建。
+        // 订阅必须持有（ dropped 即失效），挂到 _subscriptions
+        let focus_lost_sub = cx.on_focus_lost(window, |_, window, _| window.remove_window());
         let bench = std::env::args().any(|a| a == "--bench");
         // bench 模式保持 10 万条全量以测虚拟列表；正常运行空查询显示空（启动器惯例）
         let entries = if bench { std::rc::Rc::new(demo_entries()) } else { std::rc::Rc::new(Vec::new()) };
@@ -196,6 +201,7 @@ impl Launcher {
                 }
             }
         }));
+        this._subscriptions.push(focus_lost_sub);
         this
     }
 
@@ -566,6 +572,7 @@ impl Render for Launcher {
             .gap_2()
             .bg(theme.background)
             .text_color(theme.foreground)
+            .child(window_drag::drag_strip("iLauncher", &theme))
             .child(Input::new(&self.input).w_full())
             .child(
                 div()
@@ -795,8 +802,11 @@ impl WindowGuard {
             self.window = None;
         }
 
-        // 重建窗口（Esc 销毁后首次唤起 / 初始唤起）
-        let options = make_window_options();
+        // 重建窗口（Esc/失焦销毁后首次唤起 / 初始唤起），主显示器居中
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            ..make_window_options()
+        };
         let source = self.make_source();
         let audit_logger = self.deps.audit_logger.clone();
         let plugins = self.deps.plugins.clone();
@@ -835,7 +845,11 @@ impl WindowGuard {
         }
         let store = self.deps.clipboard_store.clone();
         let mut panel_slot: Option<Entity<clipboard_ui::ClipboardPanel>> = None;
-        let result = cx.open_window(make_panel_window_options(), |window, cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            ..make_panel_window_options()
+        };
+        let result = cx.open_window(options, |window, cx| {
             let panel = cx.new(|cx| clipboard_ui::ClipboardPanel::new(window, cx, store));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
@@ -871,10 +885,7 @@ impl WindowGuard {
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         let store = self.deps.clipboard_store.clone();
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: Point { x: px(160.), y: px(120.) },
-                size: size(px(860.), px(560.)),
-            })),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 860., 560.))),
             ..make_panel_window_options()
         };
         let mut view_slot: Option<Entity<settings_ui::SettingsView>> = None;
@@ -924,7 +935,11 @@ impl WindowGuard {
         }
         let logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<audit_ui::AuditPanel>> = None;
-        let result = cx.open_window(make_panel_window_options(), |window, cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            ..make_panel_window_options()
+        };
+        let result = cx.open_window(options, |window, cx| {
             let panel = cx.new(|cx| audit_ui::AuditPanel::new(window, cx, logger));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
@@ -948,7 +963,11 @@ impl WindowGuard {
         }
         let state = self.deps.market.clone();
         let mut panel_slot: Option<Entity<plugin_ui::MarketPanel>> = None;
-        let result = cx.open_window(make_panel_window_options(), |window, cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            ..make_panel_window_options()
+        };
+        let result = cx.open_window(options, |window, cx| {
             let panel = cx.new(|cx| plugin_ui::MarketPanel::new(window, cx, state));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
@@ -973,7 +992,11 @@ impl WindowGuard {
         let engine = self.deps.workflows.clone();
         let audit_logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<workflow_ui::WorkflowPanel>> = None;
-        let result = cx.open_window(make_panel_window_options(), |window, cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            ..make_panel_window_options()
+        };
+        let result = cx.open_window(options, |window, cx| {
             let panel = cx.new(|cx| workflow_ui::WorkflowPanel::new(window, cx, engine, audit_logger));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
@@ -997,7 +1020,11 @@ impl WindowGuard {
         }
         let chat = self.deps.ai_chat.clone();
         let mut panel_slot: Option<Entity<ai_ui::AiChatPanel>> = None;
-        let result = cx.open_window(make_panel_window_options(), |window, cx| {
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            ..make_panel_window_options()
+        };
+        let result = cx.open_window(options, |window, cx| {
             let panel = cx.new(|cx| ai_ui::AiChatPanel::new(window, cx, chat));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
@@ -1034,6 +1061,26 @@ fn make_panel_window_options() -> WindowOptions {
     WindowOptions {
         kind: WindowKind::Normal,
         ..make_window_options()
+    }
+}
+
+/// 窗口在主显示器（可见区，排除任务栏）居中的 bounds；
+/// 取不到显示器信息时回退原默认位
+fn centered_bounds(cx: &mut AsyncApp, width: f32, height: f32) -> Bounds<Pixels> {
+    let visible = cx.update(|cx| cx.primary_display().map(|d| d.visible_bounds()));
+    let win_size = size(px(width), px(height));
+    match visible {
+        Some(b) => {
+            let center = b.center();
+            Bounds::new(
+                Point {
+                    x: center.x - win_size.width / 2.0,
+                    y: center.y - win_size.height / 2.0,
+                },
+                win_size,
+            )
+        }
+        None => Bounds::new(Point { x: px(160.), y: px(200.) }, win_size),
     }
 }
 
@@ -1103,9 +1150,12 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
         );
         let _ = menu.append(&dark_item);
         let _ = menu.append(&MenuItem::with_id("quit", t!("tray.quit"), true, None));
+        // 左键唤起主窗口（左键不再弹菜单，仅右键弹；事件在下方循环消费）
         let _tray = match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
-            .with_tooltip("iLauncher (gpui P1)")
+            .with_tooltip("iLauncher")
+            .with_icon(tray_icon_gen::build())
+            .with_menu_on_left_click(false)
             .build()
         {
             Ok(tray) => {
@@ -1118,10 +1168,21 @@ fn setup_tray(tx: mpsc::Sender<AppSignal>) {
             }
         };
 
-        // 菜单点击事件循环（muda），本线程内同步勾选状态
+        // 菜单点击事件循环（muda），本线程内同步勾选状态；
+        // 托盘图标事件（TrayIconEvent 全局 receiver）一并轮询
         let receiver = MenuEvent::receiver();
+        let tray_events = tray_icon::TrayIconEvent::receiver();
         loop {
-            if let Ok(event) = receiver.recv() {
+            // 左键点托盘图标 → 唤起主窗口（菜单仅右键弹出）
+            if let Ok(tray_icon::TrayIconEvent::Click {
+                button: tray_icon::MouseButton::Left,
+                button_state: tray_icon::MouseButtonState::Down,
+                ..
+            }) = tray_events.try_recv()
+            {
+                let _ = tx.send(AppSignal::Show(Instant::now()));
+            }
+            if let Ok(event) = receiver.recv_timeout(std::time::Duration::from_millis(50)) {
                 match event.id.0.as_ref() {
                     "show" => {
                         let _ = tx.send(AppSignal::Show(Instant::now()));
@@ -1346,6 +1407,9 @@ fn main() {
     let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
         gpui_kit::init(cx);
+        // 默认 QuitMode::LastWindowClosed（非 macOS）：Esc/失焦销毁主窗口会直接退出进程。
+        // 常驻托盘应用改为 Explicit——只有托盘「退出」/主窗「退出」按钮结束进程
+        cx.set_quit_mode(gpui_kit::QuitMode::Explicit);
         // 主题：持久化偏好 > 系统设置（gpui-component init 默认 Light，这里覆盖）
         {
             use gpui_kit::component::theme::ThemeMode;
