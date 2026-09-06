@@ -124,6 +124,9 @@ enum AppSignal {
     SetTheme(bool),
     /// Alt+P：切换文件预览窗口（独立窗口，贴主窗口右边框）
     TogglePreview,
+    /// 主窗口失焦（observe_window_activation）：交由 WindowGuard 判断是
+    /// 点了预览（焦点抢回）还是真的离开（隐藏主窗+关预览）
+    MainDeactivated,
     /// 主窗口隐藏（Esc/失焦）：关闭预览窗口并重置显隐偏好，
     /// 下次唤起主窗口不再自动弹出预览
     DismissPreview,
@@ -190,9 +193,11 @@ impl Launcher {
                 let tx = tx.clone();
                 move |_, window, _| {
                     if !window.is_window_active() {
-                        // 主窗隐藏 = 本次会话结束：预览随之关闭且下次不自动弹出
-                        let _ = tx.send(AppSignal::DismissPreview);
-                        window.remove_window();
+                        // 不在这里直接销毁：失焦可能是点了预览窗（其按钮激活了
+                        // 自身），交给 WindowGuard 判断——前台是预览则把焦点
+                        // 抢回主窗，是别的应用才隐藏（见 on_main_deactivated）
+                        let _ = tx.send(AppSignal::MainDeactivated);
+                        let _ = window;
                     }
                 }
             }))
@@ -247,9 +252,16 @@ impl Launcher {
             this._subscriptions.push(sub);
         }
         // 主窗口移动/缩放 → 预览窗口重新贴靠（gpui-pre 无窗口移动 API，
-        // 由 WindowGuard 重建预览窗口实现"跟随"）
-        this._subscriptions.push(cx.observe_window_bounds(window, move |_, _, _| {
-            let _ = tx_bounds.send(AppSignal::RepositionPreview);
+        // 由 WindowGuard 重建预览窗口实现"跟随"）。
+        // 注意：gpui 在窗口激活/失焦时也会调 bounds_changed（on_active_status_change），
+        // 必须对比 bounds 真值，否则点预览按钮抢回焦点的过程会把预览重建好几次。
+        let mut last_bounds = window.bounds();
+        this._subscriptions.push(cx.observe_window_bounds(window, move |_, window, _| {
+            let b = window.bounds();
+            if b != last_bounds {
+                last_bounds = b;
+                let _ = tx_bounds.send(AppSignal::RepositionPreview);
+            }
         }));
         // 开发调试：ILAUNCHER_DEV_QUERY 预填查询并立即搜索（自动化截图/冒烟用）
         if let Ok(q) = std::env::var("ILAUNCHER_DEV_QUERY") {
@@ -955,6 +967,10 @@ struct WindowGuard {
     preview_window: Option<(WindowHandle<Root>, Entity<preview_ui::PreviewPanel>)>,
     /// 预览窗口显隐偏好（主窗口重建后恢复）
     preview_visible: bool,
+    /// 预览窗口原生句柄（HWND as isize）：主窗失焦时判断前台是不是预览，
+    /// 是则把焦点抢回主窗而不是隐藏（点预览按钮的场景）
+    #[cfg(target_os = "windows")]
+    preview_hwnd: Option<isize>,
 }
 
 impl WindowGuard {
@@ -987,6 +1003,8 @@ impl WindowGuard {
             ai_window: None,
             preview_window: None,
             preview_visible: false,
+            #[cfg(target_os = "windows")]
+            preview_hwnd: None,
         }
     }
 
@@ -1098,7 +1116,32 @@ impl WindowGuard {
 
     /// 关闭预览窗口（保留显隐偏好）
     fn close_preview(&mut self, cx: &mut AsyncApp) {
+        #[cfg(target_os = "windows")]
+        {
+            self.preview_hwnd = None;
+        }
         if let Some((handle, _)) = self.preview_window.take() {
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        }
+    }
+
+    /// 主窗口失焦后的处置：前台是预览（点了预览里的按钮，gpui 会激活按钮所在
+    /// 窗口，WS_EX_NOACTIVATE 拦不住应用内 SetFocus）→ 把焦点抢回主窗；
+    /// 前台是其他应用（真离开）→ 隐藏主窗 + 关预览 + 清偏好
+    fn on_main_deactivated(&mut self, cx: &mut AsyncApp) {
+        #[cfg(target_os = "windows")]
+        if let Some(preview) = self.preview_hwnd {
+            let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+            if fg.0 as isize == preview {
+                if let Some((handle, _)) = &self.window {
+                    let _ = handle.update(cx, |_, window, _| window.activate_window());
+                }
+                return;
+            }
+        }
+        // 真的离开启动器：等同 Esc
+        self.dismiss_preview(cx);
+        if let Some((handle, _)) = self.window.take() {
             let _ = handle.update(cx, |_, window, _| window.remove_window());
         }
     }
@@ -1156,6 +1199,23 @@ impl WindowGuard {
             Ok(handle) => {
                 // 预览窗口不抢焦点（启动器焦点保持在搜索框）
                 self.preview_window = Some((handle, panel_slot.expect("preview panel entity")));
+                // 记录原生句柄：主窗失焦时区分"点了预览"（抢回焦点）与"真离开"（隐藏）
+                #[cfg(target_os = "windows")]
+                if let Some((h, _)) = &self.preview_window {
+                    let hwnd = h
+                        .update(cx, |_, window, _| {
+                            use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+                            window.window_handle().ok().and_then(|handle| {
+                                match handle.as_raw() {
+                                    RawWindowHandle::Win32(w) => Some(w.hwnd.get()),
+                                    _ => None,
+                                }
+                            })
+                        })
+                        .ok()
+                        .flatten();
+                    self.preview_hwnd = hwnd;
+                }
             }
             Err(e) => eprintln!("⚠ 打开预览窗口失败: {e:#}"),
         }
@@ -1813,6 +1873,7 @@ fn main() {
                 let mut show_ai = false;
                 let mut toggle_preview = false;
                 let mut dismiss_preview = false;
+                let mut main_deactivated = false;
                 let mut reposition_preview = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
@@ -1826,6 +1887,7 @@ fn main() {
                         AppSignal::ShowAi => show_ai = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                         AppSignal::TogglePreview => toggle_preview = true,
+                        AppSignal::MainDeactivated => main_deactivated = true,
                         AppSignal::DismissPreview => dismiss_preview = true,
                         AppSignal::RepositionPreview => reposition_preview = true,
                     }
@@ -1896,16 +1958,21 @@ fn main() {
                 if toggle_preview {
                     guard.toggle_preview(&mut cx);
                 }
-                // 主窗隐藏：关预览并重置偏好（下次唤起不再弹出）
-                if dismiss_preview {
-                    guard.dismiss_preview(&mut cx);
+                // 主窗失焦优先于 bounds 跟随：先决定"隐藏 or 抢回焦点"（用当前
+                // preview_hwnd 判断），reposition 重建预览窗放在其后，避免同批次
+                // 内重建导致失焦判断拿到新旧句柄错配
+                if main_deactivated {
+                    guard.on_main_deactivated(&mut cx);
                 }
-                // bounds 跟随：预览开着且主窗口在 → 重贴靠（重建预览窗口）
                 if reposition_preview && guard.preview_visible {
                     if let Some((_, launcher)) = &guard.window {
                         let launcher = launcher.clone();
                         guard.open_preview(&mut cx, &launcher);
                     }
+                }
+                // 主窗隐藏：关预览并重置偏好（下次唤起不再弹出）
+                if dismiss_preview {
+                    guard.dismiss_preview(&mut cx);
                 }
             }
             }

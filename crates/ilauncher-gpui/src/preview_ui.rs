@@ -13,6 +13,39 @@ use crate::i18n::t;
 use crate::preview::{self, FileMeta, FilePreview};
 use crate::Launcher;
 
+/// 预览窗永不抢占激活（Windows）：点击预览（如"计算 SHA256"）时
+/// 主窗口保持前台，不会触发主窗失焦自动隐藏。
+/// WS_EX_NOACTIVATE 从系统层面禁止点击激活；read-modify-write 保留
+/// gpui 已有的 exstyle（如 DirectComposition 的 NOREDIRECTIONBITMAP）。
+#[cfg(target_os = "windows")]
+fn disable_window_activation(window: &mut Window) {
+    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_NOACTIVATE,
+    };
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(h) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = windows::Win32::Foundation::HWND(h.hwnd.get() as *mut _);
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | (WS_EX_NOACTIVATE.0 as isize));
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE,
+        );
+    }
+}
+
 /// 哈希计算状态机：空闲（None）/ 结果
 #[derive(Debug, Clone)]
 enum HashState {
@@ -31,6 +64,9 @@ pub struct PreviewPanel {
     meta_gen: usize,
     hash: Option<HashState>,
     hash_gen: usize,
+    /// 首次 render 时已应用 WS_EX_NOACTIVATE（native 窗口创建完成后才能设）
+    #[cfg(target_os = "windows")]
+    activation_disabled: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -43,6 +79,8 @@ impl PreviewPanel {
             meta_gen: 0,
             hash: None,
             hash_gen: 0,
+            #[cfg(target_os = "windows")]
+            activation_disabled: false,
             _subscriptions: Vec::new(),
         };
         this.pull_state(&launcher, cx);
@@ -60,6 +98,9 @@ impl PreviewPanel {
         this._subscriptions.push(cx.observe_release_in(&launcher, window, |_, _, window, _| {
             window.remove_window();
         }));
+        // 注意：不能在这里设 WS_EX_NOACTIVATE——open_window 回调期内 native
+        // 窗口尚未创建，SetWindowLongPtrW 落在无效句柄上静默失败。改到首次
+        // render 时惰性应用（见 Render 实现）。
         this
     }
 
@@ -196,7 +237,14 @@ impl PreviewPanel {
 }
 
 impl Render for PreviewPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 首次 render 时 native 窗口已创建，此时加 WS_EX_NOACTIVATE 才有效：
+        // 点击预览（计算 SHA256/复制哈希）不抢主窗激活，主窗不会失焦自动隐藏
+        #[cfg(target_os = "windows")]
+        if !self.activation_disabled {
+            disable_window_activation(window);
+            self.activation_disabled = true;
+        }
         let theme = cx.theme().clone();
         let meta_block = self.entry.as_ref().map(|(name, path)| {
             let meta = self.meta.clone();
