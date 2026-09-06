@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][string]$Skin,
     [Parameter(Mandatory = $true)][string]$OutPng,
     [string]$Mode = 'bench',
@@ -23,8 +23,11 @@ if ($Skin -eq 'default') {
 # normal：空查询 → 验证空状态。ILAUNCHER_NO_AUTOHIDE=1 防失焦销毁（自动化截图用）
 $env:ILAUNCHER_NO_AUTOHIDE = '1'
 if ($Query -ne '') { $env:ILAUNCHER_DEV_QUERY = $Query }
-$args = if ($Mode -eq 'bench') { '--bench' } else { $null }
-$proc = Start-Process -FilePath $exe -ArgumentList $args -PassThru
+if ($Mode -eq 'bench') {
+    $proc = Start-Process -FilePath $exe -ArgumentList '--bench' -PassThru
+} else {
+    $proc = Start-Process -FilePath $exe -PassThru
+}
 Start-Sleep -Seconds 3
 
 Add-Type -AssemblyName System.Drawing

@@ -177,6 +177,65 @@ impl LuaCommandPlugin {
         )
     }
 
+    /// 内置：网页搜索（g/b/bd 等别名经 __keyword 区分搜索引擎）
+    pub fn web_search(sandbox: Arc<SandboxManager>) -> Self {
+        Self::new(
+            sandbox,
+            "cmd-web",
+            "网页搜索",
+            "搜索框直接 Google/Bing/百度搜索",
+            LuaScript {
+                keywords: vec![
+                    "g".to_string(),
+                    "google".to_string(),
+                    "bing".to_string(),
+                    "b".to_string(),
+                    "baidu".to_string(),
+                    "bd".to_string(),
+                    "百度".to_string(),
+                ],
+                usage: "g <关键词>".to_string(),
+                context: false,
+                icon: "🔍".to_string(),
+                source: WEB_LUA.into(),
+            },
+        )
+    }
+
+    /// 内置：清空回收站
+    pub fn empty_recycle_bin(sandbox: Arc<SandboxManager>) -> Self {
+        Self::new(
+            sandbox,
+            "cmd-emptybin",
+            "清空回收站",
+            "搜索框输入 emptybin 立即清空回收站",
+            LuaScript {
+                keywords: vec!["emptybin".to_string(), "清空回收站".to_string()],
+                usage: "emptybin".to_string(),
+                context: false,
+                icon: "🗑".to_string(),
+                source: EMPTYBIN_LUA.into(),
+            },
+        )
+    }
+
+    /// 内置：系统睡眠
+    pub fn system_sleep(sandbox: Arc<SandboxManager>) -> Self {
+        Self::new(
+            sandbox,
+            "cmd-sleep",
+            "睡眠命令",
+            "搜索框输入 sleep 立即让系统进入睡眠",
+            LuaScript {
+                keywords: vec!["sleep".to_string(), "睡眠".to_string()],
+                usage: "sleep".to_string(),
+                context: false,
+                icon: "🌙".to_string(),
+                source: SLEEP_LUA.into(),
+            },
+        )
+    }
+
     /// 插件私有配置覆写（测试注入 hosts_path 等；第三方脚本加载落地后供安装器使用）
     #[allow(dead_code)] // 当前仅测试消费
     pub fn set_setting(&self, key: impl Into<String>, value: impl Into<String>) {
@@ -192,9 +251,14 @@ impl LuaCommandPlugin {
         Ok(())
     }
 
-    /// 注入宿主 API + 本次调用的参数，加载脚本源码
-    /// 加载脚本 + 注入宿主 API/参数（Lua 实例交回调用方执行具体函数）
-    fn prepare(&self, args: &[String], selection: Option<&str>) -> Result<(Lua, Arc<Mutex<RunContext>>)> {
+    /// 注入宿主 API + 本次调用的参数，加载脚本源码。
+    /// keyword = 用户实际输入并命中的关键字（别名级，脚本据此区分多别名行为）
+    fn prepare(
+        &self,
+        args: &[String],
+        selection: Option<&str>,
+        keyword: &str,
+    ) -> Result<(Lua, Arc<Mutex<RunContext>>)> {
         let lua = Lua::new();
         Self::harden(&lua)?;
 
@@ -279,6 +343,7 @@ impl LuaCommandPlugin {
 
         // ── 本次调用的参数 ────────────────────────────────────────────────
         lua.globals().set("__args", lua.create_sequence_from(args.iter().map(|s| s.as_str()))?)?;
+        lua.globals().set("__keyword", keyword)?;
         lua.globals().set(
             "__selection",
             match selection {
@@ -298,8 +363,10 @@ impl LuaCommandPlugin {
         (kw, args)
     }
 
-    fn encode_result_id(&self, args: &[String]) -> String {
-        let mut id = self.script.keywords[0].to_string();
+    /// 编码 "关键字\u{1}arg1\u{1}arg2"。
+    /// 注意：编码用户实际命中的关键字（非规范名），execute 侧据此还原 __keyword 别名
+    fn encode_result_id(&self, kw: &str, args: &[String]) -> String {
+        let mut id = kw.to_string();
         for a in args {
             id.push('\u{1}');
             id.push_str(a);
@@ -307,8 +374,8 @@ impl LuaCommandPlugin {
         id
     }
 
-    fn result(&self, title: impl Into<String>, subtitle: impl Into<String>, args: &[String]) -> QueryResult {
-        QueryResult::new(self.encode_result_id(args), title)
+    fn result(&self, kw: &str, title: impl Into<String>, subtitle: impl Into<String>, args: &[String]) -> QueryResult {
+        QueryResult::new(self.encode_result_id(kw, args), title)
             .with_subtitle(subtitle)
             .with_icon(self.script.icon.clone())
             .with_score(COMMAND_SCORE)
@@ -335,13 +402,13 @@ impl Plugin for LuaCommandPlugin {
 
         // 上下文命令未选中文件：只给提示行（执行会再次兜底）
         if self.script.context && ctx.selection.is_none() {
-            return Ok(vec![self.result(self.script.usage.clone(), "先在主列表中选中一个文件（↑↓ 选择后输入关键字）", &[])]);
+            return Ok(vec![self.result(kw, self.script.usage.clone(), "先在主列表中选中一个文件（↑↓ 选择后输入关键字）", &[])]);
         }
 
         // 脚本的 preview(args, selection) → "标题", "副标题"；缺失/出错回退用法提示。
         // 注意：mlua 的 Value/Table 引用 Lua 状态，必须在 lua 存活的作用域内解析完，
         // 提取为普通 String 后再离开作用域（否则触发 "Lua instance is destroyed"）
-        let parsed = self.prepare(&args, ctx.selection.as_deref()).and_then(|(lua, _)| {
+        let parsed = self.prepare(&args, ctx.selection.as_deref(), kw).and_then(|(lua, _)| {
             let v = lua
                 .load("local a,b = preview(__args, __selection)\nreturn { title = a, subtitle = b }")
                 .eval::<Value>()
@@ -360,7 +427,7 @@ impl Plugin for LuaCommandPlugin {
         let (title, subtitle) =
             parsed.unwrap_or_else(|e: anyhow::Error| (self.script.usage.to_string(), format!("⚠ {e:#}")));
 
-        Ok(vec![self.result(title, subtitle, &args)])
+        Ok(vec![self.result(kw, title, subtitle, &args)])
     }
 
     fn execute(&self, result_id: &str, _action_id: &str) -> Result<ExecuteOutcome> {
@@ -369,7 +436,7 @@ impl Plugin for LuaCommandPlugin {
             return Err(anyhow!("Unknown command: {kw}"));
         }
         let selection = self.pending_selection.lock().clone();
-        let (lua, run_ctx) = self.prepare(&args, selection.as_deref())?;
+        let (lua, run_ctx) = self.prepare(&args, selection.as_deref(), &kw)?;
         let message = lua
             .load("return run(__args, __selection)")
             .eval::<Value>()
@@ -479,6 +546,62 @@ function run(args, selection)
     return "请先选中文件"
   end
   return ilauncher.file.sha256(selection)
+end
+"#;
+
+const WEB_LUA: &str = r#"
+local ENGINES = {
+  google = { name = "Google", url = "https://www.google.com/search?q=" },
+  bing   = { name = "Bing",   url = "https://www.bing.com/search?q=" },
+  baidu  = { name = "百度",   url = "https://www.baidu.com/s?wd=" },
+}
+
+local function resolve()
+  local kw = string.lower(__keyword)
+  if kw == "g" or kw == "google" then return ENGINES.google end
+  if kw == "b" or kw == "bing" then return ENGINES.bing end
+  if kw == "bd" or kw == "baidu" or kw == "百度" then return ENGINES.baidu end
+  return ENGINES.google
+end
+
+function preview(args, selection)
+  local e = resolve()
+  if #args == 0 then
+    return "搜索 " .. e.name, "用法: " .. __keyword .. " <关键词>"
+  end
+  return "搜索 " .. e.name, table.concat(args, " ")
+end
+
+function run(args, selection)
+  if #args == 0 then
+    return "用法: " .. __keyword .. " <关键词>"
+  end
+  local e = resolve()
+  local q = string.gsub(table.concat(args, " "), " ", "+")
+  ilauncher.open(e.url .. q)
+  return "搜索 " .. e.name .. ": " .. table.concat(args, " ")
+end
+"#;
+
+const EMPTYBIN_LUA: &str = r#"
+function preview(args, selection)
+  return "清空回收站", "立即删除回收站中的全部文件（不可恢复）"
+end
+
+function run(args, selection)
+  ilauncher.shell.run("powershell.exe", {"-NoProfile", "-Command", "Clear-RecycleBin -Force"})
+  return "回收站已清空"
+end
+"#;
+
+const SLEEP_LUA: &str = r#"
+function preview(args, selection)
+  return "让系统睡眠", "立即进入睡眠状态"
+end
+
+function run(args, selection)
+  ilauncher.shell.run("rundll32.exe", {"powrprof.dll,SetSuspendState", "0,1,0"})
+  return "已请求系统睡眠"
 end
 "#;
 
@@ -635,5 +758,72 @@ mod tests {
             )
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn web_search_alias_keyword_injection() {
+        // Restricted + 空权限：web 命令只用 ilauncher.open（不经权限检查）
+        let logger = Arc::new(Mutex::new(AuditLogger::in_memory(100)));
+        let p = LuaCommandPlugin::web_search(sandbox_with("cmd-web", vec![], &logger));
+
+        // 规范别名 g → Google
+        let rs = p.query(&QueryContext::new("g rust")).unwrap();
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs[0].title, "搜索 Google");
+        let outcome = p.execute(&rs[0].id, "run").unwrap();
+        assert_eq!(
+            outcome,
+            ExecuteOutcome::Open("https://www.google.com/search?q=rust".to_string())
+        );
+
+        // 别名 bd → 百度（execute 侧 __keyword 还原自 result_id）
+        let rs = p.query(&QueryContext::new("bd 编译 原理")).unwrap();
+        assert_eq!(rs[0].title, "搜索 百度");
+        let outcome = p.execute(&rs[0].id, "run").unwrap();
+        assert_eq!(
+            outcome,
+            ExecuteOutcome::Open("https://www.baidu.com/s?wd=编译+原理".to_string())
+        );
+
+        // 多词查询空格转 +
+        let rs = p.query(&QueryContext::new("bing hello world")).unwrap();
+        assert_eq!(rs[0].title, "搜索 Bing");
+        let outcome = p.execute(&rs[0].id, "run").unwrap();
+        assert_eq!(
+            outcome,
+            ExecuteOutcome::Open("https://www.bing.com/search?q=hello+world".to_string())
+        );
+
+        // 无参数：仅用法提示
+        let rs = p.query(&QueryContext::new("google")).unwrap();
+        assert_eq!(rs[0].title, "搜索 Google");
+        assert!(rs[0].subtitle.contains("用法"));
+    }
+
+    #[test]
+    fn emptybin_and_sleep_query_only() {
+        let logger = Arc::new(Mutex::new(AuditLogger::in_memory(100)));
+        let bin = LuaCommandPlugin::empty_recycle_bin(sandbox_with(
+            "cmd-emptybin",
+            vec![PluginPermission::ExecuteProgram],
+            &logger,
+        ));
+        let rs = bin.query(&QueryContext::new("emptybin")).unwrap();
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs[0].title, "清空回收站");
+        let rs = bin.query(&QueryContext::new("清空回收站")).unwrap();
+        assert_eq!(rs.len(), 1);
+
+        let logger = Arc::new(Mutex::new(AuditLogger::in_memory(100)));
+        let sleep = LuaCommandPlugin::system_sleep(sandbox_with(
+            "cmd-sleep",
+            vec![PluginPermission::ExecuteProgram],
+            &logger,
+        ));
+        let rs = sleep.query(&QueryContext::new("sleep")).unwrap();
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs[0].title, "让系统睡眠");
+        let rs = sleep.query(&QueryContext::new("睡眠")).unwrap();
+        assert_eq!(rs.len(), 1);
     }
 }

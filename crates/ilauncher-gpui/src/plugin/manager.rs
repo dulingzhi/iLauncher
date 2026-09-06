@@ -88,6 +88,9 @@ impl PluginManager {
         manager.register(Box::new(LuaCommandPlugin::hosts(manager.sandbox.clone())));
         manager.register(Box::new(LuaCommandPlugin::lock_workstation(manager.sandbox.clone())));
         manager.register(Box::new(LuaCommandPlugin::file_hash(manager.sandbox.clone())));
+        manager.register(Box::new(LuaCommandPlugin::web_search(manager.sandbox.clone())));
+        manager.register(Box::new(LuaCommandPlugin::empty_recycle_bin(manager.sandbox.clone())));
+        manager.register(Box::new(LuaCommandPlugin::system_sleep(manager.sandbox.clone())));
         manager
     }
 
@@ -156,6 +159,32 @@ impl PluginManager {
             security_level: SecurityLevel::System,
             custom_permissions: None,
             enabled: false,
+            timeout_ms: Some(1000),
+            max_memory_mb: Some(50),
+        });
+        // Lua 命令：web —— 只调 ilauncher.open（不经权限检查，open 由 Launcher 层执行），无权限需求
+        sandbox.register(SandboxConfig {
+            plugin_id: "cmd-web".to_string(),
+            security_level: SecurityLevel::Restricted,
+            custom_permissions: Some(HashSet::new()),
+            enabled: true,
+            timeout_ms: Some(1000),
+            max_memory_mb: Some(50),
+        });
+        // Lua 命令：emptybin / sleep —— 只允许执行外部程序（执行即审计）
+        sandbox.register(SandboxConfig {
+            plugin_id: "cmd-emptybin".to_string(),
+            security_level: SecurityLevel::Restricted,
+            custom_permissions: Some([PluginPermission::ExecuteProgram].into_iter().collect()),
+            enabled: true,
+            timeout_ms: Some(1000),
+            max_memory_mb: Some(50),
+        });
+        sandbox.register(SandboxConfig {
+            plugin_id: "cmd-sleep".to_string(),
+            security_level: SecurityLevel::Restricted,
+            custom_permissions: Some([PluginPermission::ExecuteProgram].into_iter().collect()),
+            enabled: true,
             timeout_ms: Some(1000),
             max_memory_mb: Some(50),
         });
@@ -293,9 +322,12 @@ mod tests {
                 "cmd-hosts".to_string(),
                 "cmd-lock".to_string(),
                 "cmd-hash".to_string(),
+                "cmd-web".to_string(),
+                "cmd-emptybin".to_string(),
+                "cmd-sleep".to_string(),
             ]
         );
-        assert_eq!(manager.sandbox().registered_count(), 5);
+        assert_eq!(manager.sandbox().registered_count(), 8);
     }
 
     #[test]
