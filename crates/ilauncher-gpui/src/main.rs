@@ -607,23 +607,6 @@ impl Launcher {
     }
 }
 
-/// 键盘提示胶囊：底部状态区右侧的圆角小药丸（↑↓ 选择 / Enter 打开 / Esc 隐藏）。
-/// 用"按键形状"提示按键，而不是把提示混进一句话里——文字只留给状态信息。
-fn kbd_pill(
-    label: impl Into<SharedString>,
-    theme: &gpui_kit::component::theme::Theme,
-) -> impl IntoElement {
-    div()
-        .px(px(6.))
-        .py(px(2.))
-        .rounded(theme.radius)
-        .border_1()
-        .border_color(theme.border)
-        .text_xs()
-        .text_color(theme.muted_foreground)
-        .child(label.into())
-}
-
 /// 空状态：无查询时的主区内容——邀请行动，而不是留白。
 /// 图标 + 一句话，居中，全部用弱化色。
 fn empty_state(theme: &gpui_kit::component::theme::Theme) -> gpui_kit::AnyElement {
@@ -817,9 +800,9 @@ impl Render for Launcher {
                         h_flex()
                             .items_center()
                             .gap_2()
-                            .child(kbd_pill(crate::i18n::t!("main.hint_select"), &theme))
-                            .child(kbd_pill(crate::i18n::t!("main.hint_open"), &theme))
-                            .child(kbd_pill(crate::i18n::t!("main.hint_hide"), &theme))
+                            .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_select"), &theme))
+                            .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_open"), &theme))
+                            .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_hide"), &theme))
                             .child(div().w(px(1.)).h(px(12.)).bg(theme.border))
                             .child(
                                 Button::new("quit")

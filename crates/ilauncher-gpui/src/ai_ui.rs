@@ -483,7 +483,12 @@ impl Render for AiChatPanel {
                 .w_full()
                 .items_center()
                 .gap_2()
-                .child(Input::new(&self.input).flex_1())
+                .child(
+                    Input::new(&self.input)
+                        .flex_1()
+                        .cleanable(true)
+                        .prefix(Icon::new(IconName::Search).size(px(15.)).text_color(theme.muted_foreground)),
+                )
                 .child(
                     Button::new("ai-send")
                         .small()
@@ -496,12 +501,23 @@ impl Render for AiChatPanel {
         main = main.child(
             h_flex()
                 .w_full()
+                .flex_shrink_0()
+                .items_center()
+                .justify_between()
+                .pt_1()
                 .child(
                     div().text_xs().text_color(theme.muted_foreground).child(if status.is_empty() {
-                        t!("ai.footer_hint").to_string()
+                        t!("ai.footer_status").to_string()
                     } else {
                         status
                     }),
+                )
+                .child(
+                    h_flex()
+                        .items_center()
+                        .gap_1()
+                        .child(crate::window_drag::kbd_pill(t!("ai.hint_send"), &theme))
+                        .child(crate::window_drag::kbd_pill(t!("main.hint_hide"), &theme)),
                 ),
         );
 

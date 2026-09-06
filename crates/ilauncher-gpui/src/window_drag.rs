@@ -14,8 +14,7 @@ use gpui_kit::component::*;
 use gpui_kit::component::theme::Theme;
 
 /// 窗口顶部条：左侧为拖动区（按住拖动窗口），右侧关闭按钮
-pub fn drag_strip(label: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {
-    h_flex()
+pub fn drag_strip(label: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {    h_flex()
         .id("window-drag-strip")
         .h(px(32.))
         .w_full()
@@ -64,4 +63,19 @@ fn close_button(theme: &Theme) -> impl IntoElement {
             window.remove_window();
         })
         .child("✕")
+}
+
+/// 键盘提示胶囊：页脚右侧的圆角小药丸（↑↓ 选择 / Enter 打开 / Esc 隐藏）。
+/// 用"按键形状"提示按键，而不是把提示混进一句话里——文字只留给状态信息。
+/// 主窗口与剪贴板/审计/插件/工作流/AI 各副窗口共用。
+pub fn kbd_pill(label: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {
+    div()
+        .px(px(6.))
+        .py(px(2.))
+        .rounded(theme.radius)
+        .border_1()
+        .border_color(theme.border)
+        .text_xs()
+        .text_color(theme.muted_foreground)
+        .child(label.into())
 }

@@ -276,15 +276,25 @@ impl Render for WorkflowPanel {
             .child(
                 h_flex()
                     .w_full()
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_between()
+                    .pt_1()
                     .child(
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(if status.is_empty() {
-                                t!("workflow.footer_hint").to_string()
+                                t!("workflow.footer_status").to_string()
                             } else {
                                 status
                             }),
+                    )
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap_1()
+                            .child(crate::window_drag::kbd_pill(t!("main.hint_hide"), &theme)),
                     ),
             )
     }

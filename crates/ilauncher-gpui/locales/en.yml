@@ -103,7 +103,8 @@ clipboard:
   copied_image: "Copied image #%{id} (%{preview})"
   copied_text: "Copied #%{id} (%{chars} chars)"
   copy_failed: "Copy failed: %{error}"
-  footer: "%{count} entries · ↑↓ select · Enter/click to copy · Esc close"
+  footer: "%{count} entries"
+  hint_copy: Enter copy
 
 audit:
   placeholder: Search plugin / event / detail…
@@ -112,7 +113,7 @@ audit:
   violations_desc: Show only violation attempt events (ViolationAttempt)
   export: Export JSON
   clear: Clear
-  footer: "%{count} entries · ↑↓ select · Esc close"
+  footer: "%{count} entries"
   cleared: Audit log cleared
   exported_to: "Exported to %{path}"
   export_failed: "Export failed: %{error}"
@@ -156,7 +157,6 @@ plugins:
   subtitle: "%{desc} · %{downloads} downloads · %{rating} rating"
   install: Install
   uninstall: Uninstall
-  footer_hint: Esc to close
   refresh: Refresh
 
 workflow:
@@ -182,7 +182,7 @@ workflow:
   subtitle_with_desc: "%{subtitle} · %{desc}"
   run: Run
   delete: Delete
-  footer_hint: Drop JSON into the workflows directory and press Refresh · Esc to close
+  footer_status: Drop JSON into the workflows directory and press Refresh
 
 ai:
   placeholder_input: Type a message, Enter to send…
@@ -206,6 +206,7 @@ ai:
   role_ai: AI
   empty_hint: Type a message to start, or pick a history chat on the left
   send: Send
-  footer_hint: Esc close · Enter send · Markdown rendering (no syntax highlighting)
+  footer_status: Markdown rendering (no syntax highlighting)
+  hint_send: Enter send
   code: code
   code_lang: "%{lang} · code"

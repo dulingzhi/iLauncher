@@ -183,7 +183,16 @@ impl Render for ClipboardPanel {
             .gap_2()
             .bg(theme.background)
             .text_color(theme.foreground)
-            .child(Input::new(&self.input).w_full())
+            .child(
+                Input::new(&self.input)
+                    .w_full()
+                    .cleanable(true)
+                    .prefix(
+                        Icon::new(IconName::Search)
+                            .size(px(15.))
+                            .text_color(theme.muted_foreground),
+                    ),
+            )
             .child(
                 div()
                     .id("clipboard-results")
@@ -234,14 +243,29 @@ impl Render for ClipboardPanel {
                     ),
             )
             .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(if status.is_empty() {
-                        t!("clipboard.footer", count = total).to_string()
-                    } else {
-                        status
-                    }),
+                h_flex()
+                    .w_full()
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_between()
+                    .pt_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(if status.is_empty() {
+                                t!("clipboard.footer", count = total).to_string()
+                            } else {
+                                status
+                            }),
+                    )
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(crate::window_drag::kbd_pill(t!("clipboard.hint_copy"), &theme))
+                            .child(crate::window_drag::kbd_pill(t!("main.hint_hide"), &theme)),
+                    ),
             )
     }
 }

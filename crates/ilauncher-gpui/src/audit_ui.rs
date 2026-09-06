@@ -200,7 +200,16 @@ impl Render for AuditPanel {
                             .child(t!("audit.violations_desc").to_string()),
                     ),
             )
-            .child(Input::new(&self.input).w_full())
+            .child(
+                Input::new(&self.input)
+                    .w_full()
+                    .cleanable(true)
+                    .prefix(
+                        Icon::new(IconName::Search)
+                            .size(px(15.))
+                            .text_color(theme.muted_foreground),
+                    ),
+            )
             .child(
                 div()
                     .id("audit-results")
@@ -269,7 +278,10 @@ impl Render for AuditPanel {
             .child(
                 h_flex()
                     .w_full()
+                    .flex_shrink_0()
+                    .items_center()
                     .justify_between()
+                    .pt_1()
                     .child(
                         div()
                             .text_xs()
@@ -282,16 +294,21 @@ impl Render for AuditPanel {
                     )
                     .child(
                         h_flex()
+                            .items_center()
                             .gap_2()
+                            .child(crate::window_drag::kbd_pill(t!("main.hint_hide"), &theme))
+                            .child(div().w(px(1.)).h(px(12.)).bg(theme.border))
                             .child(
                                 Button::new("audit-export")
                                     .small()
+                                    .outline()
                                     .label(t!("audit.export").to_string())
                                     .on_click(cx.listener(|this, _, _, cx| this.export(cx))),
                             )
                             .child(
                                 Button::new("audit-clear")
                                     .small()
+                                    .outline()
                                     .label(t!("audit.clear").to_string())
                                     .on_click(cx.listener(|this, _, _, cx| this.clear_all(cx))),
                             ),

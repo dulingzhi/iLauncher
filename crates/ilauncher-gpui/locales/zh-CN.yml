@@ -103,7 +103,8 @@ clipboard:
   copied_image: "已复制图片 #%{id}（%{preview}）"
   copied_text: "已复制 #%{id}（%{chars} 字符）"
   copy_failed: "复制失败: %{error}"
-  footer: "%{count} 条历史 · ↑↓ 选择 · Enter/点击 复制 · Esc 关闭"
+  footer: "%{count} 条历史"
+  hint_copy: Enter 复制
 
 audit:
   placeholder: 搜索插件 / 事件 / 详情…
@@ -112,7 +113,7 @@ audit:
   violations_desc: 仅显示违规尝试事件（ViolationAttempt）
   export: 导出 JSON
   clear: 清空
-  footer: "%{count} 条审计 · ↑↓ 选择 · Esc 关闭"
+  footer: "%{count} 条审计"
   cleared: 审计日志已清空
   exported_to: "已导出到 %{path}"
   export_failed: "导出失败: %{error}"
@@ -156,7 +157,6 @@ plugins:
   subtitle: "%{desc} · %{downloads} 下载 · %{rating} 分"
   install: 安装
   uninstall: 卸载
-  footer_hint: Esc 关闭
   refresh: 刷新
 
 workflow:
@@ -182,7 +182,7 @@ workflow:
   subtitle_with_desc: "%{subtitle} · %{desc}"
   run: 运行
   delete: 删除
-  footer_hint: JSON 放入 workflows 目录后点刷新 · Esc 关闭
+  footer_status: JSON 放入 workflows 目录后点刷新
 
 ai:
   placeholder_input: 输入消息，Enter 发送…
@@ -206,6 +206,7 @@ ai:
   role_ai: AI
   empty_hint: 输入消息开始对话，或在左侧选择历史会话
   send: 发送
-  footer_hint: Esc 关闭 · Enter 发送 · Markdown 渲染（无语法高亮）
+  footer_status: Markdown 渲染（无语法高亮）
+  hint_send: Enter 发送
   code: 代码
   code_lang: "%{lang} · 代码"

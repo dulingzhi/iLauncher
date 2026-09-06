@@ -271,7 +271,18 @@ impl Render for MarketPanel {
             );
 
         if mode == MarketMode::Market {
-            root = root.child(Input::new(&self.input).w_full()).child(
+            root = root
+                .child(
+                    Input::new(&self.input)
+                        .w_full()
+                        .cleanable(true)
+                        .prefix(
+                            Icon::new(IconName::Search)
+                                .size(px(15.))
+                                .text_color(theme.muted_foreground),
+                        ),
+                )
+                .child(
                 div()
                     .id("market-results")
                     .flex_1()
@@ -405,25 +416,36 @@ impl Render for MarketPanel {
         root.child(
             h_flex()
                 .w_full()
+                .flex_shrink_0()
+                .items_center()
                 .justify_between()
+                .pt_1()
                 .child(
                     div()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child(if status.is_empty() { t!("plugins.footer_hint").to_string() } else { status }),
+                        .child(if status.is_empty() { String::new() } else { status }),
                 )
                 .child(
-                    Button::new("market-refresh")
-                        .small()
-                        .label(t!("plugins.refresh").to_string())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.installed = this.state.registry.list();
-                            if this.mode == MarketMode::Market {
-                                this.search_market(cx);
-                            } else {
-                                cx.notify();
-                            }
-                        })),
+                    h_flex()
+                        .items_center()
+                        .gap_2()
+                        .child(crate::window_drag::kbd_pill(t!("main.hint_hide"), &theme))
+                        .child(div().w(px(1.)).h(px(12.)).bg(theme.border))
+                        .child(
+                            Button::new("market-refresh")
+                                .small()
+                                .outline()
+                                .label(t!("plugins.refresh").to_string())
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.installed = this.state.registry.list();
+                                    if this.mode == MarketMode::Market {
+                                        this.search_market(cx);
+                                    } else {
+                                        cx.notify();
+                                    }
+                                })),
+                        ),
                 ),
         )
     }
