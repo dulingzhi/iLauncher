@@ -211,6 +211,25 @@ gpui-component = { version = "0.6" }
 - `--bench` 滚动基准命令：`ilauncher-gpui --bench`（后台 8ms 驱动滚动 +
   on_next_frame 计数 5s）。
 
+### 4.7 坑位清单（GPUI 实战记录）
+
+**事件派发期间禁止同步调用会泵窗口消息的系统 API**（2026-09-06 踩坑，
+5 个崩溃 dump 同因，修复见 a69c199）。
+
+- 症状：回车执行打开类操作（文件 / `ExecuteOutcome::Open` URL）进程直接消失，
+  dump 为 `0xC0000409 FAST_FAIL_FATAL_APP_EXIT`，无任何 Rust panic 输出到可见终端。
+- 链条：按键 handler 内同步 `opener::open` → Windows `ShellExecuteW` 泵消息 →
+  目标应用前台化、启动器失焦 → `observe_window_activation` 回调 `remove_window()`
+  → 与派发中持有的 gpui-pre App `RefCell` 可变借用重入 →
+  "RefCell already borrowed"（不可展开 panic）→ fastfail 崩溃。
+- 规则：凡 `opener::open` / `ShellExecute` / 模态对话框等会泵消息或前台化其他
+  窗口的调用，一律 `cx.spawn` + 短延时推迟到当前派发结束后执行
+  （`launch_selected` 的 File/Open 分支是范式）；纯内存副作用（剪贴板、状态栏
+  通知）无此风险，可同步执行。
+- 排查路径备忘：dump 用 Windows Kits `cdb.exe -z <dmp> -y <pdb目录>` 分析；
+  fastfail 栈已被 RaiseFailFast 冲掉，用 `RUST_BACKTRACE=full` 复现拿真实 panic
+  栈；回归脚本 `scripts/repro-enter.ps1`。
+
 ## 5. 风险与对策
 
 | 风险 | 等级 | 对策 |
