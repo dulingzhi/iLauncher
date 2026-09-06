@@ -696,15 +696,23 @@ impl Render for Launcher {
             )
             .child(
                 // Listary 风格结果区：节标题 + 两行式大图标行 + Ctrl+N 提示
+                // 布局踩坑实录：uniform_list 的高度只认显式值——祖先 flex basis 0%
+                // （flex_1）、自身 flex、fit-content 全部实测塌成 0；唯一稳定组合是
+                // 祖先 flex_grow_1 + 列表 h_full。行宽同理：ListItem 本体是 h_flex，
+                // 必须 w_full，否则行宽 = 内容自然宽（右侧留白、路径反被截断）。
                 div()
                     .id("results-wrap")
-                    .flex_1()
-                    .size_full()
+                    .flex_grow_1()
+                    .min_w_0()
+                    .min_h_0()
                     .child(if show_empty {
                         empty_state(&theme)
                     } else {
                         v_flex()
-                            .size_full()
+                            .w_full()
+                            .h_full()
+                            .min_w_0()
+                            .min_h_0()
                             .child(
                                 div()
                                     .px_1()
@@ -748,9 +756,12 @@ impl Render for Launcher {
                                                     None
                                                 });
                                                 // gpui-component ListItem：选中/悬停色全部由
-                                                // theme tokens（list_active / list_hover）驱动
+                                                // theme tokens（list_active / list_hover）驱动。
+                                                // w_full 关键：ListItem 本体是 h_flex，不设宽则
+                                                // 行宽退化为内容自然宽（右侧留白 + 路径被截断）
                                                 ListItem::new(ix)
                                                     .selected(is_selected)
+                                                    .w_full()
                                                     .h(px(54.))
                                                     .on_click({
                                                         let launcher = launcher.clone();
@@ -801,7 +812,12 @@ impl Render for Launcher {
                                             .collect::<Vec<_>>()
                                     }
                                 })
-                                .size_full()
+                                // 不给 flex（flex 会让测量高度塌 0），高度靠 h_full
+                                // 百分比（祖先链 definite 时能正常解析）
+                                .w_full()
+                                .h_full()
+                                .min_w_0()
+                                .min_h_0()
                                 .track_scroll(&self.scroll)
                                 .into_any_element(),
                             )
@@ -995,8 +1011,9 @@ impl WindowGuard {
         }
 
         // 重建窗口（Esc/失焦销毁后首次唤起 / 初始唤起），主显示器居中
+        // 预览已拆为独立窗口（Alt+P），主窗口保持 Listary 式紧凑尺寸
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 570., 350.))),
             ..make_window_options()
         };
         let source = self.make_source();
