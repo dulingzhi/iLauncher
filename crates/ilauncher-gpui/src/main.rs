@@ -124,6 +124,9 @@ enum AppSignal {
     SetTheme(bool),
     /// Alt+P：切换文件预览窗口（独立窗口，贴主窗口右边框）
     TogglePreview,
+    /// 主窗口隐藏（Esc/失焦）：关闭预览窗口并重置显隐偏好，
+    /// 下次唤起主窗口不再自动弹出预览
+    DismissPreview,
     /// 主窗口 bounds 变化：预览窗口重新贴靠（gpui-pre 无窗口移动 API，重建实现）
     RepositionPreview,
 }
@@ -183,9 +186,14 @@ impl Launcher {
         // 订阅必须持有（ dropped 即失效），挂到 _subscriptions。
         // ILAUNCHER_NO_AUTOHIDE=1 时禁用（自动化冒烟用，窗口不随失焦销毁）
         let focus_lost_sub = if std::env::var("ILAUNCHER_NO_AUTOHIDE").is_err() {
-            Some(cx.observe_window_activation(window, |_, window, _| {
-                if !window.is_window_active() {
-                    window.remove_window();
+            Some(cx.observe_window_activation(window, {
+                let tx = tx.clone();
+                move |_, window, _| {
+                    if !window.is_window_active() {
+                        // 主窗隐藏 = 本次会话结束：预览随之关闭且下次不自动弹出
+                        let _ = tx.send(AppSignal::DismissPreview);
+                        window.remove_window();
+                    }
                 }
             }))
         } else {
@@ -654,7 +662,11 @@ impl Render for Launcher {
                     "down" => this.move_selection(1, cx),
                     "enter" => this.launch_selected(cx),
                     // gpui-pre 无 hide API：销毁窗口，唤起时由 Watcher 重建
-                    "escape" => window.remove_window(),
+                    "escape" => {
+                        // 主窗隐藏 = 本次会话结束：预览随之关闭且下次不自动弹出
+                        let _ = this.tx.send(AppSignal::DismissPreview);
+                        window.remove_window();
+                    }
                     _ => {}
                 }
             }))
@@ -1051,16 +1063,8 @@ impl WindowGuard {
                 });
                 println!("SUMMON_REOPEN_MS {:.1}", pressed_at.elapsed().as_secs_f64() * 1000.0);
                 self.window = Some((handle, launcher.clone()));
-                // 预览窗口偏好开启时跟随重建（贴新主窗口右边框）
-                launcher.update(cx, |l, cx| {
-                    l.set_preview_open(self.preview_visible, cx);
-                    if self.preview_visible {
-                        l.schedule_preview(cx);
-                    }
-                });
-                if self.preview_visible {
-                    self.open_preview(cx, &launcher);
-                }
+                // 不恢复预览窗口：预览属于当前这次呼出的会话状态，
+                // 主窗口隐藏（Esc/失焦）即被 DismissPreview 清掉，重开不再弹出
             }
             Err(e) => eprintln!("⚠ 重建窗口失败: {e:#}"),
         }
@@ -1068,6 +1072,11 @@ impl WindowGuard {
 
     /// Alt+P：翻转预览窗口显隐偏好并落窗口
     fn toggle_preview(&mut self, cx: &mut AsyncApp) {
+        if self.window.is_none() {
+            // 主窗不在：预览无从附着，保持关闭（避免残留偏好被 reposition 误弹出）
+            self.preview_visible = false;
+            return;
+        }
         self.preview_visible = !self.preview_visible;
         if self.preview_visible {
             if let Some((_, launcher)) = &self.window {
@@ -1091,6 +1100,17 @@ impl WindowGuard {
     fn close_preview(&mut self, cx: &mut AsyncApp) {
         if let Some((handle, _)) = self.preview_window.take() {
             let _ = handle.update(cx, |_, window, _| window.remove_window());
+        }
+    }
+
+    /// 主窗口隐藏：关预览并重置显隐偏好——预览属于单次呼出的会话状态，
+    /// 主窗重新打开后不应再弹出（用户明确要求）
+    fn dismiss_preview(&mut self, cx: &mut AsyncApp) {
+        self.preview_visible = false;
+        self.close_preview(cx);
+        if let Some((_, launcher)) = &self.window {
+            let launcher = launcher.clone();
+            let _ = launcher.update(cx, |l: &mut Launcher, cx| l.set_preview_open(false, cx));
         }
     }
 
@@ -1120,6 +1140,9 @@ impl WindowGuard {
         };
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            // 关键：不抢激活态——SW_SHOWNOACTIVATE 显示，
+            // 否则主窗口失焦会触发自动隐藏（启动器语义）
+            focus: false,
             ..make_panel_window_options()
         };
         let launcher = launcher.clone();
@@ -1789,6 +1812,7 @@ fn main() {
                 let mut show_workflows = false;
                 let mut show_ai = false;
                 let mut toggle_preview = false;
+                let mut dismiss_preview = false;
                 let mut reposition_preview = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
@@ -1802,6 +1826,7 @@ fn main() {
                         AppSignal::ShowAi => show_ai = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
                         AppSignal::TogglePreview => toggle_preview = true,
+                        AppSignal::DismissPreview => dismiss_preview = true,
                         AppSignal::RepositionPreview => reposition_preview = true,
                     }
                 }
@@ -1870,6 +1895,10 @@ fn main() {
                 }
                 if toggle_preview {
                     guard.toggle_preview(&mut cx);
+                }
+                // 主窗隐藏：关预览并重置偏好（下次唤起不再弹出）
+                if dismiss_preview {
+                    guard.dismiss_preview(&mut cx);
                 }
                 // bounds 跟随：预览开着且主窗口在 → 重贴靠（重建预览窗口）
                 if reposition_preview && guard.preview_visible {
