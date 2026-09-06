@@ -26,6 +26,7 @@ mod tray_icon_gen;
 mod window_drag;
 mod plugin;
 mod preview;
+mod preview_ui;
 mod search;
 mod settings;
 mod skins;
@@ -121,6 +122,10 @@ enum AppSignal {
     ShowSettings,
     /// 托盘"深色主题"：切换主题模式（true = 深色）
     SetTheme(bool),
+    /// Alt+P：切换文件预览窗口（独立窗口，贴主窗口右边框）
+    TogglePreview,
+    /// 主窗口 bounds 变化：预览窗口重新贴靠（gpui-pre 无窗口移动 API，重建实现）
+    RepositionPreview,
 }
 
 // ── 主视图 ──────────────────────────────────────────────────────────────────
@@ -149,6 +154,10 @@ struct Launcher {
     audit_logger: Arc<Mutex<audit::AuditLogger>>,
     /// 插件管理器（搜索扇出 + 执行分发；沙盒权限检查写审计）
     plugins: Arc<plugin::PluginManager>,
+    /// 向 WindowGuard 发信号（Alt+P 预览切换 / 设置入口 / 预览重贴靠）
+    tx: mpsc::Sender<AppSignal>,
+    /// 预览窗口是否打开（WindowGuard 切换时回写；关闭时跳过预览读盘）
+    preview_open: bool,
     /// 工作流引擎（关键词精确匹配触发 + 后台执行）
     #[cfg(target_os = "windows")]
     workflows: Arc<workflow::WorkflowEngine>,
@@ -162,6 +171,7 @@ impl Launcher {
         source: SearchSource,
         audit_logger: Arc<Mutex<audit::AuditLogger>>,
         plugins: Arc<plugin::PluginManager>,
+        tx: mpsc::Sender<AppSignal>,
         #[cfg(target_os = "windows")] workflows: Arc<workflow::WorkflowEngine>,
     ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(crate::i18n::t!("main.placeholder").to_string()));
@@ -184,6 +194,7 @@ impl Launcher {
         let bench = std::env::args().any(|a| a == "--bench");
         // bench 模式保持 10 万条全量以测虚拟列表；正常运行空查询显示空（启动器惯例）
         let entries = if bench { std::rc::Rc::new(demo_entries()) } else { std::rc::Rc::new(Vec::new()) };
+        let tx_bounds = tx.clone();
 
         let mut this = Self {
             input: input.clone(),
@@ -205,6 +216,8 @@ impl Launcher {
             notice: None,
             audit_logger,
             plugins,
+            tx,
+            preview_open: false,
             #[cfg(target_os = "windows")]
             workflows,
             _subscriptions: Vec::new(),
@@ -225,6 +238,11 @@ impl Launcher {
         if let Some(sub) = focus_lost_sub {
             this._subscriptions.push(sub);
         }
+        // 主窗口移动/缩放 → 预览窗口重新贴靠（gpui-pre 无窗口移动 API，
+        // 由 WindowGuard 重建预览窗口实现"跟随"）
+        this._subscriptions.push(cx.observe_window_bounds(window, move |_, _, _| {
+            let _ = tx_bounds.send(AppSignal::RepositionPreview);
+        }));
         // 开发调试：ILAUNCHER_DEV_QUERY 预填查询并立即搜索（自动化截图/冒烟用）
         if let Ok(q) = std::env::var("ILAUNCHER_DEV_QUERY") {
             if !q.is_empty() && !this.bench {
@@ -233,6 +251,28 @@ impl Launcher {
             }
         }
         this
+    }
+
+    /// 预览窗口镜像状态（preview_ui 消费）
+    pub(crate) fn preview_state(&self) -> PreviewState {
+        let entry = self
+            .entries
+            .get(self.selected)
+            .filter(|e| e.origin == search::EntryOrigin::File)
+            .map(|e| (e.name.clone(), e.path.clone()));
+        PreviewState {
+            entry,
+            preview: self.preview.clone(),
+        }
+    }
+
+    /// WindowGuard 切换预览窗口时回写
+    pub(crate) fn set_preview_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.preview_open = open;
+        if !open {
+            self.preview = None;
+        }
+        cx.notify();
     }
 
     /// 输入防抖：只执行最新一代查询，暂停输入 DEBOUNCE_MS 后真正搜索
@@ -295,7 +335,8 @@ impl Launcher {
         cx.notify();
     }
 
-    /// 选中变化 → 防抖读取预览（方向键连按不重复读盘；preview_gen 丢弃过期结果）
+    /// 选中变化 → 防抖读取预览（方向键连按不重复读盘；preview_gen 丢弃过期结果）。
+    /// 预览窗口关闭时跳过读盘（状态经 set_preview_open 清空）
     fn schedule_preview(&mut self, cx: &mut Context<Self>) {
         self.preview_gen = self.preview_gen.wrapping_add(1);
         let gen_id = self.preview_gen;
@@ -305,7 +346,7 @@ impl Launcher {
             .get(self.selected)
             .map(|e| e.origin == search::EntryOrigin::File)
             .unwrap_or(false);
-        if !is_file {
+        if !self.preview_open || !is_file {
             self.preview = None;
             cx.notify();
             return;
@@ -471,133 +512,6 @@ impl Launcher {
         self.input.update(cx, |state, cx| state.focus(window, cx));
     }
 
-    /// 预览面板：卡片式（全窗口唯一的"盒子"：圆角 + 细边框 + 分隔头），
-    /// 与结果列表的呼吸感形成视觉层级；内容区按类型分派（图片/文本/二进制/错误）
-    fn render_preview_panel(
-        &self,
-        theme: &gpui_kit::component::theme::Theme,
-    ) -> gpui_kit::AnyElement {
-        use preview::FileType;
-
-        let muted = theme.muted_foreground;
-        let card = || {
-            v_flex()
-                .id("preview-panel")
-                .size_full()
-                .rounded(theme.radius_lg)
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.background)
-                .overflow_hidden()
-        };
-
-        let Some((path, result)) = &self.preview else {
-            return card()
-                .items_center()
-                .justify_center()
-                .gap_2()
-                .child(
-                    Icon::new(IconName::Inbox)
-                        .size(px(22.))
-                        .text_color(muted),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(crate::i18n::t!("main.preview_select").to_string()),
-                )
-                .into_any_element();
-        };
-
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
-        // 头：文件图标 + 文件名（截断）+ 元信息（类型/大小/修改时间）
-        let header = h_flex()
-            .w_full()
-            .flex_shrink_0()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                Icon::new(IconName::FileText)
-                    .size(px(14.))
-                    .text_color(muted),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .truncate()
-                    .child(name),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(match result {
-                        Ok(p) => {
-                            let ext = if p.extension.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" (.{})", p.extension)
-                            };
-                            format!(
-                                "{}{} · {} · 修改 {} UTC",
-                                p.file_type.label(),
-                                ext,
-                                preview::human_size(p.size),
-                                preview::format_unix_utc(p.modified_unix),
-                            )
-                        }
-                        Err(_) => crate::i18n::t!("main.preview_meta_error").to_string(),
-                    }),
-            );
-
-        let body: gpui_kit::AnyElement = match result {
-            Ok(p) => match p.file_type {
-                FileType::Image => img(path.clone())
-                    .max_w_full()
-                    .max_h_full()
-                    .into_any_element(),
-                FileType::Text | FileType::Markdown | FileType::Json | FileType::Code => div()
-                    .id("preview-text")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .p_3()
-                    .text_xs()
-                    .child(preview::head_lines(&p.content, preview::MAX_PREVIEW_LINES).to_string())
-                    .into_any_element(),
-                FileType::Binary => div()
-                    .size_full()
-                    .items_center()
-                    .justify_center()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(crate::i18n::t!("main.preview_binary").to_string())
-                    .into_any_element(),
-            },
-            Err(e) => div()
-                .size_full()
-                .items_center()
-                .justify_center()
-                .p_3()
-                .text_xs()
-                .text_color(muted)
-                .child(e.clone())
-                .into_any_element(),
-        };
-
-        card().child(header).child(body).into_any_element()
-    }
-
     /// --bench：后台 8ms 一次滚动驱动 + on_next_frame 自续计数，测真实交付帧率
     fn run_bench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let total = self.entries.len();
@@ -661,6 +575,12 @@ impl Launcher {
     }
 }
 
+/// 预览窗口镜像快照（Launcher.preview_state 返回）
+pub(crate) struct PreviewState {
+    pub entry: Option<(String, String)>,
+    pub preview: Option<(std::path::PathBuf, Result<preview::FilePreview, String>)>,
+}
+
 /// 空状态：无查询时的主区内容——邀请行动，而不是留白。
 /// 图标 + 一句话，居中，全部用弱化色。
 fn empty_state(theme: &gpui_kit::component::theme::Theme) -> gpui_kit::AnyElement {
@@ -710,7 +630,26 @@ impl Render for Launcher {
             .id("root")
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                match ev.keystroke.key.as_str() {
+                let ks = &ev.keystroke;
+                // Alt+P：切换文件预览窗口（独立窗口，贴主窗口右边框）
+                if ks.modifiers.alt && ks.key.eq_ignore_ascii_case("p") {
+                    let _ = this.tx.send(AppSignal::TogglePreview);
+                    return;
+                }
+                // Ctrl+1..9：直接启动对应行（Listary 风格快捷键提示的真实行为）
+                if ks.modifiers.control && !ks.modifiers.alt && ks.key.len() == 1 {
+                    if let Some(d) = ks.key.chars().next().and_then(|c| c.to_digit(10)) {
+                        if (1..=9).contains(&d) {
+                            let ix = d as usize - 1;
+                            if ix < this.entries.len() {
+                                this.selected = ix;
+                                this.launch_selected(cx);
+                            }
+                            return;
+                        }
+                    }
+                }
+                match ks.key.as_str() {
                     "up" => this.move_selection(-1, cx),
                     "down" => this.move_selection(1, cx),
                     "enter" => this.launch_selected(cx),
@@ -726,110 +665,148 @@ impl Render for Launcher {
             .text_color(theme.foreground)
             .child(window_drag::drag_strip("iLauncher", &theme))
             .child(
-                // 命令栏：全窗口的视觉焦点。搜索图标前缀 + 可清除，
-                // 其余元素全部保持安静，把注意力让给它
-                Input::new(&self.input)
+                // 命令栏：Listary 风格——无框无底色输入 + 底部一条分隔线，
+                // 右侧齿轮进设置；视觉焦点全靠下划线与字号
+                v_flex()
                     .w_full()
-                    .cleanable(true)
-                    .prefix(
-                        Icon::new(IconName::Search)
-                            .size(px(15.))
-                            .text_color(theme.muted_foreground),
-                    ),
+                    .child(
+                        Input::new(&self.input)
+                            .w_full()
+                            .appearance(false)
+                            .cleanable(true)
+                            .prefix(
+                                Icon::new(IconName::Search)
+                                    .size(px(15.))
+                                    .text_color(theme.muted_foreground),
+                            )
+                            .suffix(
+                                Button::new("open-settings")
+                                    .outline()
+                                    .small()
+                                    .icon(IconName::Settings)
+                                    .on_click({
+                                        let tx = self.tx.clone();
+                                        move |_, _, _| {
+                                            let _ = tx.send(AppSignal::ShowSettings);
+                                        }
+                                    }),
+                            ),
+                    )
+                    .child(div().w_full().h(px(1.)).bg(theme.border)),
             )
             .child(
+                // Listary 风格结果区：节标题 + 两行式大图标行 + Ctrl+N 提示
                 div()
-                    .id("split-wrap")
+                    .id("results-wrap")
                     .flex_1()
                     .size_full()
-                    .child(
-                        h_resizable("main-split")
-                    .child(
-                        resizable_panel()
-                            .min_size(px(360.))
+                    .child(if show_empty {
+                        empty_state(&theme)
+                    } else {
+                        v_flex()
+                            .size_full()
                             .child(
                                 div()
-                                    .id("results")
-                                    .size_full()
-                                    .child(if show_empty {
-                                        empty_state(&theme)
-                                    } else {
-                                        uniform_list("result-list", entries.len(), {
-                                            let launcher = launcher.clone();
-                                            let theme_for_icons = theme_for_icons.clone();
-                                            move |visible_range, _window, _cx| {
-                                                visible_range
-                                                    .map(|ix| {
-                                                        let entry = &entries[ix];
-                                                        let is_selected = ix == selected;
-                                                        // 行首图标：插件渲染 emoji 图标，文件用统一文档图标
-                                                        let row_icon: gpui_kit::AnyElement =
-                                                            match &entry.origin {
-                                                                search::EntryOrigin::Plugin {
-                                                                    icon: Some(i),
-                                                                    ..
-                                                                } => div().child(i.clone()).into_any_element(),
-                                                                _ => Icon::new(IconName::FileText)
-                                                                    .size(px(14.))
-                                                                    .text_color(theme_for_icons.muted_foreground)
-                                                                    .into_any_element(),
-                                                            };
-                                                        // gpui-component ListItem：选中/悬停色全部由
-                                                        // theme tokens（list_active / list_hover）驱动
-                                                        ListItem::new(ix)
-                                                            .selected(is_selected)
-                                                            .on_click({
-                                                                let launcher = launcher.clone();
-                                                                move |_, _, cx| {
-                                                                    launcher.update(cx, |this: &mut Launcher, cx| {
-                                                                        this.selected = ix;
-                                                                        this.schedule_preview(cx);
-                                                                        cx.notify();
-                                                                    });
-                                                                }
-                                                            })
+                                    .px_1()
+                                    .pb_1()
+                                    .text_xs()
+                                    .font_semibold()
+                                    .text_color(theme.muted_foreground)
+                                    .child(crate::i18n::t!("main.recent_files").to_string()),
+                            )
+                            .child(
+                                uniform_list("result-list", entries.len(), {
+                                    let launcher = launcher.clone();
+                                    let theme_for_icons = theme_for_icons.clone();
+                                    move |visible_range, _window, _cx| {
+                                        visible_range
+                                            .map(|ix| {
+                                                let entry = &entries[ix];
+                                                let is_selected = ix == selected;
+                                                // 行首图标：插件渲染 emoji 图标，文件用统一文档图标
+                                                let row_icon: gpui_kit::AnyElement =
+                                                    match &entry.origin {
+                                                        search::EntryOrigin::Plugin {
+                                                            icon: Some(i),
+                                                            ..
+                                                        } => div().child(i.clone()).into_any_element(),
+                                                        _ => Icon::new(IconName::FileText)
+                                                            .size(px(18.))
+                                                            .text_color(theme_for_icons.muted_foreground)
+                                                            .into_any_element(),
+                                                    };
+                                                // 快捷键提示：前 9 行给 Ctrl+N（Listary 同款）
+                                                let shortcut = std::cell::RefCell::new(if ix < 9 {
+                                                    Some(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme_for_list.muted_foreground)
+                                                            .child(format!("Ctrl+{}", ix + 1))
+                                                            .into_any_element(),
+                                                    )
+                                                } else {
+                                                    None
+                                                });
+                                                // gpui-component ListItem：选中/悬停色全部由
+                                                // theme tokens（list_active / list_hover）驱动
+                                                ListItem::new(ix)
+                                                    .selected(is_selected)
+                                                    .h(px(54.))
+                                                    .on_click({
+                                                        let launcher = launcher.clone();
+                                                        move |_, _, cx| {
+                                                            launcher.update(cx, |this: &mut Launcher, cx| {
+                                                                this.selected = ix;
+                                                                this.schedule_preview(cx);
+                                                                cx.notify();
+                                                            });
+                                                        }
+                                                    })
+                                                    .suffix(move |_, _| {
+                                                        shortcut
+                                                            .borrow_mut()
+                                                            .take()
+                                                            .unwrap_or_else(|| div().into_any_element())
+                                                    })
+                                                    .child(
+                                                        h_flex()
+                                                            .w_full()
+                                                            .h_full()
+                                                            .items_center()
+                                                            .gap_2()
+                                                            .child(row_icon)
                                                             .child(
-                                                                h_flex()
-                                                                    .w_full()
-                                                                    .items_center()
-                                                                    .gap_2()
-                                                                    .child(row_icon)
+                                                                v_flex()
+                                                                    .flex_1()
+                                                                    .min_w_0()
+                                                                    .gap_0p5()
                                                                     .child(
                                                                         div()
-                                                                            .flex_1()
-                                                                            .min_w_0()
                                                                             .text_sm()
+                                                                            .font_medium()
                                                                             .truncate()
                                                                             .child(entry.name.clone()),
                                                                     )
                                                                     .child(
-                                                                        // 路径占剩余全部宽度（此前 max_w(240) 浪费横向空间），
-                                                                        // 超长时与文件名一起收缩截断
+                                                                        // 路径占剩余全部宽度，超长时截断
                                                                         div()
-                                                                            .min_w_0()
                                                                             .text_xs()
                                                                             .text_color(theme_for_list.muted_foreground)
                                                                             .truncate()
                                                                             .child(entry.path.clone()),
                                                                     ),
-                                                            )
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                            }
-                                        })
-                                        .size_full()
-                                        .track_scroll(&self.scroll)
-                                        .into_any_element()
-                                    }),
-                            ),
-                    )
-                    .child(
-                        resizable_panel()
-                            .size(px(300.))
-                            .min_size(px(180.))
-                            .child(self.render_preview_panel(&theme)),
-                    ),
-                    )
+                                                            ),
+                                                    )
+                                            })
+                                            .collect::<Vec<_>>()
+                                    }
+                                })
+                                .size_full()
+                                .track_scroll(&self.scroll)
+                                .into_any_element(),
+                            )
+                            .into_any_element()
+                    }),
             )
             .child(
                 h_flex()
@@ -839,20 +816,38 @@ impl Render for Launcher {
                     .justify_between()
                     .pt_1()
                     .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(if let Some(notice) = &self.notice {
-                                notice.clone()
-                            } else {
-                                crate::i18n::t!(
-                                    "main.result_count",
-                                    count = result_count,
-                                    elapsed = self.source.status_text(),
-                                    extra = if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
-                                )
-                                .to_string()
-                            }),
+                        h_flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                // Listary 风格汉堡菜单：设置入口
+                                Button::new("menu")
+                                    .outline()
+                                    .small()
+                                    .icon(IconName::Menu)
+                                    .on_click({
+                                        let tx = self.tx.clone();
+                                        move |_, _, _| {
+                                            let _ = tx.send(AppSignal::ShowSettings);
+                                        }
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(if let Some(notice) = &self.notice {
+                                        notice.clone()
+                                    } else {
+                                        crate::i18n::t!(
+                                            "main.result_count",
+                                            count = result_count,
+                                            elapsed = self.source.status_text(),
+                                            extra = if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
+                                        )
+                                        .to_string()
+                                    }),
+                            ),
                     )
                     .child(
                         h_flex()
@@ -860,6 +855,7 @@ impl Render for Launcher {
                             .gap_2()
                             .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_select"), &theme))
                             .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_open"), &theme))
+                            .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_preview"), &theme))
                             .child(window_drag::kbd_pill(crate::i18n::t!("main.hint_hide"), &theme))
                             .child(div().w(px(1.)).h(px(12.)).bg(theme.border))
                             .child(
@@ -927,6 +923,10 @@ struct WindowGuard {
     /// AI 对话窗口
     #[cfg(windows)]
     ai_window: Option<(WindowHandle<Root>, Entity<ai_ui::AiChatPanel>)>,
+    /// 文件预览窗口（独立顶级窗口，贴主窗口右边框；Alt+P 切换，默认隐藏）
+    preview_window: Option<(WindowHandle<Root>, Entity<preview_ui::PreviewPanel>)>,
+    /// 预览窗口显隐偏好（主窗口重建后恢复）
+    preview_visible: bool,
 }
 
 impl WindowGuard {
@@ -957,6 +957,8 @@ impl WindowGuard {
             workflow_window: None,
             #[cfg(windows)]
             ai_window: None,
+            preview_window: None,
+            preview_visible: false,
         }
     }
 
@@ -1000,6 +1002,7 @@ impl WindowGuard {
         let source = self.make_source();
         let audit_logger = self.deps.audit_logger.clone();
         let plugins = self.deps.plugins.clone();
+        let tx = self.tx.clone();
         #[cfg(target_os = "windows")]
         let workflows = self.deps.workflows.clone();
         let mut launcher_slot: Option<Entity<Launcher>> = None;
@@ -1011,6 +1014,7 @@ impl WindowGuard {
                     source,
                     audit_logger,
                     plugins,
+                    tx,
                     #[cfg(target_os = "windows")]
                     workflows,
                 )
@@ -1029,9 +1033,91 @@ impl WindowGuard {
                     launcher.update(cx, |l, cx| l.focus_input(window, cx));
                 });
                 println!("SUMMON_REOPEN_MS {:.1}", pressed_at.elapsed().as_secs_f64() * 1000.0);
-                self.window = Some((handle, launcher));
+                self.window = Some((handle, launcher.clone()));
+                // 预览窗口偏好开启时跟随重建（贴新主窗口右边框）
+                launcher.update(cx, |l, cx| {
+                    l.set_preview_open(self.preview_visible, cx);
+                    if self.preview_visible {
+                        l.schedule_preview(cx);
+                    }
+                });
+                if self.preview_visible {
+                    self.open_preview(cx, &launcher);
+                }
             }
             Err(e) => eprintln!("⚠ 重建窗口失败: {e:#}"),
+        }
+    }
+
+    /// Alt+P：翻转预览窗口显隐偏好并落窗口
+    fn toggle_preview(&mut self, cx: &mut AsyncApp) {
+        self.preview_visible = !self.preview_visible;
+        if self.preview_visible {
+            if let Some((_, launcher)) = &self.window {
+                let launcher = launcher.clone();
+                launcher.update(cx, |l, cx| {
+                    l.set_preview_open(true, cx);
+                    // 立即补一次预览读取（此前关闭时跳过读盘，preview 为空）
+                    l.schedule_preview(cx);
+                });
+                self.open_preview(cx, &launcher);
+            }
+        } else {
+            self.close_preview(cx);
+            if let Some((_, launcher)) = &self.window {
+                launcher.update(cx, |l, cx| l.set_preview_open(false, cx));
+            }
+        }
+    }
+
+    /// 关闭预览窗口（保留显隐偏好）
+    fn close_preview(&mut self, cx: &mut AsyncApp) {
+        if let Some((handle, _)) = self.preview_window.take() {
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        }
+    }
+
+    /// 打开预览窗口：贴主窗口右边框（右侧放不下则贴左侧），等高于主窗口
+    fn open_preview(&mut self, cx: &mut AsyncApp, launcher: &Entity<Launcher>) {
+        // 已存在则先销毁重建（bounds 跟随：gpui-pre 无窗口移动 API）
+        self.close_preview(cx);
+        let Some((main_handle, _)) = &self.window else { return };
+        let Ok(main_bounds) = main_handle.update(cx, |_, window, _| window.bounds()) else {
+            return;
+        };
+        let preview_w: gpui_kit::Pixels = px(380.);
+        let gap: gpui_kit::Pixels = px(8.);
+        let visible = cx.update(|cx| cx.primary_display().map(|d| d.visible_bounds()));
+        // 右侧放不下时贴左边
+        let x = match visible {
+            Some(v) if main_bounds.origin.x + main_bounds.size.width + gap + preview_w
+                > v.origin.x + v.size.width =>
+            {
+                (main_bounds.origin.x - gap - preview_w).max(px(0.))
+            }
+            _ => main_bounds.origin.x + main_bounds.size.width + gap,
+        };
+        let bounds = Bounds {
+            origin: Point { x, y: main_bounds.origin.y },
+            size: size(preview_w, main_bounds.size.height),
+        };
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            ..make_panel_window_options()
+        };
+        let launcher = launcher.clone();
+        let mut panel_slot: Option<Entity<preview_ui::PreviewPanel>> = None;
+        let result = cx.open_window(options, |window, cx| {
+            let panel = cx.new(|cx| preview_ui::PreviewPanel::new(window, cx, launcher));
+            panel_slot = Some(panel.clone());
+            cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
+        });
+        match result {
+            Ok(handle) => {
+                // 预览窗口不抢焦点（启动器焦点保持在搜索框）
+                self.preview_window = Some((handle, panel_slot.expect("preview panel entity")));
+            }
+            Err(e) => eprintln!("⚠ 打开预览窗口失败: {e:#}"),
         }
     }
 
@@ -1685,6 +1771,8 @@ fn main() {
                 let mut show_plugins = false;
                 let mut show_workflows = false;
                 let mut show_ai = false;
+                let mut toggle_preview = false;
+                let mut reposition_preview = false;
                 while let Ok(sig) = guard.rx.try_recv() {
                     match sig {
                         AppSignal::Show(t) => latest = Some(t),
@@ -1696,6 +1784,8 @@ fn main() {
                         AppSignal::ShowWorkflows => show_workflows = true,
                         AppSignal::ShowAi => show_ai = true,
                         AppSignal::SetTheme(dark) => theme_dark = Some(dark),
+                        AppSignal::TogglePreview => toggle_preview = true,
+                        AppSignal::RepositionPreview => reposition_preview = true,
                     }
                 }
                 if rebuild {
@@ -1760,6 +1850,16 @@ fn main() {
                 }
                 if let Some(t) = latest {
                     guard.summon(t, &mut cx);
+                }
+                if toggle_preview {
+                    guard.toggle_preview(&mut cx);
+                }
+                // bounds 跟随：预览开着且主窗口在 → 重贴靠（重建预览窗口）
+                if reposition_preview && guard.preview_visible {
+                    if let Some((_, launcher)) = &guard.window {
+                        let launcher = launcher.clone();
+                        guard.open_preview(&mut cx, &launcher);
+                    }
                 }
             }
             }

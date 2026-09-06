@@ -17,15 +17,24 @@ tray:
 main:
   placeholder: Search apps, files, commands…
   empty_hint: Type to search apps, files and commands
+  recent_files: Recent Files
   preview_select: Select a file to preview
   preview_binary: Binary file, no preview available
   preview_meta_error: Failed to read metadata
   result_count: "%{count} results · %{elapsed}%{extra}"
   hint_select: ↑↓ select
   hint_open: Enter open
+  hint_preview: Alt+P preview
   hint_hide: Esc hide
   quit_button: Quit
   workflow_fallback: Workflow
+
+preview:
+  size: Size
+  created: Created
+  modified: Modified
+  hash: Compute SHA256
+  hash_failed: Hash failed
 
 search:
   status_loading: Index loading…

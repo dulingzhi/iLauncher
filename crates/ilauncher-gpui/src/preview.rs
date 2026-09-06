@@ -23,27 +23,19 @@ pub enum FileType {
     Binary,
 }
 
-impl FileType {
-    /// 展示用中文标签
-    pub fn label(&self) -> &'static str {
-        match self {
-            FileType::Text => "文本",
-            FileType::Image => "图片",
-            FileType::Markdown => "Markdown",
-            FileType::Json => "JSON",
-            FileType::Code => "代码",
-            FileType::Binary => "二进制",
-        }
-    }
-}
+
 
 #[derive(Debug, Clone)]
 pub struct FilePreview {
     pub content: String,
     pub file_type: FileType,
+    /// 以下字段由元信息读取（file_meta）覆盖展示，保留供调用方直接使用与测试断言
+    #[allow(dead_code)]
     pub size: u64,
     /// 修改时间（Unix 秒；0 = 拿不到）
+    #[allow(dead_code)]
     pub modified_unix: u64,
+    #[allow(dead_code)]
     pub extension: String,
 }
 
@@ -189,6 +181,71 @@ pub fn human_size(size: u64) -> String {
     }
 }
 
+/// 文件元信息（不读内容；>1MB 与二进制文件也可获取，供预览窗口信息区用）
+#[derive(Debug, Clone, Copy)]
+pub struct FileMeta {
+    pub size: u64,
+    pub created_unix: u64,
+    pub modified_unix: u64,
+}
+
+pub fn file_meta(path: &Path) -> Result<FileMeta> {
+    let meta = std::fs::metadata(path).with_context(|| format!("无法访问 {}", path.display()))?;
+    if !meta.is_file() {
+        bail!("不是文件（可能是目录）");
+    }
+    let to_unix = |t: std::io::Result<std::time::SystemTime>| {
+        t.ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    };
+    Ok(FileMeta {
+        size: meta.len(),
+        created_unix: to_unix(meta.created()),
+        modified_unix: to_unix(meta.modified()),
+    })
+}
+
+/// 相对时间（中文口径）：刚刚 / N 分钟前 / N 小时前 / N 天前 / YYYY/M/D
+/// now 传当前 Unix 秒（SystemTime，与时区无关）
+pub fn human_time(unix_secs: u64, now: u64) -> String {
+    if unix_secs == 0 {
+        return "—".to_string();
+    }
+    let diff = now.saturating_sub(unix_secs);
+    if diff < 60 {
+        "刚刚".to_string()
+    } else if diff < 3600 {
+        format!("{} 分钟前", diff / 60)
+    } else if diff < 86400 {
+        format!("{} 小时前", diff / 3600)
+    } else if diff < 86400 * 7 {
+        format!("{} 天前", diff / 86400)
+    } else {
+        format_date(unix_secs)
+    }
+}
+
+/// Unix 秒 → "YYYY/M/D"（UTC，无时区依赖；展示粒度到天，时区偏移最多移动一天边界）
+pub fn format_date(secs: u64) -> String {
+    let (y, m, d) = civil_from_days((secs / 86_400) as i64);
+    format!("{y}/{m}/{d}")
+}
+
+/// 当前 Unix 秒（SystemTime::now 的 epoch 秒）
+pub fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 时间行展示："N 小时前 - 2026/9/5"（相对 + 绝对，与 Listary 预览一致）
+pub fn display_time(unix_secs: u64) -> String {
+    format!("{} - {}", human_time(unix_secs, now_unix()), format_date(unix_secs))
+}
+
 /// Unix 秒 → "YYYY-MM-DD HH:MM:SS"（UTC，无时区依赖）
 pub fn format_unix_utc(secs: u64) -> String {
     let days = secs / 86_400;
@@ -308,6 +365,41 @@ mod tests {
         assert_eq!(human_size(512), "512 B");
         assert_eq!(human_size(2048), "2.0 KB");
         assert_eq!(human_size(5 * 1024 * 1024), "5.0 MB");
+    }
+
+    #[test]
+    fn file_meta_reads_without_content() {
+        let path = temp_file("meta", "a.bin");
+        std::fs::write(&path, [0u8; 42]).unwrap();
+        let m = file_meta(&path).unwrap();
+        assert_eq!(m.size, 42);
+        assert!(m.created_unix > 0);
+        assert!(m.modified_unix > 0);
+        // 目录报错
+        let dir = temp_file("metadir", "");
+        let _ = std::fs::create_dir_all(&dir);
+        assert!(file_meta(&dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn human_time_relative_buckets() {
+        let now = 1_700_000_000u64;
+        assert_eq!(human_time(0, now), "—");
+        assert_eq!(human_time(now - 10, now), "刚刚");
+        assert_eq!(human_time(now - 300, now), "5 分钟前");
+        assert_eq!(human_time(now - 7200, now), "2 小时前");
+        assert_eq!(human_time(now - 3 * 86400, now), "3 天前");
+        // 超过 7 天退化为绝对日期（1700000000 = 2023/11/14 UTC）
+        assert_eq!(human_time(now - 10 * 86400, now), "2023/11/4");
+    }
+
+    #[test]
+    fn format_date_known_values() {
+        assert_eq!(format_date(0), "1970/1/1");
+        assert_eq!(format_date(86_400), "1970/1/2");
+        assert_eq!(format_date(1_709_164_800), "2024/2/29");
     }
 
     #[test]
