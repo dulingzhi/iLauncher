@@ -351,18 +351,30 @@ impl Launcher {
             search::EntryOrigin::File => {
                 let path = entry.path.clone();
                 println!("LAUNCH {}", path);
-                let opened = opener::open(&path).is_ok();
-                if !opened {
-                    eprintln!("⚠ 打开失败: {path}");
-                }
-                self.audit_logger.lock().log(
-                    audit::AuditEventType::ProgramExecution {
-                        plugin_id: "ilauncher-core".into(),
-                        program: path,
-                        allowed: true,
-                    },
-                    if opened { audit::AuditSeverity::Info } else { audit::AuditSeverity::Warning },
-                );
+                // ⚠ opener 的 ShellExecuteW 会泵窗口消息：浏览器/资源管理器前台化
+                // 触发失焦 → observe_window_activation 回调 remove_window，与当前
+                // 事件派发的 App RefCell 可变借用重入 → gpui-pre "RefCell already
+                // borrowed" panic（不可展开）→ 0xC0000409 fastfail 崩溃。
+                // 副作用推迟到派发结束后执行（与下方工作流分支同款）。
+                let audit_logger = self.audit_logger.clone();
+                cx.spawn(async move |_, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(50))
+                        .await;
+                    let opened = opener::open(&path).is_ok();
+                    if !opened {
+                        eprintln!("⚠ 打开失败: {path}");
+                    }
+                    audit_logger.lock().log(
+                        audit::AuditEventType::ProgramExecution {
+                            plugin_id: "ilauncher-core".into(),
+                            program: path,
+                            allowed: opened,
+                        },
+                        if opened { audit::AuditSeverity::Info } else { audit::AuditSeverity::Warning },
+                    );
+                })
+                .detach();
             }
             search::EntryOrigin::Plugin { plugin_id, result_id, action_id, .. } => {
                 let (plugin_id, result_id, action_id) =
@@ -370,22 +382,30 @@ impl Launcher {
                 match self.plugins.execute(&plugin_id, &result_id, &action_id) {
                     Ok(plugin::ExecuteOutcome::Open(target)) => {
                         println!("PLUGIN_OPEN {}", target);
-                        let opened = opener::open(&target).is_ok();
-                        if !opened {
-                            eprintln!("⚠ 打开失败: {target}");
-                        }
-                        self.audit_logger.lock().log(
-                            audit::AuditEventType::ProgramExecution {
-                                plugin_id,
-                                program: target,
-                                allowed: opened,
-                            },
-                            if opened {
-                                audit::AuditSeverity::Info
-                            } else {
-                                audit::AuditSeverity::Warning
-                            },
-                        );
+                        // 同 File 分支：ShellExecute 泵消息 + 失焦销毁重入会崩溃，推迟执行
+                        let audit_logger = self.audit_logger.clone();
+                        cx.spawn(async move |_, cx| {
+                            cx.background_executor()
+                                .timer(std::time::Duration::from_millis(50))
+                                .await;
+                            let opened = opener::open(&target).is_ok();
+                            if !opened {
+                                eprintln!("⚠ 打开失败: {target}");
+                            }
+                            audit_logger.lock().log(
+                                audit::AuditEventType::ProgramExecution {
+                                    plugin_id,
+                                    program: target,
+                                    allowed: opened,
+                                },
+                                if opened {
+                                    audit::AuditSeverity::Info
+                                } else {
+                                    audit::AuditSeverity::Warning
+                                },
+                            );
+                        })
+                        .detach();
                     }
                     Ok(plugin::ExecuteOutcome::Copy(text)) => {
                         // 剪贴板权限检查已在插件 execute 内完成（事件落审计管道）；
