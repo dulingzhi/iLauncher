@@ -44,12 +44,19 @@ pub struct MarketPanel {
     busy: bool,
     status: String,
     state: Arc<MarketState>,
+    /// 插件管理器句柄：开关 Lua 命令插件时同步禁用集（查询扇出实时生效）
+    plugins: Arc<crate::plugin::PluginManager>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 
 impl MarketPanel {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>, state: Arc<MarketState>) -> Self {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        state: Arc<MarketState>,
+        plugins: Arc<crate::plugin::PluginManager>,
+    ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(t!("plugins.placeholder").to_string()));
         let focus = cx.focus_handle();
 
@@ -61,6 +68,7 @@ impl MarketPanel {
             busy: false,
             status: String::new(),
             state,
+            plugins,
             focus,
             _subscriptions: Vec::new(),
         };
@@ -196,6 +204,13 @@ impl MarketPanel {
         match self.state.registry.set_enabled(&plugin_id, enabled) {
             Ok(()) => {
                 self.installed = self.state.registry.list();
+                // 同步管理器禁用集：设置里的禁用项 ∪ 已安装中关闭的插件
+                // （Lua 命令插件的查询扇出/停用状态实时生效，重启前保持一致）
+                let mut disabled = crate::settings::load_disabled_plugins();
+                disabled.extend(
+                    self.installed.iter().filter(|p| !p.enabled).map(|p| p.manifest.id.clone()),
+                );
+                self.plugins.set_disabled_plugins(disabled);
                 self.set_status(cx, format!("{plugin_id} → {}", if enabled { "启用" } else { "禁用" }));
             }
             Err(e) => self.set_status(cx, t!("plugins.toggle_failed", error = format!("{e:#}")).to_string()),

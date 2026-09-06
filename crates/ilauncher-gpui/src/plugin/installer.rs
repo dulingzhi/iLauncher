@@ -36,6 +36,12 @@ pub struct PluginManifest {
     pub icon: String,
     pub engine: PluginEngine,
     pub triggers: Vec<String>,
+    /// Lua 命令插件：true = 上下文命令（对主列表选中文件操作）
+    #[serde(default)]
+    pub context: bool,
+    /// Lua 命令插件：用法提示（无参时的展示标题；缺省为 "<trigger> <参数>"）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
     #[serde(default)]
@@ -243,6 +249,12 @@ impl PluginInstaller {
         if !Self::validate_plugin_id(&manifest.id) {
             return Err(anyhow!("非法插件 ID 格式: {}", manifest.id));
         }
+        if !Self::validate_engine(&manifest.engine) {
+            return Err(anyhow!("非法引擎类型: {}（支持 wasm/javascript/native/lua）", manifest.engine.r#type));
+        }
+        if manifest.engine.r#type == "lua" && manifest.triggers.is_empty() {
+            return Err(anyhow!("Lua 命令插件至少需要 1 个 trigger 关键字"));
+        }
         if self.registry.is_installed(&manifest.id) {
             return Err(anyhow!("插件已安装: {}", manifest.id));
         }
@@ -283,6 +295,11 @@ impl PluginInstaller {
     fn validate_plugin_id(id: &str) -> bool {
         let parts: Vec<&str> = id.split('.').collect();
         parts.len() >= 3 && parts.iter().all(|p| !p.is_empty())
+    }
+
+    /// 引擎类型白名单（lua = Listary 风格搜索框命令脚本）
+    fn validate_engine(engine: &PluginEngine) -> bool {
+        matches!(engine.r#type.as_str(), "wasm" | "javascript" | "native" | "lua")
     }
 
     /// 依赖检查：已安装即可（semver 兼容验证 Tauri 同为 TODO，不迁移）

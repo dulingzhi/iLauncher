@@ -31,17 +31,17 @@ use crate::plugin::{ExecuteOutcome, Plugin, PluginAction, PluginMetadata, QueryC
 /// 命令结果得分：命令置顶的阈值（高于 calculator 的 1000）
 pub const COMMAND_SCORE: i32 = 2000;
 
-/// 一条 Lua 命令脚本（内置脚本，源码嵌入二进制；第三方 .ilpkg 加载见后续阶段）
+/// 一条 Lua 命令脚本（内置脚本编译期嵌入；第三方脚本来自 .ilp 安装包的 manifest + entry）
 pub struct LuaScript {
     /// 触发关键字（首个为规范名，全部大小写不敏感匹配）
-    pub keywords: Vec<&'static str>,
+    pub keywords: Vec<String>,
     /// 用法提示（无参/参数不足时的兜底标题）
-    pub usage: &'static str,
+    pub usage: String,
     /// true = 上下文命令：需要主列表选中文件（QueryContext.selection）
     pub context: bool,
-    pub icon: &'static str,
+    pub icon: String,
     /// Lua 源码
-    pub source: &'static str,
+    pub source: std::borrow::Cow<'static, str>,
 }
 
 /// 脚本执行期间的副作用收集（open/copy 上移 Launcher 层执行）
@@ -69,17 +69,56 @@ impl LuaCommandPlugin {
         description: impl Into<String>,
         script: LuaScript,
     ) -> Self {
-        let keywords = script.keywords.iter().map(|s| s.to_string()).collect();
+        let keywords = script.keywords.clone();
+        let icon = script.icon.clone();
         Self {
             metadata: PluginMetadata::new(id, name)
                 .with_description(description)
-                .with_icon(script.icon)
+                .with_icon(icon)
                 .with_trigger_keywords(keywords),
             sandbox,
             script,
             settings: Arc::new(Mutex::new(HashMap::new())),
             pending_selection: Mutex::new(None),
         }
+    }
+
+    /// 从 .ilp 安装包的 manifest 构造（第三方 Lua 命令插件；沙盒配置由 manager 侧注册）
+    pub fn from_manifest(sandbox: Arc<SandboxManager>, manifest: &crate::plugin::installer::PluginManifest, source: String) -> Result<Self> {
+        if manifest.engine.r#type != "lua" {
+            return Err(anyhow!("非 Lua 引擎插件: {}", manifest.engine.r#type));
+        }
+        if manifest.triggers.is_empty() {
+            return Err(anyhow!("Lua 命令插件至少需要 1 个 trigger 关键字: {}", manifest.id));
+        }
+        let usage = manifest
+            .usage
+            .clone()
+            .unwrap_or_else(|| format!("{} <参数>", manifest.triggers[0]));
+        let plugin = Self::new(
+            sandbox,
+            manifest.id.clone(),
+            manifest.name.clone(),
+            manifest.description.clone(),
+            LuaScript {
+                keywords: manifest.triggers.clone(),
+                usage,
+                context: manifest.context,
+                icon: if manifest.icon.is_empty() { "🧩".to_string() } else { manifest.icon.clone() },
+                source: source.into(),
+            },
+        );
+        // manifest 声明的 settings 默认值注入插件私有配置（settings.get 宿主 API 可读）
+        for def in &manifest.settings {
+            if let Some(default) = &def.default {
+                let value = match default {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                plugin.settings.lock().insert(def.key.clone(), value);
+            }
+        }
+        Ok(plugin)
     }
 
     /// 内置：hosts 映射管理
@@ -90,11 +129,11 @@ impl LuaCommandPlugin {
             "Hosts 命令",
             "搜索框直接追加/查看 hosts 映射",
             LuaScript {
-                keywords: vec!["hosts"],
-                usage: "hosts <IP> <域名>",
+                keywords: vec!["hosts".to_string()],
+                usage: "hosts <IP> <域名>".to_string(),
                 context: false,
-                icon: "📝",
-                source: HOSTS_LUA,
+                icon: "📝".to_string(),
+                source: HOSTS_LUA.into(),
             },
         );
         plugin.settings.lock().insert(
@@ -112,11 +151,11 @@ impl LuaCommandPlugin {
             "锁屏命令",
             "搜索框输入 lock 立即锁定 Windows",
             LuaScript {
-                keywords: vec!["lock", "锁屏"],
-                usage: "lock",
+                keywords: vec!["lock".to_string(), "锁屏".to_string()],
+                usage: "lock".to_string(),
                 context: false,
-                icon: "🔒",
-                source: LOCK_LUA,
+                icon: "🔒".to_string(),
+                source: LOCK_LUA.into(),
             },
         )
     }
@@ -129,11 +168,11 @@ impl LuaCommandPlugin {
             "Hash 命令",
             "对主列表选中的文件计算 SHA256",
             LuaScript {
-                keywords: vec!["hash", "sha", "sha256"],
-                usage: "hash",
+                keywords: vec!["hash".to_string(), "sha".to_string(), "sha256".to_string()],
+                usage: "hash".to_string(),
                 context: true,
-                icon: "#️⃣",
-                source: HASH_LUA,
+                icon: "#️⃣".to_string(),
+                source: HASH_LUA.into(),
             },
         )
     }
@@ -247,7 +286,7 @@ impl LuaCommandPlugin {
                 None => Value::Nil,
             },
         )?;
-        lua.load(self.script.source).exec()?;
+        lua.load(self.script.source.as_ref()).exec()?;
         Ok((lua, run_ctx))
     }
 
@@ -271,7 +310,7 @@ impl LuaCommandPlugin {
     fn result(&self, title: impl Into<String>, subtitle: impl Into<String>, args: &[String]) -> QueryResult {
         QueryResult::new(self.encode_result_id(args), title)
             .with_subtitle(subtitle)
-            .with_icon(self.script.icon)
+            .with_icon(self.script.icon.clone())
             .with_score(COMMAND_SCORE)
             .with_action(PluginAction::default_action("run", "执行"))
     }
@@ -296,7 +335,7 @@ impl Plugin for LuaCommandPlugin {
 
         // 上下文命令未选中文件：只给提示行（执行会再次兜底）
         if self.script.context && ctx.selection.is_none() {
-            return Ok(vec![self.result(self.script.usage, "先在主列表中选中一个文件（↑↓ 选择后输入关键字）", &[])]);
+            return Ok(vec![self.result(self.script.usage.clone(), "先在主列表中选中一个文件（↑↓ 选择后输入关键字）", &[])]);
         }
 
         // 脚本的 preview(args, selection) → "标题", "副标题"；缺失/出错回退用法提示。

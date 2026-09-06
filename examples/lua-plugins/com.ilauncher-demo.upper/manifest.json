@@ -1,0 +1,13 @@
+{
+  "id": "com.ilauncher-demo.upper",
+  "name": "Upper 命令",
+  "version": "1.0.0",
+  "description": "参数转大写并复制到剪贴板（Lua 命令插件示例）",
+  "author": { "name": "iLauncher" },
+  "license": "MIT",
+  "icon": "🔠",
+  "engine": { "type": "lua", "entry": "main.lua", "runtime_version": "5.4" },
+  "triggers": ["upper"],
+  "permissions": ["clipboard:write"],
+  "sandbox": { "level": "restricted", "timeout_ms": 1000, "max_memory_mb": 50 }
+}

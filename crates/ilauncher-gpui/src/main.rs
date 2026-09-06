@@ -1138,13 +1138,14 @@ impl WindowGuard {
             return;
         }
         let state = self.deps.market.clone();
+        let plugins = self.deps.plugins.clone();
         let mut panel_slot: Option<Entity<plugin_ui::MarketPanel>> = None;
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
             ..make_panel_window_options()
         };
         let result = cx.open_window(options, |window, cx| {
-            let panel = cx.new(|cx| plugin_ui::MarketPanel::new(window, cx, state));
+            let panel = cx.new(|cx| plugin_ui::MarketPanel::new(window, cx, state, plugins));
             panel_slot = Some(panel.clone());
             cx.new(|cx| Root::new(panel, window, cx).bg(cx.theme().background))
         });
@@ -1532,21 +1533,8 @@ fn main() {
         logger
     };
 
-    // ── 插件系统：内置插件注册 + 沙盒权限表（权限检查事件写上方同一审计管道） ──
-    let plugins = Arc::new(plugin::PluginManager::new(audit_logger.clone()));
-    #[cfg(windows)]
-    plugins.set_disabled_plugins(settings::load_disabled_plugins());
-    println!(
-        "✓ 插件已注册: {} 个（沙盒权限 {} 项）",
-        plugins.get_plugins().len(),
-        plugins.sandbox().registered_count()
-    );
-
-    // ── 剪贴板历史：加载 JSONL + 启动事件监听（feature clipboard） ──────────
-    #[cfg(all(feature = "clipboard", target_os = "windows"))]
-    let clipboard_store = clipboard_ui::init_clipboard();
-
     // ── 插件市场：已安装注册表加载 + 商店缓存目录（Windows 窗口用） ──────────
+    // 须在 PluginManager 之前创建：manager 需要从注册表加载第三方 Lua 命令插件
     #[cfg(windows)]
     let market = {
         let data_dir = std::env::var_os("LOCALAPPDATA")
@@ -1563,6 +1551,27 @@ fn main() {
         println!("✓ 插件市场已就绪（已安装 {} 个）", market.registry.list().len());
         market
     };
+
+    // ── 插件系统：内置插件注册 + 沙盒权限表（权限检查事件写上方同一审计管道） ──
+    // 顺序：先注入设置里的禁用列表，再加载已安装 Lua 插件（其禁用状态合并进禁用集）
+    let mut plugins = plugin::PluginManager::new(audit_logger.clone());
+    #[cfg(windows)]
+    plugins.set_disabled_plugins(settings::load_disabled_plugins());
+    #[cfg(windows)]
+    let lua_loaded = plugins.load_installed_lua(&market.registry);
+    #[cfg(not(windows))]
+    let lua_loaded = 0;
+    let plugins = Arc::new(plugins);
+    println!(
+        "✓ 插件已注册: {} 个（沙盒权限 {} 项，第三方 Lua {} 个）",
+        plugins.get_plugins().len(),
+        plugins.sandbox().registered_count(),
+        lua_loaded
+    );
+
+    // ── 剪贴板历史：加载 JSONL + 启动事件监听（feature clipboard） ──────────
+    #[cfg(all(feature = "clipboard", target_os = "windows"))]
+    let clipboard_store = clipboard_ui::init_clipboard();
 
     // ── 工作流引擎：JSON 定义加载（目录与 旧版一致；编辑器 UI 不做，直接放 JSON） ──
     #[cfg(windows)]
