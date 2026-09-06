@@ -40,6 +40,12 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # i18n：YAML 文案编译期嵌入（gpui-component 同款 rust-i18n 4），fallback zh-CN
 rust-i18n = "4.2"
 
+# Lua 命令插件：vendored Lua 5.4（无外部运行时依赖，静态链接进 exe）
+# send：Lua 实例与 Error 变为 Send+Sync（anyhow 互操作前置；调用方亦可在结构体中持有实例）
+mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
+# hash 命令：选中文件 SHA256（上下文命令示例）
+sha2 = "0.10"
+
 ilauncher-index = { path = "../ilauncher-index", optional = true }
 ilauncher-clipboard = { path = "../ilauncher-clipboard", optional = true }
 parking_lot = "0.12"

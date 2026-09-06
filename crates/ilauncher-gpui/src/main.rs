@@ -143,6 +143,8 @@ struct Launcher {
     /// 预览：路径 + 读取结果（Err 为展示用错误文本）
     preview: Option<(std::path::PathBuf, Result<preview::FilePreview, String>)>,
     preview_gen: usize,
+    /// Lua 命令反馈文本（底部状态栏左侧展示；下次输入清空）
+    notice: Option<String>,
     /// 审计日志（启动文件记 ProgramExecution；插件沙盒事件经 plugin 模块同管道写入）
     audit_logger: Arc<Mutex<audit::AuditLogger>>,
     /// 插件管理器（搜索扇出 + 执行分发；沙盒权限检查写审计）
@@ -200,6 +202,7 @@ impl Launcher {
             bench_tick: 0,
             preview: None,
             preview_gen: 0,
+            notice: None,
             audit_logger,
             plugins,
             #[cfg(target_os = "windows")]
@@ -222,6 +225,13 @@ impl Launcher {
         if let Some(sub) = focus_lost_sub {
             this._subscriptions.push(sub);
         }
+        // 开发调试：ILAUNCHER_DEV_QUERY 预填查询并立即搜索（自动化截图/冒烟用）
+        if let Ok(q) = std::env::var("ILAUNCHER_DEV_QUERY") {
+            if !q.is_empty() && !this.bench {
+                this.input.update(cx, |state, cx| state.set_value(q.clone(), window, cx));
+                this.apply_query(q, cx);
+            }
+        }
         this
     }
 
@@ -243,13 +253,30 @@ impl Launcher {
     }
 
     /// 防抖后到期的真正搜索：空查询清空结果，非空最多 PAGE_LIMIT 条。
-    /// 文件结果在前，插件结果按 score 降序追加其后（对齐 Tauri 排序语义）；
-    /// 工作流关键词精确匹配命中时追加在插件结果之后
+    /// 排序：前缀命令（Lua 命令插件，COMMAND_SCORE）置顶 → 文件结果 →
+    /// 其余插件结果按 score 降序 → 工作流关键词精确匹配
     fn apply_query(&mut self, query: String, cx: &mut Context<Self>) {
+        // 上下文命令（Listary 风格）：重建结果集前，从旧列表捕获当前选中文件路径，
+        // 命令插件对选中项操作（如 hash 计算选中文件 SHA256）
+        let selected_path = self
+            .entries
+            .get(self.selected)
+            .filter(|e| e.origin == search::EntryOrigin::File)
+            .map(|e| e.path.clone());
+        self.notice = None;
+
         let mut entries = self.source.search(&query, PAGE_LIMIT);
         // bench 模式跳过插件扇出：避免插件结果混入滚动/渲染性能基线
         if !self.bench {
-            entries.extend(self.plugins.query_entries(&query, PAGE_LIMIT));
+            let plugin_entries = self.plugins.query_entries(&query, selected_path, PAGE_LIMIT);
+            // 前缀命令置顶，其余插件结果按原 score 降序留在文件结果之后
+            let (commands, others): (Vec<_>, Vec<_>) = plugin_entries
+                .into_iter()
+                .partition(|e| e.score >= plugin::COMMAND_SCORE as i64);
+            let mut ordered = commands;
+            ordered.append(&mut entries);
+            ordered.extend(others);
+            entries = ordered;
             // 工作流：仅 query 与 Manual 关键词完全一致时命中（与 Tauri 语义一致）
             #[cfg(target_os = "windows")]
             for wf in self.workflows.find_by_keyword(&query) {
@@ -365,6 +392,13 @@ impl Launcher {
                         // 写入走 App 级剪贴板（等价 gpui 版 opener 的职责上移）
                         println!("PLUGIN_COPY {}", text);
                         cx.write_to_clipboard(ClipboardItem::new_string(text));
+                    }
+                    Ok(plugin::ExecuteOutcome::Notify(text)) => {
+                        // Lua 命令反馈：显示在底部状态栏左侧（下次输入清空）
+                        if !text.is_empty() {
+                            println!("PLUGIN_NOTIFY {}", text);
+                            self.notice = Some(text);
+                        }
                     }
                     Err(e) => {
                         eprintln!("⚠ 插件执行失败（{plugin_id}）: {e:#}");
@@ -786,15 +820,17 @@ impl Render for Launcher {
                         div()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(
+                            .child(if let Some(notice) = &self.notice {
+                                notice.clone()
+                            } else {
                                 crate::i18n::t!(
                                     "main.result_count",
                                     count = result_count,
                                     elapsed = self.source.status_text(),
                                     extra = if self.bench { format!(" · tick {}", self.bench_tick) } else { String::new() }
                                 )
-                                .to_string(),
-                            ),
+                                .to_string()
+                            }),
                     )
                     .child(
                         h_flex()

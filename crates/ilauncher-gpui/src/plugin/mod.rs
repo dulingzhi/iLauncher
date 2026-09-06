@@ -11,12 +11,14 @@
 
 mod calculator;
 mod installer;
+mod lua_cmd;
 mod manager;
 mod sandbox;
 mod store;
 mod web_search;
 
 pub use installer::{InstalledPlugin, PluginInstaller, PluginRegistry};
+pub use lua_cmd::COMMAND_SCORE;
 pub use manager::PluginManager;
 pub use store::{PluginListItem, PluginStore, SearchParams};
 
@@ -69,11 +71,20 @@ impl PluginMetadata {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct QueryContext {
     pub search: String,
+    /// 主列表当前选中的文件路径：上下文命令（Listary 风格）对选中项操作，
+    /// 由 Launcher 在重建结果集前从旧选中捕获（Lua 命令插件消费）
+    pub selection: Option<String>,
 }
 
+#[allow(dead_code)] // new/with_selection 当前仅测试消费；外部插件迁移后由生产路径使用
 impl QueryContext {
     pub fn new(search: impl Into<String>) -> Self {
-        Self { search: search.into() }
+        Self { search: search.into(), selection: None }
+    }
+
+    pub fn with_selection(mut self, selection: impl Into<String>) -> Self {
+        self.selection = Some(selection.into());
+        self
     }
 }
 
@@ -155,6 +166,8 @@ pub enum ExecuteOutcome {
     Open(String),
     /// 复制文本到系统剪贴板
     Copy(String),
+    /// Lua 命令反馈：状态栏通知文本（脚本 run 返回值；无 open/copy 副作用时）
+    Notify(String),
 }
 
 /// 插件特征（同步；见模块头注释）

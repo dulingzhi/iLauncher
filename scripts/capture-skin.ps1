@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Skin,
     [Parameter(Mandatory = $true)][string]$OutPng,
-    [string]$Mode = 'bench'
+    [string]$Mode = 'bench',
+    [string]$Query = ''
 )
 
 $ErrorActionPreference = 'Continue'
@@ -21,6 +22,7 @@ if ($Skin -eq 'default') {
 # bench：主窗 5 秒内滚动 10 万条 Demo 数据（列表选中高亮/预览面板可见），5 秒后自动退出
 # normal：空查询 → 验证空状态。ILAUNCHER_NO_AUTOHIDE=1 防失焦销毁（自动化截图用）
 $env:ILAUNCHER_NO_AUTOHIDE = '1'
+if ($Query -ne '') { $env:ILAUNCHER_DEV_QUERY = $Query }
 $args = if ($Mode -eq 'bench') { '--bench' } else { $null }
 $proc = Start-Process -FilePath $exe -ArgumentList $args -PassThru
 Start-Sleep -Seconds 3

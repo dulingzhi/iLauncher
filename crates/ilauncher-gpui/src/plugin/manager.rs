@@ -16,6 +16,7 @@ use parking_lot::{Mutex, RwLock};
 
 use crate::audit::AuditLogger;
 use crate::plugin::calculator::CalculatorPlugin;
+use crate::plugin::lua_cmd::LuaCommandPlugin;
 use crate::plugin::sandbox::{
     NetworkScope, PluginPermission, SandboxConfig, SandboxManager, SecurityLevel,
 };
@@ -39,6 +40,10 @@ impl PluginManager {
         let mut manager = Self { plugins: Vec::new(), sandbox, disabled: RwLock::new(HashSet::new()) };
         manager.register(Box::new(CalculatorPlugin::new(manager.sandbox.clone())));
         manager.register(Box::new(WebSearchPlugin::new(manager.sandbox.clone())));
+        // Lua 命令插件（Listary 风格前缀命令 + 上下文命令）
+        manager.register(Box::new(LuaCommandPlugin::hosts(manager.sandbox.clone())));
+        manager.register(Box::new(LuaCommandPlugin::lock_workstation(manager.sandbox.clone())));
+        manager.register(Box::new(LuaCommandPlugin::file_hash(manager.sandbox.clone())));
         manager
     }
 
@@ -74,6 +79,42 @@ impl PluginManager {
             timeout_ms: Some(3000),
             max_memory_mb: Some(50),
         });
+        // Lua 命令：hosts —— 只允许读写 hosts 所在目录（路径前缀匹配强制）
+        let hosts_dir = std::path::PathBuf::from("C:\\Windows\\System32\\drivers\\etc");
+        sandbox.register(SandboxConfig {
+            plugin_id: "cmd-hosts".to_string(),
+            security_level: SecurityLevel::Restricted,
+            custom_permissions: Some(
+                [
+                    PluginPermission::FileSystemRead(hosts_dir.clone()),
+                    PluginPermission::FileSystemWrite(hosts_dir),
+                ]
+                    .into_iter()
+                    .collect(),
+            ),
+            enabled: true,
+            timeout_ms: Some(1000),
+            max_memory_mb: Some(50),
+        });
+        // Lua 命令：lock —— 只允许执行外部程序（具体命令不再细分，执行即审计）
+        sandbox.register(SandboxConfig {
+            plugin_id: "cmd-lock".to_string(),
+            security_level: SecurityLevel::Restricted,
+            custom_permissions: Some([PluginPermission::ExecuteProgram].into_iter().collect()),
+            enabled: true,
+            timeout_ms: Some(1000),
+            max_memory_mb: Some(50),
+        });
+        // Lua 命令：hash —— 需读任意盘的选中文件，路径前缀无法表达"全部盘符"，
+        // 走系统级（enabled=false 全放行但仍记审计）；随第三方脚本落地再细化
+        sandbox.register(SandboxConfig {
+            plugin_id: "cmd-hash".to_string(),
+            security_level: SecurityLevel::System,
+            custom_permissions: None,
+            enabled: false,
+            timeout_ms: Some(1000),
+            max_memory_mb: Some(50),
+        });
     }
 
     /// 注册插件
@@ -88,9 +129,9 @@ impl PluginManager {
 
     /// 查询扇出：跳过禁用插件，单个插件失败只告警不影响其他（Tauri 同款语义）。
     /// 返回 (plugin_id, 结果) 已盖章列表，按 score 降序
-    fn query_stamped(&self, input: &str) -> Vec<(String, QueryResult)> {
+    fn query_stamped(&self, input: &str, selection: Option<String>) -> Vec<(String, QueryResult)> {
         let disabled = self.disabled.read().clone();
-        let ctx = crate::plugin::QueryContext::new(input);
+        let ctx = crate::plugin::QueryContext { search: input.to_string(), selection };
         let mut results = Vec::new();
         for plugin in &self.plugins {
             let plugin_id = plugin.metadata().id.clone();
@@ -106,12 +147,14 @@ impl PluginManager {
         results
     }
 
-    /// 查询并映射为搜索列表条目（文件结果在前、插件结果在后的顺序由 Launcher 保证）
-    pub fn query_entries(&self, input: &str, limit: usize) -> Vec<Entry> {
+    /// 查询并映射为搜索列表条目。
+    /// 顺序约定（Launcher 层拼装）：前缀命令（COMMAND_SCORE）置顶，文件结果其次，
+    /// 其余插件结果按 score 降序随后
+    pub fn query_entries(&self, input: &str, selection: Option<String>, limit: usize) -> Vec<Entry> {
         if input.trim().is_empty() || limit == 0 {
             return Vec::new();
         }
-        self.query_stamped(input)
+        self.query_stamped(input, selection)
             .into_iter()
             .take(limit)
             .filter_map(|(plugin_id, qr)| {
@@ -153,6 +196,7 @@ impl PluginManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::lua_cmd::COMMAND_SCORE;
     use crate::plugin::{ExecuteOutcome, QueryContext};
 
     fn test_manager() -> PluginManager {
@@ -163,39 +207,62 @@ mod tests {
     fn registers_builtin_plugins_with_sandbox() {
         let manager = test_manager();
         let ids: Vec<String> = manager.get_plugins().into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec!["calculator".to_string(), "web_search".to_string()]);
-        assert_eq!(manager.sandbox().registered_count(), 2);
+        assert_eq!(
+            ids,
+            vec![
+                "calculator".to_string(),
+                "web_search".to_string(),
+                "cmd-hosts".to_string(),
+                "cmd-lock".to_string(),
+                "cmd-hash".to_string(),
+            ]
+        );
+        assert_eq!(manager.sandbox().registered_count(), 5);
     }
 
     #[test]
     fn query_merges_and_sorts_by_score_desc() {
         let manager = test_manager();
         // 计算器表达式分数（1000）应排在网页搜索（100）前
-        let entries = manager.query_entries("1+1", 10);
+        let entries = manager.query_entries("1+1", None, 10);
         assert!(!entries.is_empty());
         assert_eq!(entries[0].name, "2");
         assert!(entries.iter().all(|e| e.score <= entries[0].score));
     }
 
     #[test]
+    fn lua_command_pinned_above_calculator() {
+        let manager = test_manager();
+        // "hash" 既是 cmd-hash 关键字，calc 不匹配 → 命令置顶语义由 Launcher 层拼装，
+        // 这里验证命令得分高于计算器
+        let entries = manager.query_entries("hash", None, 10);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].score, COMMAND_SCORE as i64);
+        match &entries[0].origin {
+            crate::search::EntryOrigin::Plugin { plugin_id, .. } => assert_eq!(plugin_id, "cmd-hash"),
+            other => panic!("期望插件来源，得到 {other:?}"),
+        }
+    }
+
+    #[test]
     fn disabled_plugin_skipped() {
         let manager = test_manager();
         manager.set_disabled_plugins(vec!["calculator".to_string()]);
-        let entries = manager.query_entries("1+1", 10);
+        let entries = manager.query_entries("1+1", None, 10);
         assert!(entries.is_empty() || entries.iter().all(|e| e.name != "2"));
     }
 
     #[test]
     fn empty_query_returns_empty() {
         let manager = test_manager();
-        assert!(manager.query_entries("   ", 10).is_empty());
-        assert!(manager.query_entries("1+1", 0).is_empty());
+        assert!(manager.query_entries("   ", None, 10).is_empty());
+        assert!(manager.query_entries("1+1", None, 0).is_empty());
     }
 
     #[test]
     fn query_entries_maps_origin_fields() {
         let manager = test_manager();
-        let entries = manager.query_entries("1+1", 10);
+        let entries = manager.query_entries("1+1", None, 10);
         assert_eq!(entries.len(), 1);
         match &entries[0].origin {
             crate::search::EntryOrigin::Plugin { plugin_id, result_id, action_id, icon } => {
@@ -232,5 +299,8 @@ mod tests {
     fn query_context_roundtrip() {
         let ctx = QueryContext::new("g rust");
         assert_eq!(ctx.search, "g rust");
+        assert_eq!(ctx.selection, None);
+        let ctx = ctx.with_selection("C:\\a.txt");
+        assert_eq!(ctx.selection, Some("C:\\a.txt".to_string()));
     }
 }
