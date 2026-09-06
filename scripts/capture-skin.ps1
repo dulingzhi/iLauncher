@@ -2,7 +2,8 @@
     [Parameter(Mandatory = $true)][string]$Skin,
     [Parameter(Mandatory = $true)][string]$OutPng,
     [string]$Mode = 'bench',
-    [string]$Query = ''
+    [string]$Query = '',
+    [string]$Snapshot = ''
 )
 
 $ErrorActionPreference = 'Continue'
@@ -23,6 +24,7 @@ if ($Skin -eq 'default') {
 # normal：空查询 → 验证空状态。ILAUNCHER_NO_AUTOHIDE=1 防失焦销毁（自动化截图用）
 $env:ILAUNCHER_NO_AUTOHIDE = '1'
 if ($Query -ne '') { $env:ILAUNCHER_DEV_QUERY = $Query }
+if ($Snapshot -ne '') { $env:ILAUNCHER_SNAPSHOT = $Snapshot }
 if ($Mode -eq 'bench') {
     $proc = Start-Process -FilePath $exe -ArgumentList '--bench' -PassThru
 } else {

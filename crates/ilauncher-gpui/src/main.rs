@@ -803,8 +803,10 @@ impl Render for Launcher {
                                                                             .child(entry.name.clone()),
                                                                     )
                                                                     .child(
+                                                                        // 路径占剩余全部宽度（此前 max_w(240) 浪费横向空间），
+                                                                        // 超长时与文件名一起收缩截断
                                                                         div()
-                                                                            .max_w(px(240.))
+                                                                            .min_w_0()
                                                                             .text_xs()
                                                                             .text_color(theme_for_list.muted_foreground)
                                                                             .truncate()
