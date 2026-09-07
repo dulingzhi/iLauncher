@@ -1043,7 +1043,7 @@ impl WindowGuard {
         // 重建窗口（Esc/失焦销毁后首次唤起 / 初始唤起），主显示器居中
         // 预览已拆为独立窗口（Alt+P），主窗口保持 Listary 式紧凑尺寸
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 570., 350.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 570., 350., 0., -150.))),
             ..make_window_options()
         };
         let source = self.make_source();
@@ -1230,7 +1230,7 @@ impl WindowGuard {
         let store = self.deps.clipboard_store.clone();
         let mut panel_slot: Option<Entity<clipboard_ui::ClipboardPanel>> = None;
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520., 0., 0.))),
             ..make_panel_window_options()
         };
         let result = cx.open_window(options, |window, cx| {
@@ -1269,7 +1269,7 @@ impl WindowGuard {
         #[cfg(all(feature = "clipboard", target_os = "windows"))]
         let store = self.deps.clipboard_store.clone();
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 860., 560.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 860., 560., 0., 0.))),
             ..make_panel_window_options()
         };
         let mut view_slot: Option<Entity<settings_ui::SettingsView>> = None;
@@ -1320,7 +1320,7 @@ impl WindowGuard {
         let logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<audit_ui::AuditPanel>> = None;
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520., 0., 0.))),
             ..make_panel_window_options()
         };
         let result = cx.open_window(options, |window, cx| {
@@ -1349,7 +1349,7 @@ impl WindowGuard {
         let plugins = self.deps.plugins.clone();
         let mut panel_slot: Option<Entity<plugin_ui::MarketPanel>> = None;
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520., 0., 0.))),
             ..make_panel_window_options()
         };
         let result = cx.open_window(options, |window, cx| {
@@ -1378,7 +1378,7 @@ impl WindowGuard {
         let audit_logger = self.deps.audit_logger.clone();
         let mut panel_slot: Option<Entity<workflow_ui::WorkflowPanel>> = None;
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520., 0., 0.))),
             ..make_panel_window_options()
         };
         let result = cx.open_window(options, |window, cx| {
@@ -1406,7 +1406,7 @@ impl WindowGuard {
         let chat = self.deps.ai_chat.clone();
         let mut panel_slot: Option<Entity<ai_ui::AiChatPanel>> = None;
         let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520.))),
+            window_bounds: Some(WindowBounds::Windowed(centered_bounds(cx, 1000., 520., 0., 0.))),
             ..make_panel_window_options()
         };
         let result = cx.open_window(options, |window, cx| {
@@ -1451,7 +1451,7 @@ fn make_panel_window_options() -> WindowOptions {
 
 /// 窗口在主显示器（可见区，排除任务栏）居中的 bounds；
 /// 取不到显示器信息时回退原默认位
-fn centered_bounds(cx: &mut AsyncApp, width: f32, height: f32) -> Bounds<Pixels> {
+fn centered_bounds(cx: &mut AsyncApp, width: f32, height: f32, x: f32, y: f32) -> Bounds<Pixels> {
     let visible = cx.update(|cx| cx.primary_display().map(|d| d.visible_bounds()));
     let win_size = size(px(width), px(height));
     match visible {
@@ -1459,8 +1459,8 @@ fn centered_bounds(cx: &mut AsyncApp, width: f32, height: f32) -> Bounds<Pixels>
             let center = b.center();
             Bounds::new(
                 Point {
-                    x: center.x - win_size.width / 2.0,
-                    y: center.y - win_size.height / 2.0,
+                    x: center.x - win_size.width / 2.0 + px(x),
+                    y: center.y - win_size.height / 2.0 + px(y),
                 },
                 win_size,
             )
